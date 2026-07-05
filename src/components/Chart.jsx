@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { findFVG, findOrderBlocks, findBOS, ema, findMitigation, orderFlowArr, findFib } from "../lib/detectors.js";
 
 // Canlı mum grafiği + kavram katmanları. Tümü client-side (SVG).
@@ -24,12 +24,28 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
   const step = (W - pL - pR) / view.length, bw = Math.max(1.6, step * 0.62);
   const gi = i => i - off; // global index -> view x index
 
+  // Crosshair (AK-026): imleç -> bar/fiyat eşlemesi
+  const [hov, setHov] = useState(null); // {i(view), px, py, price}
+  function onMove(e) {
+    const r = e.currentTarget.getBoundingClientRect();
+    const px = ((e.clientX - r.left) / r.width) * W;
+    const py = ((e.clientY - r.top) / r.height) * H;
+    if (px < pL || px > W - pR || py < pT || py > H - pB) { setHov(null); return; }
+    const i = Math.max(0, Math.min(view.length - 1, Math.round(((px - pL) / (W - pL - pR)) * (view.length - 1))));
+    const price = hi - ((py - pT) / (H - pT - pB)) * rg;
+    setHov({ i, px: x(i), py, price });
+  }
+  const legendBar = hov ? view[hov.i] : view[view.length - 1];
+  const prevBar = hov ? view[Math.max(0, hov.i - 1)] : view[Math.max(0, view.length - 2)];
+  const chg = prevBar && prevBar.c ? ((legendBar.c - prevBar.c) / prevBar.c) * 100 : 0;
+  const lastC = view[view.length - 1].c;
+
   // görünümdeki trade'ler + son trade (SL/TP çizimi için)
   const viewTrades = useMemo(() => (trades || []).filter(t => t.entryIdx >= off && t.entryIdx <= endIdx), [trades, off, endIdx]);
   const lastTrade = viewTrades.length ? viewTrades[viewTrades.length - 1] : null;
 
   return (
-    <svg className="ak-chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Fiyat grafiği">
+    <svg className="ak-chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Fiyat grafiği" onMouseMove={onMove} onMouseLeave={() => setHov(null)}>
       {[0, .25, .5, .75, 1].map((f, i) => {
         const py = pT + f * (H - pT - pB), pv = hi - f * rg;
         return <g key={i}><line x1={pL} y1={py} x2={W - pR} y2={py} className="ak-c-grid" /><text x={W - pR + 5} y={py + 3} className="ak-c-axis">{pv.toFixed(1)}</text></g>;
@@ -85,6 +101,26 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
         <line x1={x(gi(lastTrade.entryIdx))} y1={y(lastTrade.stop)} x2={W - pR} y2={y(lastTrade.stop)} className="ak-c-sl" />
         <text x={x(gi(lastTrade.entryIdx)) + 3} y={y(lastTrade.stop) + 11} className="ak-c-sllab">SL</text>
       </g>}
+      {/* Son fiyat balonu (sağ eksen) */}
+      <g className={view[view.length - 1].c >= view[view.length - 1].o ? "ak-c-lastp up" : "ak-c-lastp dn"}>
+        <rect x={W - pR + 1} y={y(lastC) - 8} width={pR - 2} height={16} rx={3} />
+        <text x={W - pR + 5} y={y(lastC) + 4}>{lastC.toFixed(1)}</text>
+      </g>
+
+      {/* Crosshair */}
+      {hov && <g className="ak-c-cross">
+        <line x1={hov.px} y1={pT} x2={hov.px} y2={H - pB} />
+        <line x1={pL} y1={hov.py} x2={W - pR} y2={hov.py} />
+        <rect x={W - pR + 1} y={hov.py - 8} width={pR - 2} height={16} rx={3} className="ak-c-crossp" />
+        <text x={W - pR + 5} y={hov.py + 4} className="ak-c-crosspt">{hov.price.toFixed(1)}</text>
+      </g>}
+
+      {/* OHLC künyesi (TV tarzı, kompakt) */}
+      <g className={"ak-c-legend " + (legendBar.c >= legendBar.o ? "up" : "dn")}>
+        <text x={pL + 4} y={pT + 10}>
+          O {legendBar.o.toFixed(1)}  Y {legendBar.h.toFixed(1)}  D {legendBar.l.toFixed(1)}  K {legendBar.c.toFixed(1)}  {chg >= 0 ? "+" : ""}{chg.toFixed(2)}%
+        </text>
+      </g>
     </svg>
   );
 }

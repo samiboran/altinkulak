@@ -1,26 +1,34 @@
+import { lazy, Suspense } from "react";
 import { Routes, Route, Outlet } from "react-router-dom";
 import Navbar from "./components/Navbar.jsx";
 import Footer from "./components/Footer.jsx";
 import Home from "./pages/Home.jsx";
-import Tarama from "./pages/Tarama.jsx";
-import Izleme from "./pages/Izleme.jsx";
-import Lab from "./pages/Lab.jsx";
-import Ogren from "./pages/Ogren.jsx";
-import Topluluk from "./pages/Topluluk.jsx";
-import Haberler from "./pages/Haberler.jsx";
-import Ben from "./pages/Ben.jsx";
-import Contributor from "./pages/Contributor.jsx";
-import Fiyatlandirma from "./pages/Fiyatlandirma.jsx";
-import Yasal from "./pages/Yasal.jsx";
-import Giris from "./pages/Giris.jsx";
-import Profil from "./pages/Profil.jsx";
-import Ders from "./pages/Ders.jsx";
+
+// AK-022: route lazy-load — ilk boyama hızı için yalnız Home + kabuk peşin yüklenir.
+// Hedef: girişsiz kullanıcı fiyatı <1sn görsün (TradingView hızlı-bakış trafiği).
+const Lab = lazy(() => import("./pages/Lab.jsx"));
+const Tarama = lazy(() => import("./pages/Tarama.jsx"));
+const Izleme = lazy(() => import("./pages/Izleme.jsx"));
+const Ogren = lazy(() => import("./pages/Ogren.jsx"));
+const Topluluk = lazy(() => import("./pages/Topluluk.jsx"));
+const Haberler = lazy(() => import("./pages/Haberler.jsx"));
+const Ben = lazy(() => import("./pages/Ben.jsx"));
+const Contributor = lazy(() => import("./pages/Contributor.jsx"));
+const Fiyatlandirma = lazy(() => import("./pages/Fiyatlandirma.jsx"));
+const Yasal = lazy(() => import("./pages/Yasal.jsx"));
+const Giris = lazy(() => import("./pages/Giris.jsx"));
+const Profil = lazy(() => import("./pages/Profil.jsx"));
+const Ders = lazy(() => import("./pages/Ders.jsx"));
 
 function Layout() {
   return (
     <>
       <Navbar />
-      <main><Outlet /></main>
+      <main>
+        <Suspense fallback={<div className="ak-pageload" aria-busy="true" />}>
+          <Outlet />
+        </Suspense>
+      </main>
       <Footer />
     </>
   );

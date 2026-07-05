@@ -1,8 +1,10 @@
 import { useState } from "react";
-import { Monitor, Smartphone, Target, Brain, Plus, ShieldAlert, BookLock, FlaskConical, Trash2 } from "lucide-react";
+import { useRef } from "react";
+import { Monitor, Smartphone, Target, Brain, Plus, ShieldAlert, BookLock, FlaskConical, Trash2, Upload } from "lucide-react";
 import { addTrade, listTrades, summary, TAGS, SETUPS } from "../lib/ledger.js";
 import { addSandbox, listSandbox, removeSandbox } from "../lib/sandbox.js";
 import { edgeRank } from "../lib/ranks.js";
+import { parseTradesCSV, dedupeKey } from "../lib/csv.js";
 import "../styles/ben.css";
 
 const TAGCOL = { "Plana uydu": "ok", "Erken çıkış": "warn", "FOMO": "bad", "İntikam": "bad" };
@@ -15,6 +17,43 @@ export default function Ben() {
   const [f, setF] = useState({ sym: "", setup: "FVG", dir: "Long", plan: 2, r: "", tag: "Plana uydu" });
   const [confirm, setConfirm] = useState(false);
   const [err, setErr] = useState("");
+  // CSV import (AK-025): önizleme -> hedef seçimi -> yaz
+  const fileRef = useRef(null);
+  const [imp, setImp] = useState(null); // { rows, errors, skipped }
+
+  function onCSV(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      const { rows, errors } = parseTradesCSV(rd.result);
+      // mükerrer eleme: hem dosya içi hem mevcut kayıtlara karşı
+      const seen = new Set([...listTrades(), ...listSandbox()].map(dedupeKey));
+      const fresh = [];
+      let skipped = 0;
+      for (const r of rows) {
+        const k = dedupeKey(r);
+        if (seen.has(k)) { skipped++; continue; }
+        seen.add(k); fresh.push(r);
+      }
+      setImp({ rows: fresh, errors, skipped });
+    };
+    rd.readAsText(file);
+  }
+
+  function doImport(target) {
+    if (!imp) return;
+    const add = target === "sicil" ? addTrade : addSandbox;
+    let ok = 0;
+    for (const r of imp.rows) { if (add(r)) ok++; }
+    setTrades(listTrades());
+    setSand(listSandbox());
+    setImp(null);
+    setMode(target);
+    setErr("");
+    alert(`${ok} işlem ${target === "sicil" ? "SİCİLE (kalıcı)" : "Sandbox'a"} aktarıldı.`);
+  }
 
   const s = summary(trades);
   const gap = s.n && s.avgPlan != null ? s.avgPlan - s.avgRealWin : 0;
@@ -81,6 +120,8 @@ export default function Ben() {
         <div className="ak-ben-formhead">
           {mode === "sicil" ? <><BookLock size={15} /> Sicile işle <em>kalıcı kayıt — silinemez, düzenlenemez</em></>
                             : <><FlaskConical size={15} /> Sandbox'a işle <em>pratik — istediğin gibi sil</em></>}
+          <button className="ak-csv-btn" onClick={() => fileRef.current?.click()} title="CSV formatı: sym,dir,plan,r[,tag,setup,d]"><Upload size={13} /> CSV içe aktar</button>
+          <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={onCSV} />
         </div>
         <div className="ak-ben-formrow">
           <input placeholder="Sembol (BTC…)" value={f.sym} onChange={e => setF({ ...f, sym: e.target.value })} />
@@ -139,6 +180,30 @@ export default function Ben() {
           </div>
         )}
       </div>
+
+      {/* CSV önizleme + hedef seçimi */}
+      {imp && (
+        <div className="ak-modal-veil" onClick={() => setImp(null)}>
+          <div className="ak-modal ak-imp" onClick={e => e.stopPropagation()}>
+            <Upload size={20} />
+            <h3>CSV önizleme</h3>
+            <p><b>{imp.rows.length}</b> geçerli işlem{imp.skipped > 0 && <> · {imp.skipped} mükerrer atlandı</>}{imp.errors.length > 0 && <> · <span style={{ color: "var(--bad)" }}>{imp.errors.length} hatalı satır</span></>}</p>
+            {imp.errors.length > 0 && <div className="ak-imp-errs">{imp.errors.slice(0, 4).map((e, i) => <div key={i}>{e}</div>)}{imp.errors.length > 4 && <div>… +{imp.errors.length - 4} daha</div>}</div>}
+            {imp.rows.length > 0 && (
+              <div className="ak-imp-prev">
+                {imp.rows.slice(0, 5).map((r, i) => <div key={i}><b>{r.sym}</b> {r.dir} · 1:{r.plan} · {r.r > 0 ? "+" : ""}{r.r}R · {r.tag}</div>)}
+                {imp.rows.length > 5 && <div>… +{imp.rows.length - 5} işlem daha</div>}
+              </div>
+            )}
+            <p className="warn">Sicil'e aktarılan {imp.rows.length} kayıt kalıcı olur — silinemez. Emin değilsen Sandbox'a al, incele.</p>
+            <div className="ak-modal-btns">
+              <button className="ak-btn ak-btn-ghost" onClick={() => setImp(null)}>Vazgeç</button>
+              <button className="ak-btn ak-btn-ghost" disabled={!imp.rows.length} onClick={() => doImport("sandbox")}>Sandbox'a al</button>
+              <button className="ak-btn ak-btn-primary" disabled={!imp.rows.length} onClick={() => doImport("sicil")}>Sicile işle (kalıcı)</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Kalıcılık onayı */}
       {confirm && (

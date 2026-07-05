@@ -246,4 +246,41 @@ test("contribRank eşikleri", () => {
   assert.equal(contribRank(5).next.name, "Katkıcı");
 });
 
+console.log("csv import (AK-025)");
+const { parseTradesCSV, dedupeKey } = await import("../src/lib/csv.js");
+test("geçerli CSV çözülür (sütun sırası serbest, ; de olur)", () => {
+  const { rows, errors } = parseTradesCSV("dir;sym;r;plan\nlong;btc;2;2\nSHORT;ETH;-1;3");
+  assert.equal(errors.length, 0);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].sym, "BTC");
+  assert.equal(rows[0].dir, "Long");
+  assert.equal(rows[1].dir, "Short");
+});
+test("eksik zorunlu sütun → hata, satır yok", () => {
+  const { rows, errors } = parseTradesCSV("sym,dir,plan\nBTC,Long,2");
+  assert.equal(rows.length, 0);
+  assert.ok(errors[0].includes("r"));
+});
+test("hatalı satırlar atlanır ama iyi satırlar yaşar", () => {
+  const { rows, errors } = parseTradesCSV("sym,dir,plan,r\nBTC,Long,2,2\n,Long,2,1\nETH,yukarı,2,1\nSOL,Short,0,1\nAVAX,Short,3,abc\nSOL,s,3,1.5");
+  assert.equal(rows.length, 2); // BTC + SOL(s)
+  assert.equal(errors.length, 4);
+});
+test("opsiyonel tag/setup/d işlenir, geçersizler varsayılana düşer", () => {
+  const { rows } = parseTradesCSV("sym,dir,plan,r,tag,setup,d\nBTC,Long,2,2,FOMO,FVG,2026-07-01\nETH,Long,2,1,Bilinmez,Uydurma,tarih-degil");
+  assert.equal(rows[0].tag, "FOMO");
+  assert.equal(rows[0].setup, "FVG");
+  assert.ok(rows[0].d.startsWith("2026-07-01"));
+  assert.equal(rows[1].tag, "Plana uydu");
+  assert.equal(rows[1].setup, "Diğer");
+  assert.equal(rows[1].d, null);
+});
+test("dedupeKey: aynı sembol+R+gün+yön aynı anahtar", () => {
+  const a = { sym: "BTC", r: 2, d: "2026-07-01T10:00:00Z", dir: "Long" };
+  const b = { sym: "BTC", r: 2, d: "2026-07-01T18:30:00Z", dir: "Long" };
+  const c = { sym: "BTC", r: 2, d: "2026-07-02T10:00:00Z", dir: "Long" };
+  assert.equal(dedupeKey(a), dedupeKey(b));
+  assert.notEqual(dedupeKey(a), dedupeKey(c));
+});
+
 console.log(`\n${pass} test geçti${process.exitCode ? " (HATALAR VAR)" : " — motor sağlam."}`);

@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { FlaskConical, Activity, Play, Pause, SkipBack, SkipForward, RotateCcw, ShieldCheck, ShieldAlert, Search, SlidersHorizontal, Monitor, Dices, Calculator } from "lucide-react";
+import { FlaskConical, Activity, Play, Pause, SkipBack, SkipForward, RotateCcw, ShieldCheck, ShieldAlert, Search, SlidersHorizontal, Monitor, Dices, Calculator, LayoutGrid, Target } from "lucide-react";
 import { getBars, MARKET_GROUPS, ALL_SYMBOLS, loadReal, isReal } from "../lib/data.js";
 import Chart from "../components/Chart.jsx";
 import Timeline from "../components/Timeline.jsx";
 import { runBacktest } from "../lib/backtest.js";
+import { PANELS, BASIC, loadLayout, saveLayout } from "../lib/layout.js";
 import "../styles/lab.css";
 import "../styles/chart.css";
 
@@ -31,7 +32,11 @@ export default function Lab() {
   const [rr, setRr] = useState(2);
   const [gap, setGap] = useState(0.6);   // gelişmiş: FVG boşluk eşiği (×ATR)
   const [cost, setCost] = useState(0.05); // gelişmiş: işlem maliyeti (R) — komisyon+slippage
-  const [adv, setAdv] = useState(false);
+  const [lay, setLay] = useState(loadLayout);   // AK-022: panel görünürlüğü (kalıcı)
+  const [viewOpen, setViewOpen] = useState(false);
+  const [indOpen, setIndOpen] = useState(false);   // AK-026: göstergeler menüsü (çipler açıkta değil)
+  function setPanel(k, v) { setLay(L => { const n = { ...L, [k]: v }; saveLayout(n); return n; }); }
+  function resetBasic() { setLay({ ...BASIC }); saveLayout({ ...BASIC }); setViewOpen(false); }
   const [concepts, setConcepts] = useState(["fvg"]);
   const [showEma, setShowEma] = useState(true);
   const [win, setWin] = useState({ s: 0.84, e: 1 });
@@ -41,7 +46,6 @@ export default function Lab() {
   const [playing, setPlaying] = useState(false);
   const [cursor, setCursor] = useState(0);
   const [speed, setSpeed] = useState(280);
-  const [risk, setRisk] = useState(false);
   const [rAcc, setRAcc] = useState(1000);
   const [rPct, setRPct] = useState(1);
   const [rEntry, setREntry] = useState(100);
@@ -69,6 +73,44 @@ export default function Lab() {
     if (ns) { setCursor(winStart + Math.min(30, Math.floor((winEnd - winStart) / 3))); setPlaying(false); }
     else setPlaying(false);
   }
+  // Replay TAHMİN MODU (pratik — sicile sayılmaz): duraklat, yön seç, replay çözer.
+  const [pred, setPred] = useState(null);            // aktif tahmin {dir, entry, stop, target, startIdx}
+  const [predMsg, setPredMsg] = useState(null);      // son sonuç mesajı
+  const [tally, setTally] = useState({ n: 0, win: 0, netR: 0 });
+
+  function makePred(dir) {
+    const i = chartRange.end;
+    const b = _bars[i];
+    // basit ATR14 (h-l ortalaması) — stop mesafesi
+    let a = 0, c = 0;
+    for (let j = Math.max(1, i - 13); j <= i; j++) { a += _bars[j].h - _bars[j].l; c++; }
+    const atr1 = a / Math.max(1, c);
+    const entry = b.c;
+    const stop = dir === 1 ? entry - atr1 : entry + atr1;
+    const target = dir === 1 ? entry + 2 * atr1 : entry - 2 * atr1; // sabit 1:2
+    setPred({ dir, entry, stop, target, startIdx: i });
+    setPredMsg(null);
+    setPlaying(true); // tahmin verildi, piyasa aksın
+  }
+
+  useEffect(() => {
+    if (!pred || cursor <= pred.startIdx) return;
+    const b = _bars[cursor];
+    if (!b) return;
+    const hitStop = pred.dir === 1 ? b.l <= pred.stop : b.h >= pred.stop;
+    const hitTarget = pred.dir === 1 ? b.h >= pred.target : b.l <= pred.target;
+    let out = null;
+    if (hitStop) out = -1;            // stop önce (motorla aynı tutucu varsayım)
+    else if (hitTarget) out = 2;
+    else if (cursor >= winEnd) { setPred(null); setPredMsg("Pencere bitti — tahmin sayılmadı."); return; }
+    if (out !== null) {
+      setTally(t => ({ n: t.n + 1, win: t.win + (out > 0 ? 1 : 0), netR: Math.round((t.netR + out) * 10) / 10 }));
+      setPredMsg(out > 0 ? "✓ Doğru — +2R" : "✗ Stop — −1R");
+      setPred(null);
+      setPlaying(false);
+    }
+  }, [cursor]); // eslint-disable-line
+
   const [res, setRes] = useState(null);
   const [busy, setBusy] = useState(false);
   const [, setDataV] = useState(0); // gerçek veri gelince yeniden çizim tetikler
@@ -119,14 +161,30 @@ export default function Lab() {
 
       <div className="ak-chartwrap">
         <div className="ak-cfilter">
-          <span className="ak-cflab">Otomatik işaretle:</span>
-          {CONCEPTS.map(([k,l]) => (
-            <button key={k} className={"ak-cchip" + (concepts.includes(k) ? " on" : "")}
-              onClick={() => setConcepts(c => c.includes(k) ? c.filter(z=>z!==k) : [...c,k])}>{l}</button>
-          ))}
-          <button className={"ak-cchip teal" + (showEma ? " on" : "")} onClick={() => setShowEma(v=>!v)}>EMA 20</button>
-          <button className={"ak-cchip teal" + (lanesOn ? " on" : "")} onClick={() => setLanesOn(v=>!v)}>Katmanlar</button>
+          <div className="ak-view">
+            <button className={"ak-cchip" + (indOpen ? " on" : "")} onClick={() => setIndOpen(v => !v)}><Activity size={12} /> Göstergeler{concepts.length ? ` (${concepts.length})` : ""}</button>
+            {indOpen && (
+              <div className="ak-view-menu">
+                {CONCEPTS.map(([k, l]) => (
+                  <label key={k}><input type="checkbox" checked={concepts.includes(k)} onChange={() => setConcepts(c => c.includes(k) ? c.filter(z => z !== k) : [...c, k])} /> {l}</label>
+                ))}
+                <label><input type="checkbox" checked={showEma} onChange={() => setShowEma(v => !v)} /> EMA 20</label>
+                <label><input type="checkbox" checked={lanesOn} onChange={() => setLanesOn(v => !v)} /> Zaman şeridi katmanları</label>
+              </div>
+            )}
+          </div>
           <button className={"ak-cchip teal" + (replay ? " on" : "")} onClick={toggleReplay}>Replay</button>
+          <div className="ak-view">
+            <button className={"ak-cchip" + (viewOpen ? " on" : "")} onClick={() => setViewOpen(v => !v)}><LayoutGrid size={12} /> Görünüm</button>
+            {viewOpen && (
+              <div className="ak-view-menu">
+                {PANELS.map(pn => (
+                  <label key={pn.k}><input type="checkbox" checked={!!lay[pn.k]} onChange={e => setPanel(pn.k, e.target.checked)} /> {pn.label}</label>
+                ))}
+                <button className="ak-view-basic" onClick={resetBasic}>Temel (varsayılana dön)</button>
+              </div>
+            )}
+          </div>
           <span className={"ak-datasrc" + (isReal(symbol) ? " real" : "")}>
             {isReal(symbol) ? "● GERÇEK VERİ · Binance 4H" : "○ örnek veri"}
           </span>
@@ -142,9 +200,29 @@ export default function Lab() {
             <button className="ak-rp txt" onClick={() => { setCursor(winStart + Math.min(30, Math.floor((winEnd - winStart) / 3))); setPlaying(false); }}><RotateCcw size={13} /> Sıfırla</button>
           </div>
         )}
-        <Timeline bars={getBars(symbol)} win={win} onChange={setWin}
+        {replay && (
+          <div className="ak-pred">
+            <span className="ak-pred-t"><Target size={13} /> Tahmin modu <em>pratik — sicile sayılmaz · sabit 1:2</em></span>
+            {!pred ? (
+              <>
+                <button className="ak-pred-btn long" onClick={() => makePred(1)}>Long</button>
+                <button className="ak-pred-btn short" onClick={() => makePred(-1)}>Short</button>
+              </>
+            ) : (
+              <span className="ak-pred-live">{pred.dir === 1 ? "LONG" : "SHORT"} @ {pred.entry.toFixed(2)} · SL {pred.stop.toFixed(2)} · TP {pred.target.toFixed(2)} — sürüyor…</span>
+            )}
+            {predMsg && <span className={"ak-pred-msg" + (predMsg.startsWith("✓") ? " ok" : "")}>{predMsg}</span>}
+            {tally.n > 0 && <span className="ak-pred-score">{tally.n} tahmin · {tally.win} isabet · {tally.netR >= 0 ? "+" : ""}{tally.netR}R</span>}
+          </div>
+        )}
+        <div className="ak-ranges">
+          {[["14G", 84], ["1A", 180], ["3A", 540], ["Tümü", 900]].map(([lb, nb]) => (
+            <button key={lb} onClick={() => { setWin({ s: Math.max(0, 1 - nb / 900), e: 1 }); }}>{lb}</button>
+          ))}
+        </div>
+        {lay.timeline && <Timeline bars={getBars(symbol)} win={win} onChange={setWin}
           lanes={lanes} lanesOn={lanesOn}
-          onToggleLane={(k) => setLanes(l => l.includes(k) ? l.filter(z => z !== k) : [...l, k])} />
+          onToggleLane={(k) => setLanes(l => l.includes(k) ? l.filter(z => z !== k) : [...l, k])} />}
       </div>
 
       <div className="ak-lab-grid">
@@ -185,10 +263,10 @@ export default function Lab() {
           </div>
 
           {/* Gelişmiş: kendi sistemini uzat */}
-          <button className="ak-adv-toggle" onClick={() => setAdv((v) => !v)}>
-            <SlidersHorizontal size={14} /> Kendi sistemin (gelişmiş) {adv ? "▲" : "▼"}
+          <button className="ak-adv-toggle" onClick={() => setPanel("adv", !lay.adv)}>
+            <SlidersHorizontal size={14} /> Kendi sistemin (gelişmiş) {lay.adv ? "▲" : "▼"}
           </button>
-          {adv && (
+          {lay.adv && (
             <div className="ak-adv">
               <div className="ak-row"><label>FVG boşluk eşiği (×ATR)</label>
                 <div className="ak-rr"><input type="number" min="0.2" max="1.2" step="0.1" value={gap} onChange={(e) => { setGap(e.target.value); setRes(null); }} /></div>
@@ -204,10 +282,10 @@ export default function Lab() {
             <Play size={16} /> {busy ? "Çalışıyor…" : "Backtest çalıştır"}
           </button>
 
-          <button className="ak-adv-toggle" onClick={() => setRisk(v => !v)}>
-            <Calculator size={14} /> Pozisyon & risk hesaplayıcı {risk ? "▲" : "▼"}
+          <button className="ak-adv-toggle" onClick={() => setPanel("risk", !lay.risk)}>
+            <Calculator size={14} /> Pozisyon & risk hesaplayıcı {lay.risk ? "▲" : "▼"}
           </button>
-          {risk && (() => {
+          {lay.risk && (() => {
             const acc = Number(rAcc) || 0, rp = Number(rPct) || 0, en = Number(rEntry) || 0, st = Number(rStop) || 0;
             const perUnit = Math.abs(en - st);
             const riskAmt = acc * rp / 100;
@@ -251,7 +329,7 @@ export default function Lab() {
                   {res.verdict.good ? `Anlamlı edge — t = ${res.tStat}` : `Edge yok — t = ${res.tStat}`}</div>
                 <div className="vd">{res.verdict.reason} Rastgele giriş kontrol %95 eşiği: t = {res.controlP95}.{res.verdict.good && " Yine de canlı forward test şart."}</div>
               </div>
-              {res.mc && (
+              {lay.mc && res.mc && (
                 <div className="ak-mc">
                   <div className="ak-mc-head"><Dices size={14} /> İleri simülasyon (1000× karıştırma) — tek eğriye güvenme</div>
                   <div className="ak-mc-grid">

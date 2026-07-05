@@ -79,3 +79,33 @@
 /* Veri kaynağı rozeti (AK-004b) */
 .ak-datasrc{margin-left:auto;font-family:'JetBrains Mono';font-size:10.5px;letter-spacing:.4px;color:#647974;border:1px solid var(--line);border-radius:99px;padding:5px 11px;white-space:nowrap;}
 .ak-datasrc.real{color:var(--good);border-color:#2b5548;background:rgba(79,201,166,.07);}
+
+/* Görünüm menüsü (AK-022) */
+.ak-view{position:relative;}
+.ak-view .ak-cchip{display:inline-flex;align-items:center;gap:5px;}
+.ak-view-menu{position:absolute;top:110%;left:0;z-index:30;background:#121C1A;border:1px solid var(--line);border-radius:11px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;min-width:230px;box-shadow:0 8px 24px rgba(0,0,0,.4);}
+.ak-view-menu label{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--txt);cursor:pointer;}
+.ak-view-menu input{accent-color:var(--gold);}
+.ak-view-basic{margin-top:4px;background:transparent;border:1px solid var(--line);border-radius:8px;color:var(--teal-soft);padding:7px;font-size:12px;cursor:pointer;}
+.ak-view-basic:hover{border-color:var(--teal-deep);}
+
+/* Sayfa yükleme (lazy-load fallback) */
+.ak-pageload{min-height:50vh;}
+
+/* Replay tahmin modu */
+.ak-pred{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 12px;border-top:1px solid var(--line);font-size:12.5px;}
+.ak-pred-t{display:inline-flex;align-items:center;gap:6px;color:var(--txt);font-family:'Chakra Petch';font-size:12.5px;}
+.ak-pred-t svg{color:var(--gold);}
+.ak-pred-t em{font-style:normal;font-family:'JetBrains Mono';font-size:10px;color:#647974;}
+.ak-pred-btn{border:1px solid var(--line);border-radius:8px;padding:6px 14px;cursor:pointer;font-size:12.5px;background:transparent;}
+.ak-pred-btn.long{color:var(--good);border-color:#2b5548;} .ak-pred-btn.long:hover{background:rgba(79,201,166,.08);}
+.ak-pred-btn.short{color:var(--bad);border-color:#5a3030;} .ak-pred-btn.short:hover{background:rgba(224,110,110,.08);}
+.ak-pred-live{font-family:'JetBrains Mono';font-size:11px;color:var(--teal-soft);}
+.ak-pred-msg{font-family:'JetBrains Mono';font-size:11.5px;color:var(--bad);}
+.ak-pred-msg.ok{color:var(--good);}
+.ak-pred-score{margin-left:auto;font-family:'JetBrains Mono';font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:4px 10px;}
+
+/* AK-026: hızlı aralık butonları (TV alt şeridi tarzı) */
+.ak-ranges{display:flex;gap:4px;justify-content:flex-end;padding:5px 8px 0;}
+.ak-ranges button{background:transparent;border:none;color:#647974;font-family:'JetBrains Mono';font-size:10.5px;padding:4px 9px;border-radius:6px;cursor:pointer;}
+.ak-ranges button:hover{color:var(--teal-soft);background:#16211F;}

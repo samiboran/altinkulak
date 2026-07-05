@@ -65,3 +65,14 @@
 .ak-rp-speed button{border:none;background:transparent;color:var(--muted);padding:5px 9px;border-radius:6px;font-family:'JetBrains Mono';font-size:11.5px;cursor:pointer;}
 .ak-rp-speed button.on{background:var(--panel2);color:var(--teal-soft);}
 @media(max-width:560px){ .ak-rp.txt{display:none;} }
+
+/* AK-026: crosshair + künye + son fiyat */
+.ak-chart{cursor:crosshair;}
+.ak-c-cross line{stroke:#4a6560;stroke-width:.7;stroke-dasharray:3 3;}
+.ak-c-crossp{fill:#22332F;}
+.ak-c-crosspt{fill:#CFE7E0;font-size:10px;font-family:'JetBrains Mono';}
+.ak-c-lastp rect{fill:#2b5548;}
+.ak-c-lastp.dn rect{fill:#5a3030;}
+.ak-c-lastp text{fill:#EAF4F1;font-size:10px;font-family:'JetBrains Mono';}
+.ak-c-legend text{font-size:10.5px;font-family:'JetBrains Mono';fill:var(--good);letter-spacing:.2px;}
+.ak-c-legend.dn text{fill:var(--bad);}
