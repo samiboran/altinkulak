@@ -129,12 +129,13 @@ test("parseKlines: Binance formatını motor formatına çevirir", () => {
   ];
   const bars = parseKlines(raw);
   assert.equal(bars.length, 2);
-  assert.deepEqual(Object.keys(bars[0]).sort(), ["c", "h", "l", "o", "t", "time"]);
+  assert.deepEqual(Object.keys(bars[0]).sort(), ["c", "h", "l", "o", "t", "time", "v"]);
   assert.equal(bars[0].t, 0);
   assert.equal(bars[1].t, 1);
   assert.equal(bars[0].o, 61000.1);
   assert.equal(bars[1].c, 61850.3);
   assert.ok(bars.every(b => typeof b.o === "number" && b.h >= b.l));
+  assert.equal(bars[0].v, 123.4); // hacim korunur (AK-030)
 });
 const aselsReal = await loadReal("ASELS");
 const rndReal = await loadReal("RND");
@@ -281,6 +282,24 @@ test("dedupeKey: aynı sembol+R+gün+yön aynı anahtar", () => {
   const c = { sym: "BTC", r: 2, d: "2026-07-02T10:00:00Z", dir: "Long" };
   assert.equal(dedupeKey(a), dedupeKey(b));
   assert.notEqual(dedupeKey(a), dedupeKey(c));
+});
+
+console.log("stop genişliği (stopMult)");
+test("stopMult=1 varsayılan: eski sonuçla birebir aynı", () => {
+  const a = runBacktest(getBars("SOL"), { rr: 2 }).tStat;
+  const b = runBacktest(getBars("SOL"), { rr: 2, stopMult: 1 }).tStat;
+  assert.equal(a, b);
+});
+test("geniş stop farklı sonuç üretir ve motor çökmez", () => {
+  const w = runBacktest(getBars("SOL"), { rr: 2, stopMult: 2 });
+  const n = runBacktest(getBars("SOL"), { rr: 2, stopMult: 1 });
+  assert.ok(w && Number.isFinite(w.tStat));
+  assert.notEqual(w.tStat, n.tStat); // aynıysa parametre bağlanmamış demektir
+});
+test("geniş stop → stoplanma oranı düşer (kazanç oranı artar ya da eşit)", () => {
+  const w = runBacktest(getBars("SOL"), { rr: 2, stopMult: 2 });
+  const n = runBacktest(getBars("SOL"), { rr: 2, stopMult: 1 });
+  assert.ok(w.winRate >= n.winRate - 2, `geniş ${w.winRate}% < dar ${n.winRate}%`);
 });
 
 console.log(`\n${pass} test geçti${process.exitCode ? " (HATALAR VAR)" : " — motor sağlam."}`);

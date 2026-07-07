@@ -269,3 +269,33 @@ Kimlik FVG değil, test. Konu havuzu dönüşümlü: SMC setup'ları · klasik i
 5. Kendi Mod B'mizin dürüst raporu — kazandığımız VE kaybettiğimiz dönemlerle ("kendimizi de test ediyoruz" güveni).
 
 Ritim: haftada 2-3, otomatiksiz. Ölçüt: takipçi değil, siteye gelen davet-istekli kullanıcı.
+
+## AK-027 ✅ Fiyat okunurluğu (gerçek-veri sonrası)
+- Akıllı fiyat formatı `fmtP`: ≥10.000 → 104,230 · ≥1.000 → 0 ondalık · ≥100 → 1 · ≥1 → 2 · <1 → 4. Eksen/crosshair/son-fiyat/künye hepsinde. Sağ eksen genişliği etikete göre otomatik (BTC 6-hane sığar).
+- Grid 5→6 çizgi. Aralık şeridine − / + yakınlaştırma (sağ uç sabit, min ~36 bar).
+- 🏛️ TARİHE NOT — İLK GERÇEK ÖLÇÜM (6 Tem 2026, FVG 1:3, 0.05R maliyet, Binance 4H): BTC t=−0.5 EDGE YOK · SOL t=1.9 eşik altı · ETH t=2.5 sınırda (Sıkı mod eler) · RND t=0.3 ✓. Sentetik gömülü edge'ler kurguydu; gerçek piyasa çıplak FVG'yi reddetti — SweepLab bulgusuyla tutarlı (edge filtreyle var). İlk falsifikasyon içeriğinin malzemesi.
+
+## AK-028 ✅ Stop genişliği parametresi (kullanıcı hipotezi → test edilebilir)
+- Çıkış noktası: Sami'nin "SL çok sıkı, geniş olsa az stoplanırız" hissi. Cevap tartışma değil PARAMETRE: gelişmiş panelde "Stop genişliği (×ATR)" (0.5–3, varsayılan 1 = eski davranış birebir).
+- R tanımı korunur (risk = stopMult×ATR; kayıp −1R, hedef rr·R) → geniş stop = az stoplanma AMA daha uzak TP; net etkiyi t-stat söyler. **Kontrol grubu da aynı stopMult'u kullanır** (costR'deki adil-kıyas ilkesi). +3 test (50 oldu). Ayrıca not: risk hesaplayıcıdaki %1 stop mesafesi değil POZİSYON BOYUTU — kullanıcı karışıklığı görüldü, ileride araca açıklama satırı eklenebilir.
+
+## AK-028b ✅ Grafik etkileşimleri (standart beklentiler)
+- **Tekerlek zoom** — imlecin durduğu bara odaklı (native wheel listener, passive:false; React onWheel preventDefault edemez, bilinen tuzak). Min 20 bar.
+- **Alan-seç zoom** — basılı tut + sürükle → kesikli turkuaz seçim kutusu → bırakınca o aralığa zoom. **Çift tık** = tüm seri.
+- Hepsi Lab'ın `win` state'i üzerinden — Timeline/aralık butonlarıyla uyumlu.
+
+## AK-029 📋 KARAR: Lightweight Charts göçü (yapılmadı — planlandı)
+- Doğru uzun-vade: TradingView'un açık kaynak **lightweight-charts** kütüphanesi (eksen sürükleme, kinetik pan, dokunmatik dahil her standart etkileşim hazır).
+- NEDEN ŞİMDİ DEĞİL: grafiğimizin değeri 8 özel katmanda (FVG/OB/BOS/Fib+OTE/OF şeridi/işlem işaretleri/SL-TP/mitigation) — göç bunların kütüphane primitive'leriyle yeniden yazımı demek. Kör oturumda değil, Sami'nin gözü önünde adım adım (önce çıplak mum+katman-katman taşıma) yapılacak. O güne dek SVG grafik + AK-028b etkileşimleri yeterli.
+- Dikey eksen sürükleyerek sıkıştırma/açma da bu göçün kapsamında.
+
+## AK-030 ✅ Grafik standart taban paketi ("TV'den gelen kullanıcıya eksik verme" ilkesi)
+Sami kararı: kullanıcılar TradingView'dan geliyor, taban çizgisinin altı kabul edilemez. Eklenenler:
+- **Pan (sürükle-kaydır)** artık varsayılan sürükleme — TV standardı. Alan-seç zoom **Shift+sürükle**'ye taşındı. Çift tık = tümü.
+- **Dikey eksen ölçeği**: sağ fiyat ekseni üzerinde yukarı/aşağı sürükle → fiyat aralığı açılır/sıkışır (vScale 0.2–6); eksene çift tık = oto-sığdır. Sembol değişince sıfırlanır.
+- **Zaman ekseni etiketleri** (altta 5 tarih; gerçek veride "06 Tem", sentetikte bar no) — daha önce HİÇ yoktu.
+- **Crosshair tarih balonu** alt eksende (fiyat balonunun zaman ikizi).
+- **Hacim çubukları**: parseKlines artık v alanını taşıyor (test güncellendi); gerçek Binance verisinde alt bantta yarı saydam yeşil/kırmızı. Sentetikte gizli. NOT: localStorage bar önbelleği 1 saat TTL'li — eski önbellekte v yok, hacim ilk yenilemede görünür.
+- **Son fiyat çizgisi** (kesikli, yöne göre renkli) balona ek.
+- **Log ölçek** anahtarı aralık şeridinde ("Log").
+Bilinçli dışarıda: çizim araçları, alarm, kinetik/dokunmatik pan → AK-029 (lightweight-charts göçü) kapsamı.

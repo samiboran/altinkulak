@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { findFVG, findOrderBlocks, findBOS, ema, findMitigation, orderFlowArr, findFib } from "../lib/detectors.js";
 
 // Canlı mum grafiği + kavram katmanları. Tümü client-side (SVG).
 // props: bars, concepts(array), showEma(bool), maxView(son N bar)
-export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxView = 120, trades = null, range = null }) {
+export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false }) {
   const hasR = range && range.start != null;
   const view = useMemo(() => hasR ? bars.slice(range.start, range.end + 1) : bars.slice(-maxView), [bars, maxView, hasR, range]);
   const off = hasR ? range.start : bars.length - view.length; // global -> view kaydırma
@@ -17,10 +17,32 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
   const ofArr = useMemo(() => concepts.includes("of") ? orderFlowArr(bars) : null, [bars, concepts]);
   const fib = useMemo(() => concepts.includes("fib") ? findFib(view, view.length) : null, [view, concepts]);
 
-  const W = 1000, H = 340, pL = 6, pR = 52, pT = 12, pB = 16;
+  const W = 1000, H = 340, pL = 6, pT = 12, pB = 26;
   const lo = Math.min(...view.map(b => b.l)), hi = Math.max(...view.map(b => b.h)), rg = hi - lo || 1;
+  // Fiyat büyüklüğüne göre ondalık (AK-027): 104,230 · 1,043 · 84.2 · 1.04 · 0.0432
+  const fmtP = (p) => {
+    if (!Number.isFinite(p)) return "";
+    const a = Math.abs(p);
+    if (a >= 10000) return Math.round(p).toLocaleString("en-US");
+    if (a >= 1000) return p.toFixed(0);
+    if (a >= 100) return p.toFixed(1);
+    if (a >= 1) return p.toFixed(2);
+    return p.toFixed(4);
+  };
+  const pR = Math.max(52, fmtP(hi).length * 7.2 + 10); // etiket sığacak kadar eksen
   const x = i => pL + (i / (view.length - 1)) * (W - pL - pR);
-  const y = p => pT + (1 - (p - lo) / rg) * (H - pT - pB);
+  // Dikey ölçek (AK-030): eksen sürüklenince vScale değişir (1 = otomatik sığdır). Log ölçek destekli.
+  const [vScale, setVScale] = useState(1);
+  useEffect(() => { setVScale(1); }, [bars]); // sembol/veri değişince sıfırla
+  const mid = (lo + hi) / 2, half = (rg / 2) * vScale;
+  const elo = Math.max(logScale ? 1e-9 : -Infinity, mid - half), ehi = mid + half, erg = ehi - elo || 1;
+  const lnLo = Math.log(Math.max(1e-9, elo)), lnHi = Math.log(Math.max(elo * 1.0001, ehi));
+  const y = p => logScale
+    ? pT + (1 - (Math.log(Math.max(1e-9, p)) - lnLo) / (lnHi - lnLo)) * (H - pT - pB)
+    : pT + (1 - (p - elo) / erg) * (H - pT - pB);
+  const priceAt = py => logScale
+    ? Math.exp(lnHi - ((py - pT) / (H - pT - pB)) * (lnHi - lnLo))
+    : ehi - ((py - pT) / (H - pT - pB)) * erg;
   const step = (W - pL - pR) / view.length, bw = Math.max(1.6, step * 0.62);
   const gi = i => i - off; // global index -> view x index
 
@@ -32,9 +54,76 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
     const py = ((e.clientY - r.top) / r.height) * H;
     if (px < pL || px > W - pR || py < pT || py > H - pB) { setHov(null); return; }
     const i = Math.max(0, Math.min(view.length - 1, Math.round(((px - pL) / (W - pL - pR)) * (view.length - 1))));
-    const price = hi - ((py - pT) / (H - pT - pB)) * rg;
+    const price = priceAt(py);
     setHov({ i, px: x(i), py, price });
   }
+  // AK-028b: imleç odaklı tekerlek zoom (native listener; passive:false şart)
+  const svgRef = useRef(null);
+  const zoomRef = useRef(null);
+  zoomRef.current = { off, len: view.length, total: bars.length, hov };
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el || !onRangeSelect) return;
+    const onWheel = (e) => {
+      e.preventDefault();
+      const { off, len, total, hov } = zoomRef.current;
+      const anchorFrac = hov ? hov.i / Math.max(1, len - 1) : 0.5;
+      const anchorG = off + Math.round(anchorFrac * (len - 1));
+      const span = Math.round(Math.min(total, Math.max(20, len * (e.deltaY > 0 ? 1.25 : 0.8))));
+      let gs = Math.round(anchorG - anchorFrac * span);
+      gs = Math.max(0, Math.min(total - span, gs));
+      onRangeSelect(gs, gs + span - 1);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [onRangeSelect]);
+
+  // AK-030: sürükleme modları — varsayılan PAN (TV standardı), Shift+sürükle = alan seç,
+  // sağ eksen üzerinde sürükle = dikey ölçek (fiyatı aç/kapa). Çift tık: grafikte tümü, eksende oto-sığdır.
+  const [sel, setSel] = useState(null); // {a,b} view index (Shift seçimi)
+  const dragRef = useRef(null);
+  function onDown(e) {
+    const r = e.currentTarget.getBoundingClientRect();
+    const px = ((e.clientX - r.left) / r.width) * W;
+    if (px > W - pR) { dragRef.current = { mode: "axis", y0: e.clientY, v0: vScale }; return; }
+    if (e.shiftKey && hov) { setSel({ a: hov.i, b: hov.i }); dragRef.current = { mode: "sel" }; return; }
+    dragRef.current = { mode: "pan", x0: e.clientX, off0: off, len0: view.length, pxPerBar: r.width * ((W - pL - pR) / W) / view.length };
+  }
+  function onDrag(e) {
+    const d = dragRef.current;
+    if (!d) return;
+    if (d.mode === "axis") {
+      const dy = e.clientY - d.y0;
+      setVScale(Math.min(6, Math.max(0.2, d.v0 * Math.exp(dy * 0.004))));
+    } else if (d.mode === "pan" && onRangeSelect) {
+      const db = Math.round((d.x0 - e.clientX) / Math.max(0.5, d.pxPerBar));
+      let gs = Math.max(0, Math.min(bars.length - d.len0, d.off0 + db));
+      onRangeSelect(gs, gs + d.len0 - 1);
+    }
+  }
+  function onUpSel() {
+    const d = dragRef.current;
+    dragRef.current = null;
+    if (d?.mode === "sel" && sel && onRangeSelect && Math.abs(sel.b - sel.a) >= 3) {
+      const gs = off + Math.min(sel.a, sel.b), ge = off + Math.max(sel.a, sel.b);
+      onRangeSelect(gs, ge);
+    }
+    setSel(null);
+  }
+  function onDbl(e) {
+    const r = e.currentTarget.getBoundingClientRect();
+    const px = ((e.clientX - r.left) / r.width) * W;
+    if (px > W - pR) { setVScale(1); return; }
+    setVScale(1);
+    onRangeSelect && onRangeSelect(null);
+  }
+
+  const fmtT = (b, gi_) => b?.time
+    ? new Date(b.time).toLocaleDateString("tr-TR", { day: "2-digit", month: "short" })
+    : "#" + gi_;
+  const hasVol = view.some(b => b.v > 0);
+  const maxV = hasVol ? Math.max(...view.map(b => b.v || 0)) : 1;
+
   const legendBar = hov ? view[hov.i] : view[view.length - 1];
   const prevBar = hov ? view[Math.max(0, hov.i - 1)] : view[Math.max(0, view.length - 2)];
   const chg = prevBar && prevBar.c ? ((legendBar.c - prevBar.c) / prevBar.c) * 100 : 0;
@@ -45,10 +134,22 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
   const lastTrade = viewTrades.length ? viewTrades[viewTrades.length - 1] : null;
 
   return (
-    <svg className="ak-chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Fiyat grafiği" onMouseMove={onMove} onMouseLeave={() => setHov(null)}>
+    <svg ref={svgRef} className="ak-chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Fiyat grafiği" onMouseMove={(e) => { onMove(e); onDrag(e); if (dragRef.current?.mode === "sel" && hov) setSel(sl => sl && ({ ...sl, b: hov.i })); }} onMouseLeave={() => { setHov(null); setSel(null); dragRef.current = null; }} onMouseDown={onDown} onMouseUp={onUpSel} onDoubleClick={onDbl}>
+      {[0, .2, .4, .6, .8, 1].map((f, i) => {
+        const py = pT + f * (H - pT - pB), pv = logScale ? Math.exp(lnHi - f * (lnHi - lnLo)) : ehi - f * erg;
+        return <g key={i}><line x1={pL} y1={py} x2={W - pR} y2={py} className="ak-c-grid" /><text x={W - pR + 5} y={py + 3} className="ak-c-axis">{fmtP(pv)}</text></g>;
+      })}
+
+      {/* Zaman ekseni etiketleri (AK-030) */}
       {[0, .25, .5, .75, 1].map((f, i) => {
-        const py = pT + f * (H - pT - pB), pv = hi - f * rg;
-        return <g key={i}><line x1={pL} y1={py} x2={W - pR} y2={py} className="ak-c-grid" /><text x={W - pR + 5} y={py + 3} className="ak-c-axis">{pv.toFixed(1)}</text></g>;
+        const vi = Math.round(f * (view.length - 1));
+        return <text key={"tx" + i} x={x(vi)} y={H - 6} className="ak-c-time" textAnchor={f === 0 ? "start" : f === 1 ? "end" : "middle"}>{fmtT(view[vi], off + vi)}</text>;
+      })}
+
+      {/* Hacim çubukları (gerçek veri) */}
+      {hasVol && view.map((b, i) => {
+        const vh = ((b.v || 0) / maxV) * (H - pT - pB) * 0.16;
+        return <rect key={"v" + i} x={x(i) - bw / 2} y={H - pB - vh} width={bw} height={Math.max(0.5, vh)} className={b.c >= b.o ? "ak-c-vol up" : "ak-c-vol dn"} />;
       })}
 
       {fvgs.map((g, k) => <rect key={"f" + k} x={x(gi(g.i))} y={y(g.hi)} width={Math.min(6, view.length - gi(g.i)) * step} height={Math.max(2, y(g.lo) - y(g.hi))} className={g.dir === 1 ? "ak-c-fvg up" : "ak-c-fvg dn"} />)}
@@ -101,24 +202,32 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
         <line x1={x(gi(lastTrade.entryIdx))} y1={y(lastTrade.stop)} x2={W - pR} y2={y(lastTrade.stop)} className="ak-c-sl" />
         <text x={x(gi(lastTrade.entryIdx)) + 3} y={y(lastTrade.stop) + 11} className="ak-c-sllab">SL</text>
       </g>}
-      {/* Son fiyat balonu (sağ eksen) */}
+      {/* Son fiyat çizgisi + balonu (sağ eksen) */}
+      <line x1={pL} y1={y(lastC)} x2={W - pR} y2={y(lastC)} className={view[view.length - 1].c >= view[view.length - 1].o ? "ak-c-lastline up" : "ak-c-lastline dn"} />
       <g className={view[view.length - 1].c >= view[view.length - 1].o ? "ak-c-lastp up" : "ak-c-lastp dn"}>
         <rect x={W - pR + 1} y={y(lastC) - 8} width={pR - 2} height={16} rx={3} />
-        <text x={W - pR + 5} y={y(lastC) + 4}>{lastC.toFixed(1)}</text>
+        <text x={W - pR + 5} y={y(lastC) + 4}>{fmtP(lastC)}</text>
       </g>
+
+      {/* Alan seçimi */}
+      {sel && Math.abs(sel.b - sel.a) >= 1 && (
+        <rect className="ak-c-sel" x={x(Math.min(sel.a, sel.b))} y={pT} width={Math.abs(x(sel.b) - x(sel.a))} height={H - pT - pB} />
+      )}
 
       {/* Crosshair */}
       {hov && <g className="ak-c-cross">
         <line x1={hov.px} y1={pT} x2={hov.px} y2={H - pB} />
         <line x1={pL} y1={hov.py} x2={W - pR} y2={hov.py} />
         <rect x={W - pR + 1} y={hov.py - 8} width={pR - 2} height={16} rx={3} className="ak-c-crossp" />
-        <text x={W - pR + 5} y={hov.py + 4} className="ak-c-crosspt">{hov.price.toFixed(1)}</text>
+        <text x={W - pR + 5} y={hov.py + 4} className="ak-c-crosspt">{fmtP(hov.price)}</text>
+        <rect x={hov.px - 26} y={H - pB + 2} width={52} height={15} rx={3} className="ak-c-crossp" />
+        <text x={hov.px} y={H - pB + 13} textAnchor="middle" className="ak-c-crosspt">{fmtT(view[hov.i], off + hov.i)}</text>
       </g>}
 
       {/* OHLC künyesi (TV tarzı, kompakt) */}
       <g className={"ak-c-legend " + (legendBar.c >= legendBar.o ? "up" : "dn")}>
         <text x={pL + 4} y={pT + 10}>
-          O {legendBar.o.toFixed(1)}  Y {legendBar.h.toFixed(1)}  D {legendBar.l.toFixed(1)}  K {legendBar.c.toFixed(1)}  {chg >= 0 ? "+" : ""}{chg.toFixed(2)}%
+          O {fmtP(legendBar.o)}  Y {fmtP(legendBar.h)}  D {fmtP(legendBar.l)}  K {fmtP(legendBar.c)}  {chg >= 0 ? "+" : ""}{chg.toFixed(2)}%
         </text>
       </g>
     </svg>

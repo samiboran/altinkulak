@@ -76,3 +76,8 @@
 .ak-c-lastp text{fill:#EAF4F1;font-size:10px;font-family:'JetBrains Mono';}
 .ak-c-legend text{font-size:10.5px;font-family:'JetBrains Mono';fill:var(--good);letter-spacing:.2px;}
 .ak-c-legend.dn text{fill:var(--bad);}
+.ak-c-sel{fill:rgba(79,201,166,.10);stroke:var(--teal-deep);stroke-width:.6;stroke-dasharray:4 3;}
+.ak-c-time{fill:#647974;font-size:9.5px;font-family:'JetBrains Mono';}
+.ak-c-vol{opacity:.28;} .ak-c-vol.up{fill:var(--good);} .ak-c-vol.dn{fill:var(--bad);}
+.ak-c-lastline{stroke-width:.6;stroke-dasharray:2 3;opacity:.6;}
+.ak-c-lastline.up{stroke:var(--good);} .ak-c-lastline.dn{stroke:var(--bad);}

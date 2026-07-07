@@ -55,7 +55,9 @@ function findFVGs(bars, atrArr, maxGapATR = 0.5) {
 
 // Bir FVG sonrasi: fiyat bosluga geri doner (retest), giris; stop/target R:R ile.
 // LOOKAHEAD-BIAS ENGELI: giris ve sonuc yalnizca i. bardan SONRAKI barlarla hesaplanir.
-function simulate(bars, atrArr, gaps, rr = 3, lookahead = 40) {
+// stopMult: stop genişliği çarpanı (×ATR). Geniş stop = az stoplanma ama hedef de uzar
+// (R tanımı korunur: risk = stopMult×ATR; kayıp −1R, hedef +rr·R). Kullanıcı hipotezi test edebilsin diye parametre.
+function simulate(bars, atrArr, gaps, rr = 3, lookahead = 40, stopMult = 1) {
   const trades = [];
   for (const g of gaps) {
     const entryZone = (g.top + g.bot) / 2;
@@ -67,7 +69,7 @@ function simulate(bars, atrArr, gaps, rr = 3, lookahead = 40) {
       if (touch) { entered = true; entryIdx = j; entryPx = entryZone; break; }
     }
     if (!entered) continue;
-    const risk = a; // 1R = ~1 ATR
+    const risk = a * stopMult; // 1R = stopMult × ATR
     const stop = g.dir === 1 ? entryPx - risk : entryPx + risk;
     const target = g.dir === 1 ? entryPx + risk * rr : entryPx - risk * rr;
     let outcome = null;
@@ -121,7 +123,7 @@ function mulberry32(seed){return function(){seed|=0;seed=(seed+0x6D2B79F5)|0;let
 // Rastgele giris kontrol grubu: ayni R:R ve stop mantigiyla, rastgele bar/yonde
 // girisler uret, t-stat dagiliminin %95'ini dondur. Gercek strateji bunu asmali.
 // costR: islem basina maliyet (R) — kontrol da AYNI maliyeti oder (adil kiyas).
-function randomEntryControl(bars, atrArr, rr, tradeCount, lookahead, runs = 300, seed = 777, costR = 0) {
+function randomEntryControl(bars, atrArr, rr, tradeCount, lookahead, runs = 300, seed = 777, costR = 0, stopMult = 1) {
   if (tradeCount < 2) return { p95: 0, meanT: 0 };
   const rnd = mulberry32(seed);
   const valid = [];
@@ -135,8 +137,9 @@ function randomEntryControl(bars, atrArr, rr, tradeCount, lookahead, runs = 300,
       const dir = rnd() < 0.5 ? 1 : -1;
       const a = atrArr[idx];
       const entry = bars[idx].c;
-      const stop = dir === 1 ? entry - a : entry + a;
-      const target = dir === 1 ? entry + a * rr : entry - a * rr;
+      const risk0 = a * stopMult;
+      const stop = dir === 1 ? entry - risk0 : entry + risk0;
+      const target = dir === 1 ? entry + risk0 * rr : entry - risk0 * rr;
       let outcome = null;
       for (let j = idx + 1; j < Math.min(idx + lookahead, bars.length); j++) {
         const hitStop = dir === 1 ? bars[j].l <= stop : bars[j].h >= stop;
@@ -179,7 +182,7 @@ function filterGaps(gaps, bars, atrArr, concepts) {
 // Ana giris noktasi
 // costR: islem basina gidis-donus maliyet, R cinsinden (komisyon + slippage).
 // Orn. 0.05 = riskin %5'i. Kazanc rr-costR, kayip -1-costR olur; kontrol grubu da ayni maliyeti oder.
-export function runBacktest(bars, { rr = 3, maxGapATR = 0.5, concepts = ["fvg"], costR = 0 } = {}) {
+export function runBacktest(bars, { rr = 3, maxGapATR = 0.5, concepts = ["fvg"], costR = 0, stopMult = 1 } = {}) {
   if (!bars || bars.length < 60) return null;
   const atrArr = atr(bars);
   const gaps = filterGaps(findFVGs(bars, atrArr, maxGapATR), bars, atrArr, concepts);
@@ -188,10 +191,10 @@ export function runBacktest(bars, { rr = 3, maxGapATR = 0.5, concepts = ["fvg"],
   const { test } = trainTestSplit(bars, 0.7);
   const atrTest = atr(test);
   const gapsTest = filterGaps(findFVGs(test, atrTest, maxGapATR), test, atrTest, concepts);
-  const testSim = simulate(test, atrTest, gapsTest, rr);
+  const testSim = simulate(test, atrTest, gapsTest, rr, 40, stopMult);
   const testR = testSim.map((t) => t.outcome - costR);
 
-  const allSim = simulate(bars, atrArr, gaps, rr);
+  const allSim = simulate(bars, atrArr, gaps, rr, 40, stopMult);
   const allR = allSim.map((t) => t.outcome - costR);
   const winsArr = allR.filter((x) => x > 0), lossArr = allR.filter((x) => x < 0);
   const winRate = allR.length ? Math.round((winsArr.length / allR.length) * 100) : 0;
@@ -207,7 +210,7 @@ export function runBacktest(bars, { rr = 3, maxGapATR = 0.5, concepts = ["fvg"],
   for (const r of allR) { eq += r; peak = Math.max(peak, eq); maxDD = Math.max(maxDD, peak - eq); curve.push(eq); }
 
   const tOOS = tStat(testR);
-  const control = randomEntryControl(test, atrTest, rr, Math.max(testR.length, 2), 40, 300, 777, costR);
+  const control = randomEntryControl(test, atrTest, rr, Math.max(testR.length, 2), 40, 300, 777, costR, stopMult);
   const v = verdict(tOOS, control);
 
   return {

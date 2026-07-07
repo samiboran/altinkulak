@@ -109,3 +109,5 @@
 .ak-ranges{display:flex;gap:4px;justify-content:flex-end;padding:5px 8px 0;}
 .ak-ranges button{background:transparent;border:none;color:#647974;font-family:'JetBrains Mono';font-size:10.5px;padding:4px 9px;border-radius:6px;cursor:pointer;}
 .ak-ranges button:hover{color:var(--teal-soft);background:#16211F;}
+.ak-ranges-sep{width:1px;background:var(--line);margin:2px 4px;}
+.ak-ranges button.on{color:var(--teal-soft);background:#16211F;}

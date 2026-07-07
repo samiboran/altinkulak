@@ -111,7 +111,7 @@ const LS_TTL = 60 * 60 * 1000; // 1 saat — 4H barlar için yeterince taze
 // Binance kline dizisini motor formatına çevir (saf fonksiyon — test edilir)
 // kline: [openTime, open, high, low, close, volume, ...] (string sayılar)
 export function parseKlines(raw) {
-  return raw.map((k, i) => ({ t: i, time: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4] }));
+  return raw.map((k, i) => ({ t: i, time: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5] || 0 }));
 }
 
 export function isReal(symbol) { return !!realCache[symbol?.toUpperCase()]; }

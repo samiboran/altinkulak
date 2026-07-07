@@ -32,6 +32,8 @@ export default function Lab() {
   const [rr, setRr] = useState(2);
   const [gap, setGap] = useState(0.6);   // gelişmiş: FVG boşluk eşiği (×ATR)
   const [cost, setCost] = useState(0.05); // gelişmiş: işlem maliyeti (R) — komisyon+slippage
+  const [stopM, setStopM] = useState(1);   // gelişmiş: stop genişliği (×ATR)
+  const [logS, setLogS] = useState(false); // grafik: log ölçek
   const [lay, setLay] = useState(loadLayout);   // AK-022: panel görünürlüğü (kalıcı)
   const [viewOpen, setViewOpen] = useState(false);
   const [indOpen, setIndOpen] = useState(false);   // AK-026: göstergeler menüsü (çipler açıkta değil)
@@ -145,7 +147,7 @@ export default function Lab() {
 
   function run() {
     setBusy(true);
-    setTimeout(() => { setRes(runBacktest(getBars(symbol), { rr: Number(rr) || 2, maxGapATR: Number(gap) || 0.6, concepts, costR: Number(cost) || 0 })); setBusy(false); }, 120);
+    setTimeout(() => { setRes(runBacktest(getBars(symbol), { rr: Number(rr) || 2, maxGapATR: Number(gap) || 0.6, concepts, costR: Number(cost) || 0, stopMult: Number(stopM) || 1 })); setBusy(false); }, 120);
   }
 
   return (
@@ -189,7 +191,7 @@ export default function Lab() {
             {isReal(symbol) ? "● GERÇEK VERİ · Binance 4H" : "○ örnek veri"}
           </span>
         </div>
-        <Chart bars={getBars(symbol)} concepts={concepts} showEma={showEma} trades={replay ? null : res?.trades} range={chartRange} />
+        <Chart bars={getBars(symbol)} concepts={concepts} showEma={showEma} trades={replay ? null : res?.trades} logScale={logS} range={chartRange} onRangeSelect={(gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } }} />
         {replay && (
           <div className="ak-replay">
             <button className="ak-rp" onClick={() => setCursor(c => Math.max(winStart + 4, c - 1))} title="Geri"><SkipBack size={15} /></button>
@@ -216,6 +218,11 @@ export default function Lab() {
           </div>
         )}
         <div className="ak-ranges">
+          <button className={logS ? "on" : ""} title="Logaritmik fiyat ölçeği" onClick={() => setLogS(v => !v)}>Log</button>
+          <span className="ak-ranges-sep" />
+          <button title="Uzaklaş (daha çok bar)" onClick={() => setWin(w => { const sp = Math.min(1, (w.e - w.s) * 1.5); return { s: Math.max(0, w.e - sp), e: w.e }; })}>−</button>
+          <button title="Yakınlaş (daha az bar)" onClick={() => setWin(w => { const sp = Math.max(0.04, (w.e - w.s) / 1.5); return { s: Math.max(0, w.e - sp), e: w.e }; })}>+</button>
+          <span className="ak-ranges-sep" />
           {[["14G", 84], ["1A", 180], ["3A", 540], ["Tümü", 900]].map(([lb, nb]) => (
             <button key={lb} onClick={() => { setWin({ s: Math.max(0, 1 - nb / 900), e: 1 }); }}>{lb}</button>
           ))}
@@ -270,6 +277,9 @@ export default function Lab() {
             <div className="ak-adv">
               <div className="ak-row"><label>FVG boşluk eşiği (×ATR)</label>
                 <div className="ak-rr"><input type="number" min="0.2" max="1.2" step="0.1" value={gap} onChange={(e) => { setGap(e.target.value); setRes(null); }} /></div>
+              </div>
+              <div className="ak-row"><label>Stop genişliği (×ATR)</label>
+                <div className="ak-rr"><input type="number" min="0.5" max="3" step="0.25" value={stopM} onChange={(e) => { setStopM(e.target.value); setRes(null); }} /></div>
               </div>
               <div className="ak-row"><label>İşlem maliyeti (R)</label>
                 <div className="ak-rr"><input type="number" min="0" max="0.5" step="0.01" value={cost} onChange={(e) => { setCost(e.target.value); setRes(null); }} /></div>
