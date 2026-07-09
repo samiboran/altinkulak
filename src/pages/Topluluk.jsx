@@ -19,6 +19,7 @@ export default function Topluluk() {
       <div className="ak-comm-head">
         <span className="ak-eyebrow">TOPLULUK · LİDER TABLOSU</span>
         <h1>Sinyali bulanlar üste çıksın.</h1>
+        <p className="ak-demo-note">Aşağıdaki kullanıcılar ve istatistikler <b>eğitim amaçlı örnek senaryolardır</b> — gerçek kullanıcı verisi değildir. Üyelik (AK-006) açıldığında bu tablo gerçek, doğrulanmış sicillerden beslenecek.</p>
         <p className="lead">
           Burada sıralama kazanç oranına göre değil, <b>doğrulanmış edge’e</b> göre. Out-of-sample t-istatistiği ve yeterli örnek sayısı kazandırır. Pump yok, kanıt var.
         </p>

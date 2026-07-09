@@ -106,6 +106,25 @@ export const ALL_SYMBOLS = MARKET_GROUPS.flatMap((g) =>
 const REAL_MAP = { BTC: "BTCUSDT", ETH: "ETHUSDT", SOL: "SOLUSDT" };
 export const REAL_CAPABLE = Object.keys(REAL_MAP);
 const realCache = {};
+const realFail = new Set(); // bu oturumda Binance'te bulunamayanlar — tekrar deneme
+
+// Sembol -> Binance çifti. Bilinen kripto: haritadan; bilinmeyen sembol: SEMBOL+USDT denenir
+// (AVAX, LINK, DOGE...). Bilinen ama kripto-olmayan (BIST/ABD/Avrupa/Kontrol): asla denenmez.
+export function pairFor(symbol) {
+  const sym = String(symbol).toUpperCase();
+  if (REAL_MAP[sym]) return REAL_MAP[sym];
+  const meta = ALL_SYMBOLS.find(x => x.sym === sym);
+  if (meta && meta.group !== "Kripto") return null;
+  return sym + "USDT";
+}
+
+// Sembol için elimizde HERHANGİ bir veri var mı? (gerçek ya da tanımlı sentetik profil)
+// Yoksa UI "veri yok" demeli — bilinmeyen sembole başka profilin sentetiğini gösterip
+// sahte edge rozeti yakmak dürüstlük ihlalidir (AK-031 dersi).
+export function hasData(symbol) {
+  const sym = String(symbol).toUpperCase();
+  return !!realCache[sym] || !!PROFILES[sym];
+}
 const LS_TTL = 60 * 60 * 1000; // 1 saat — 4H barlar için yeterince taze
 
 // Binance kline dizisini motor formatına çevir (saf fonksiyon — test edilir)
@@ -115,42 +134,48 @@ export function parseKlines(raw) {
 }
 
 export function isReal(symbol) { return !!realCache[symbol?.toUpperCase()]; }
+const realTF = {}; // sembol -> yüklü zaman dilimi
+export function tfOf(symbol) { return realTF[symbol?.toUpperCase()] || "4h"; }
+export const TIMEFRAMES = [["5m", "5dk"], ["15m", "15dk"], ["1h", "1s"], ["4h", "4s"], ["1d", "1G"]];
 
-export async function loadReal(symbol) {
+export async function loadReal(symbol, tf = "4h") {
   const sym = String(symbol).toUpperCase();
-  const pair = REAL_MAP[sym];
-  if (!pair) return null;                       // gerçek kaynak yok -> sentetik kalır
-  if (realCache[sym]) return realCache[sym];
+  const pair = pairFor(sym);
+  if (!pair || realFail.has(sym)) return null;  // kaynak yok ya da bu oturumda bulunamadı
+  if (realCache[sym] && realTF[sym] === tf) return realCache[sym];
 
   // localStorage önbelleği (varsa ve tazeyse ağa çıkma)
-  const lsKey = `ak_bars_v1_${sym}`;
+  const lsKey = `ak_bars_v2_${sym}_${tf}`;
   if (typeof localStorage !== "undefined") {
     try {
       const c = JSON.parse(localStorage.getItem(lsKey));
       if (c && Date.now() - c.ts < LS_TTL && Array.isArray(c.bars) && c.bars.length > 100) {
-        realCache[sym] = c.bars;
+        realCache[sym] = c.bars; realTF[sym] = tf;
         return c.bars;
       }
     } catch { /* bozuk önbellek — yeniden çek */ }
   }
 
   const urls = [
-    `https://data-api.binance.vision/api/v3/klines?symbol=${pair}&interval=4h&limit=900`,
-    `https://api.binance.com/api/v3/klines?symbol=${pair}&interval=4h&limit=900`,
+    `https://data-api.binance.vision/api/v3/klines?symbol=${pair}&interval=${tf}&limit=900`,
+    `https://api.binance.com/api/v3/klines?symbol=${pair}&interval=${tf}&limit=900`,
   ];
+  let badSymbol = false;
   for (const u of urls) {
     try {
       const r = await fetch(u);
+      if (r.status >= 400 && r.status < 500) { badSymbol = true; continue; } // sembol/istek geçersiz
       if (!r.ok) continue;
       const raw = await r.json();
       if (!Array.isArray(raw) || raw.length < 100) continue;
       const bars = parseKlines(raw);
-      realCache[sym] = bars;
+      realCache[sym] = bars; realTF[sym] = tf;
       if (typeof localStorage !== "undefined") {
         try { localStorage.setItem(lsKey, JSON.stringify({ ts: Date.now(), bars })); } catch { /* dolu — önemsiz */ }
       }
       return bars;
     } catch { /* ağ hatası — sıradaki URL */ }
   }
-  return null; // hepsi başarısız -> sentetik fallback, UI "örnek veri" gösterir
+  if (badSymbol) realFail.add(sym); // yalnız "sembol yok" karalisteye girer; AĞ HATASI latch'lemez (sonraki denemede tekrar)
+  return null; // başarısız -> bilinen sembolse sentetik, bilinmiyorsa hasData=false ("veri yok")
 }

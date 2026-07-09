@@ -58,3 +58,5 @@
 .ak-member-focus{font-family:'JetBrains Mono';font-size:11px;color:var(--teal-soft);border-top:1px solid var(--line);padding-top:11px;margin-bottom:12px;}
 .ak-member-link{font-size:13px;color:var(--teal-soft);text-decoration:none;}
 .ak-member-link:hover{text-decoration:underline;}
+.ak-demo-note{font-size:12.5px;color:var(--gold);border:1px dashed #4a4326;border-radius:10px;padding:9px 13px;margin:10px 0 0;max-width:640px;line-height:1.55;}
+.ak-demo-note b{color:var(--gold);}

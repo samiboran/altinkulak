@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "gh-pages -d dist",
-    "test": "node tests/motor.test.js"
+    "test": "node tests/motor.test.js && node tests/run-render.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.383.0",

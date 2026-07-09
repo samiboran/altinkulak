@@ -16,6 +16,7 @@ export default function Ben() {
   const [mode, setMode] = useState("sicil"); // sicil = kalıcı · sandbox = serbest pratik
   const [f, setF] = useState({ sym: "", setup: "FVG", dir: "Long", plan: 2, r: "", tag: "Plana uydu" });
   const [confirm, setConfirm] = useState(false);
+  const [submitting, setSubmitting] = useState(false); // çift-tık koruması (diğer oturum bulgusu, yeniden uygulandı)
   const [err, setErr] = useState("");
   // CSV import (AK-025): önizleme -> hedef seçimi -> yaz
   const fileRef = useRef(null);
@@ -43,7 +44,8 @@ export default function Ben() {
   }
 
   function doImport(target) {
-    if (!imp) return;
+    if (!imp || submitting) return;
+    setSubmitting(true);
     const add = target === "sicil" ? addTrade : addSandbox;
     let ok = 0;
     for (const r of imp.rows) { if (add(r)) ok++; }
@@ -52,6 +54,7 @@ export default function Ben() {
     setImp(null);
     setMode(target);
     setErr("");
+    setSubmitting(false);
     alert(`${ok} işlem ${target === "sicil" ? "SİCİLE (kalıcı)" : "Sandbox'a"} aktarıldı.`);
   }
 
@@ -72,11 +75,14 @@ export default function Ben() {
     setConfirm(true); // sicile yazmadan önce kalıcılık onayı
   }
   function doAdd() {
+    if (submitting) return;
+    setSubmitting(true);
     const e = addTrade(f);
-    if (!e) { setErr("Kayıt geçersiz — alanları kontrol et."); setConfirm(false); return; }
+    if (!e) { setErr("Kayıt geçersiz — alanları kontrol et."); setConfirm(false); setSubmitting(false); return; }
     setTrades(listTrades());
     setF({ ...f, sym: "", r: "" });
     setConfirm(false);
+    setSubmitting(false);
   }
 
   return (
@@ -198,8 +204,8 @@ export default function Ben() {
             <p className="warn">Sicil'e aktarılan {imp.rows.length} kayıt kalıcı olur — silinemez. Emin değilsen Sandbox'a al, incele.</p>
             <div className="ak-modal-btns">
               <button className="ak-btn ak-btn-ghost" onClick={() => setImp(null)}>Vazgeç</button>
-              <button className="ak-btn ak-btn-ghost" disabled={!imp.rows.length} onClick={() => doImport("sandbox")}>Sandbox'a al</button>
-              <button className="ak-btn ak-btn-primary" disabled={!imp.rows.length} onClick={() => doImport("sicil")}>Sicile işle (kalıcı)</button>
+              <button className="ak-btn ak-btn-ghost" disabled={!imp.rows.length || submitting} onClick={() => doImport("sandbox")}>Sandbox'a al</button>
+              <button className="ak-btn ak-btn-primary" disabled={!imp.rows.length || submitting} onClick={() => doImport("sicil")}>Sicile işle (kalıcı)</button>
             </div>
           </div>
         </div>
@@ -215,7 +221,7 @@ export default function Ben() {
             <p className="warn">Bu kayıt silinemez ve düzenlenemez. Sicil, kendine karşı dürüstlüğündür.</p>
             <div className="ak-modal-btns">
               <button className="ak-btn ak-btn-ghost" onClick={() => setConfirm(false)}>Vazgeç</button>
-              <button className="ak-btn ak-btn-primary" onClick={doAdd}>Onayla, sicile işle</button>
+              <button className="ak-btn ak-btn-primary" disabled={submitting} onClick={doAdd}>Onayla, sicile işle</button>
             </div>
           </div>
         </div>

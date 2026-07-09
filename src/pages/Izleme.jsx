@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Eye, Plus, Trash2, ShieldCheck } from "lucide-react";
-import { getBars, ALL_SYMBOLS, loadReal, isReal } from "../lib/data.js";
+import { getBars, ALL_SYMBOLS, loadReal, isReal, hasData } from "../lib/data.js";
 import { runBacktest } from "../lib/backtest.js";
 import "../styles/izleme.css";
 
@@ -29,14 +29,24 @@ export default function Izleme() {
     return () => { on = false; };
   }, [list]);
 
+  const fmtP = (p) => {
+    const a = Math.abs(p);
+    if (a >= 10000) return Math.round(p).toLocaleString("en-US");
+    if (a >= 1000) return p.toFixed(0);
+    if (a >= 100) return p.toFixed(1);
+    if (a >= 1) return p.toFixed(2);
+    return p.toFixed(4);
+  };
+
   function add() { const s = q.trim().toUpperCase(); if (s && !list.includes(s)) setList(l => [...l, s]); setQ(""); }
   function del(s) { setList(l => l.filter(x => x !== s)); }
 
   const rows = list.map(sym => {
+    if (!hasData(sym)) return { sym, bad: true }; // ne gerçek ne tanımlı sentetik -> "veri yok" (sahte edge yakma!)
     const b = getBars(sym);
     if (!b || b.length < 60) return { sym, bad: true };
     const last = b[b.length - 1].c, prev = b[b.length - 2].c, chg = ((last - prev) / prev) * 100;
-    const r = runBacktest(b, { rr: 2, maxGapATR: 0.6, concepts: ["fvg"] });
+    const r = runBacktest(b, { rr: 2, maxGapATR: 0.6, concepts: ["fvg"], costR: 0.05 });
     const meta = ALL_SYMBOLS.find(x => x.sym === sym);
     return { sym, name: meta?.name || sym, group: meta?.group || "—", real: isReal(sym), last, chg, t: r.tStat, edge: r.verdict.good };
   });
@@ -58,11 +68,12 @@ export default function Izleme() {
       ) : (
         <div className="ak-izle-list">
           {rows.map(r => r.bad ? (
-            <div className="ak-wrow bad" key={r.sym}><span className="sy">{r.sym}</span><span className="nm">veri yok</span><button className="ak-del" onClick={() => del(r.sym)}><Trash2 size={14} /></button></div>
+            <div className="ak-wrow bad" key={r.sym}><span className="sy">{r.sym}</span><span className="nm">veri yok — Binance'te {r.sym}USDT bulunamadı, sentetik profili de tanımlı değil</span><button className="ak-del" onClick={() => del(r.sym)}><Trash2 size={14} /></button></div>
           ) : (
             <div className="ak-wrow" key={r.sym}>
               <div className="ak-wid"><span className="sy">{r.sym}</span><span className="nm">{r.name} · {r.group} <i className={"src" + (r.real ? " real" : "")}>{r.real ? "● gerçek" : "○ örnek"}</i></span></div>
               <Spark sym={r.sym} />
+              <span className="last">{fmtP(r.last)}</span>
               <span className={"chg " + (r.chg >= 0 ? "pos" : "neg")}>{r.chg >= 0 ? "+" : ""}{r.chg.toFixed(2)}%</span>
               <span className={"edge " + (r.edge ? "on" : "")}>{r.edge ? <><ShieldCheck size={12} /> edge t={r.t}</> : `t=${r.t}`}</span>
               <button className="ak-del" onClick={() => del(r.sym)}><Trash2 size={14} /></button>
@@ -70,7 +81,7 @@ export default function Izleme() {
           ))}
         </div>
       )}
-      <p className="ak-izle-note">● = gerçek veri (Binance 4H) · ○ = örnek veri. Edge rozeti geçmiş 900 barın ölçümüdür, gelecek vaadi ve yatırım tavsiyesi değildir.</p>
+      <p className="ak-izle-note">● = gerçek veri (Binance 4H — listedeki HERHANGİ bir kripto sembolü SEMBOL+USDT olarak denenir) · ○ = örnek veri. Edge rozeti geçmiş 900 barın ölçümüdür, gelecek vaadi ve yatırım tavsiyesi değildir.</p>
     </div>
   );
 }

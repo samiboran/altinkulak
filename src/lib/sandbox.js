@@ -25,7 +25,8 @@ export function addSandbox(t) {
   if (!Number.isFinite(plan) || plan <= 0 || !Number.isFinite(r)) return null;
   if (!TAGS.includes(t.tag)) return null;
   const entry = {
-    id: Date.now(),
+    // Date.now() DEĞİL: CSV toplu aktarımında aynı milisaniyede çakışıyordu (diğer oturum bulgusu, yeniden uygulandı)
+    id: (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(36).slice(2, 8),
     d: new Date().toISOString(),
     sym,
     setup: SETUPS.includes(t.setup) ? t.setup : "Diğer",

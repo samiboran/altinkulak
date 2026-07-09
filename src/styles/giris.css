@@ -12,3 +12,4 @@
 .ak-giris-done{display:flex;flex-direction:column;align-items:center;gap:8px;padding:18px;background:#10241F;border:1px solid #1f5249;border-radius:11px;color:var(--teal-soft);}
 .ak-giris-done p{margin:0;font-size:13.5px;color:#c8d2ce;}
 .ak-giris-foot{font-size:11px;color:#647974;margin:18px 0 0;font-family:'JetBrains Mono';}
+.ak-giris-err{color:var(--bad);font-size:12.5px;margin:8px 0 0;text-align:center;}

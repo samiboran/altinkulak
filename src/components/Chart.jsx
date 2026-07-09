@@ -5,8 +5,12 @@ import { findFVG, findOrderBlocks, findBOS, ema, findMitigation, orderFlowArr, f
 // props: bars, concepts(array), showEma(bool), maxView(son N bar)
 export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false }) {
   const hasR = range && range.start != null;
-  const view = useMemo(() => hasR ? bars.slice(range.start, range.end + 1) : bars.slice(-maxView), [bars, maxView, hasR, range]);
+  const FUT = 120; // sağda gelecek boşluğu (fib/projeksiyon) — pencere son barı bu kadar aşabilir
+  const rawEnd = hasR ? range.end : bars.length - 1;
+  const futureSlots = Math.min(FUT, Math.max(0, rawEnd - (bars.length - 1)));
+  const view = useMemo(() => hasR ? bars.slice(range.start, Math.min(rawEnd, bars.length - 1) + 1) : bars.slice(-maxView), [bars, maxView, hasR, range, rawEnd]);
   const off = hasR ? range.start : bars.length - view.length; // global -> view kaydırma
+  // güvenlik: 2 bardan az görünüm çizilemez (bölme sıfıra düşer)
   const endIdx = off + view.length - 1;
   const emaArr = useMemo(() => (showEma ? ema(bars).slice(off, off + view.length) : null), [bars, showEma, off, view.length]);
   const inWin = i => i >= off && i <= endIdx;
@@ -17,7 +21,7 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
   const ofArr = useMemo(() => concepts.includes("of") ? orderFlowArr(bars) : null, [bars, concepts]);
   const fib = useMemo(() => concepts.includes("fib") ? findFib(view, view.length) : null, [view, concepts]);
 
-  const W = 1000, H = 340, pL = 6, pT = 12, pB = 26;
+  const W = 1000, H = 480, pL = 6, pT = 12, pB = 26;
   const lo = Math.min(...view.map(b => b.l)), hi = Math.max(...view.map(b => b.h)), rg = hi - lo || 1;
   // Fiyat büyüklüğüne göre ondalık (AK-027): 104,230 · 1,043 · 84.2 · 1.04 · 0.0432
   const fmtP = (p) => {
@@ -30,11 +34,13 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
     return p.toFixed(4);
   };
   const pR = Math.max(52, fmtP(hi).length * 7.2 + 10); // etiket sığacak kadar eksen
-  const x = i => pL + (i / (view.length - 1)) * (W - pL - pR);
+  const slots = view.length + futureSlots;
+  const x = i => pL + (i / Math.max(1, slots - 1)) * (W - pL - pR);
   // Dikey ölçek (AK-030): eksen sürüklenince vScale değişir (1 = otomatik sığdır). Log ölçek destekli.
-  const [vScale, setVScale] = useState(1);
-  useEffect(() => { setVScale(1); }, [bars]); // sembol/veri değişince sıfırla
-  const mid = (lo + hi) / 2, half = (rg / 2) * vScale;
+  const [vView, setVView] = useState(null); // null = oto-sığdır; {mid, half} = kullanıcı dikey görünümü
+  useEffect(() => { setVView(null); }, [bars]); // sembol/veri değişince sıfırla
+  const mid = vView ? vView.mid : (lo + hi) / 2;
+  const half = vView ? vView.half : rg / 2;
   const elo = Math.max(logScale ? 1e-9 : -Infinity, mid - half), ehi = mid + half, erg = ehi - elo || 1;
   const lnLo = Math.log(Math.max(1e-9, elo)), lnHi = Math.log(Math.max(elo * 1.0001, ehi));
   const y = p => logScale
@@ -48,19 +54,21 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
 
   // Crosshair (AK-026): imleç -> bar/fiyat eşlemesi
   const [hov, setHov] = useState(null); // {i(view), px, py, price}
+  useEffect(() => { setHov(null); }, [off, view.length]); // zoom/pan sonrası bayat indeks kalmasın
   function onMove(e) {
     const r = e.currentTarget.getBoundingClientRect();
     const px = ((e.clientX - r.left) / r.width) * W;
     const py = ((e.clientY - r.top) / r.height) * H;
     if (px < pL || px > W - pR || py < pT || py > H - pB) { setHov(null); return; }
-    const i = Math.max(0, Math.min(view.length - 1, Math.round(((px - pL) / (W - pL - pR)) * (view.length - 1))));
+    const i = Math.max(0, Math.min(slots - 1, Math.round(((px - pL) / (W - pL - pR)) * (slots - 1))));
     const price = priceAt(py);
     setHov({ i, px: x(i), py, price });
+    if (dragRef.current?.mode === "sel") setSel(sl => (sl ? { ...sl, b: i, yb: py } : sl)); // taze i+py — kutu fareyi iki eksende izler
   }
   // AK-028b: imleç odaklı tekerlek zoom (native listener; passive:false şart)
   const svgRef = useRef(null);
   const zoomRef = useRef(null);
-  zoomRef.current = { off, len: view.length, total: bars.length, hov };
+  zoomRef.current = { off, len: slots, total: bars.length, hov };
   useEffect(() => {
     const el = svgRef.current;
     if (!el || !onRangeSelect) return;
@@ -70,8 +78,9 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
       const anchorFrac = hov ? hov.i / Math.max(1, len - 1) : 0.5;
       const anchorG = off + Math.round(anchorFrac * (len - 1));
       const span = Math.round(Math.min(total, Math.max(20, len * (e.deltaY > 0 ? 1.25 : 0.8))));
+      const maxEnd = total - 1 + 120; // geleceğe taşma payı (Chart.FUT ile aynı)
       let gs = Math.round(anchorG - anchorFrac * span);
-      gs = Math.max(0, Math.min(total - span, gs));
+      gs = Math.max(0, Math.min(maxEnd - span + 1, gs));
       onRangeSelect(gs, gs + span - 1);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
@@ -83,10 +92,17 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
   const [sel, setSel] = useState(null); // {a,b} view index (Shift seçimi)
   const dragRef = useRef(null);
   function onDown(e) {
+    e.preventDefault(); // Shift+sürüklede tarayıcının metin seçimine girmesini engelle
     const r = e.currentTarget.getBoundingClientRect();
     const px = ((e.clientX - r.left) / r.width) * W;
-    if (px > W - pR) { dragRef.current = { mode: "axis", y0: e.clientY, v0: vScale }; return; }
-    if (e.shiftKey && hov) { setSel({ a: hov.i, b: hov.i }); dragRef.current = { mode: "sel" }; return; }
+    if (px > W - pR) { dragRef.current = { mode: "axis", y0: e.clientY, m0: mid, h0: half }; return; }
+    if (e.shiftKey) {
+      const i = Math.max(0, Math.min(slots - 1, Math.round(((px - pL) / (W - pL - pR)) * (slots - 1))));
+      const py = Math.max(pT, Math.min(H - pB, ((e.clientY - r.top) / r.height) * H));
+      setSel({ a: i, b: i, ya: py, yb: py });
+      dragRef.current = { mode: "sel" };
+      return;
+    }
     dragRef.current = { mode: "pan", x0: e.clientX, off0: off, len0: view.length, pxPerBar: r.width * ((W - pL - pR) / W) / view.length };
   }
   function onDrag(e) {
@@ -94,10 +110,12 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
     if (!d) return;
     if (d.mode === "axis") {
       const dy = e.clientY - d.y0;
-      setVScale(Math.min(6, Math.max(0.2, d.v0 * Math.exp(dy * 0.004))));
+      const h = Math.min(rg * 6, Math.max(rg * 0.02, d.h0 * Math.exp(dy * 0.004)));
+      setVView({ mid: d.m0, half: h });
     } else if (d.mode === "pan" && onRangeSelect) {
       const db = Math.round((d.x0 - e.clientX) / Math.max(0.5, d.pxPerBar));
-      let gs = Math.max(0, Math.min(bars.length - d.len0, d.off0 + db));
+      const maxEnd = bars.length - 1 + 120;
+      let gs = Math.max(0, Math.min(maxEnd - d.len0 + 1, d.off0 + db));
       onRangeSelect(gs, gs + d.len0 - 1);
     }
   }
@@ -105,6 +123,10 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
     const d = dragRef.current;
     dragRef.current = null;
     if (d?.mode === "sel" && sel && onRangeSelect && Math.abs(sel.b - sel.a) >= 3) {
+      if (Math.abs(sel.yb - sel.ya) >= 14) { // dikeyde de kutu çizildiyse fiyat bandına dal
+        const p0 = priceAt(sel.ya), p1 = priceAt(sel.yb);
+        setVView({ mid: (p0 + p1) / 2, half: Math.max(rg * 0.005, Math.abs(p0 - p1) / 2) });
+      }
       const gs = off + Math.min(sel.a, sel.b), ge = off + Math.max(sel.a, sel.b);
       onRangeSelect(gs, ge);
     }
@@ -113,19 +135,29 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
   function onDbl(e) {
     const r = e.currentTarget.getBoundingClientRect();
     const px = ((e.clientX - r.left) / r.width) * W;
-    if (px > W - pR) { setVScale(1); return; }
-    setVScale(1);
+    if (px > W - pR) { setVView(null); return; } // eksene çift tık = oto-sığdır
+    setVView(null);
     onRangeSelect && onRangeSelect(null);
   }
 
+  const lastB = view[view.length - 1];
+  const dtMs = view.length > 1 && lastB?.time ? (lastB.time - view[view.length - 2].time) : 0;
+  const labelAt = (vi) => {
+    const b = view[vi];
+    if (b?.time) return new Date(b.time).toLocaleDateString("tr-TR", { day: "2-digit", month: "short" });
+    if (b) return "#" + (off + vi);
+    if (dtMs && lastB?.time) return new Date(lastB.time + dtMs * (vi - (view.length - 1))).toLocaleDateString("tr-TR", { day: "2-digit", month: "short" });
+    return "+" + (vi - (view.length - 1));
+  };
   const fmtT = (b, gi_) => b?.time
     ? new Date(b.time).toLocaleDateString("tr-TR", { day: "2-digit", month: "short" })
     : "#" + gi_;
   const hasVol = view.some(b => b.v > 0);
   const maxV = hasVol ? Math.max(...view.map(b => b.v || 0)) : 1;
 
-  const legendBar = hov ? view[hov.i] : view[view.length - 1];
-  const prevBar = hov ? view[Math.max(0, hov.i - 1)] : view[Math.max(0, view.length - 2)];
+  const hovI = hov ? Math.min(hov.i, view.length - 1) : view.length - 1; // kıskaç: asla taşma
+  const legendBar = view[hovI] || view[view.length - 1];
+  const prevBar = view[Math.max(0, hovI - 1)] || legendBar;
   const chg = prevBar && prevBar.c ? ((legendBar.c - prevBar.c) / prevBar.c) * 100 : 0;
   const lastC = view[view.length - 1].c;
 
@@ -133,8 +165,10 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
   const viewTrades = useMemo(() => (trades || []).filter(t => t.entryIdx >= off && t.entryIdx <= endIdx), [trades, off, endIdx]);
   const lastTrade = viewTrades.length ? viewTrades[viewTrades.length - 1] : null;
 
+  if (!view || view.length < 2) return <svg className="ak-chart" viewBox={`0 0 1000 480`} />;
+
   return (
-    <svg ref={svgRef} className="ak-chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Fiyat grafiği" onMouseMove={(e) => { onMove(e); onDrag(e); if (dragRef.current?.mode === "sel" && hov) setSel(sl => sl && ({ ...sl, b: hov.i })); }} onMouseLeave={() => { setHov(null); setSel(null); dragRef.current = null; }} onMouseDown={onDown} onMouseUp={onUpSel} onDoubleClick={onDbl}>
+    <svg ref={svgRef} className="ak-chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Fiyat grafiği" onMouseMove={(e) => { onMove(e); onDrag(e); }} onMouseLeave={() => { setHov(null); setSel(null); dragRef.current = null; }} onMouseDown={onDown} onMouseUp={onUpSel} onDoubleClick={onDbl}>
       {[0, .2, .4, .6, .8, 1].map((f, i) => {
         const py = pT + f * (H - pT - pB), pv = logScale ? Math.exp(lnHi - f * (lnHi - lnLo)) : ehi - f * erg;
         return <g key={i}><line x1={pL} y1={py} x2={W - pR} y2={py} className="ak-c-grid" /><text x={W - pR + 5} y={py + 3} className="ak-c-axis">{fmtP(pv)}</text></g>;
@@ -142,8 +176,8 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
 
       {/* Zaman ekseni etiketleri (AK-030) */}
       {[0, .25, .5, .75, 1].map((f, i) => {
-        const vi = Math.round(f * (view.length - 1));
-        return <text key={"tx" + i} x={x(vi)} y={H - 6} className="ak-c-time" textAnchor={f === 0 ? "start" : f === 1 ? "end" : "middle"}>{fmtT(view[vi], off + vi)}</text>;
+        const vi = Math.round(f * (slots - 1));
+        return <text key={"tx" + i} x={x(vi)} y={H - 6} className="ak-c-time" textAnchor={f === 0 ? "start" : f === 1 ? "end" : "middle"}>{labelAt(vi)}</text>;
       })}
 
       {/* Hacim çubukları (gerçek veri) */}
@@ -211,7 +245,7 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
 
       {/* Alan seçimi */}
       {sel && Math.abs(sel.b - sel.a) >= 1 && (
-        <rect className="ak-c-sel" x={x(Math.min(sel.a, sel.b))} y={pT} width={Math.abs(x(sel.b) - x(sel.a))} height={H - pT - pB} />
+        <rect className="ak-c-sel" x={x(Math.min(sel.a, sel.b))} y={Math.min(sel.ya, sel.yb)} width={Math.abs(x(sel.b) - x(sel.a))} height={Math.max(2, Math.abs(sel.yb - sel.ya))} />
       )}
 
       {/* Crosshair */}
@@ -221,7 +255,7 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
         <rect x={W - pR + 1} y={hov.py - 8} width={pR - 2} height={16} rx={3} className="ak-c-crossp" />
         <text x={W - pR + 5} y={hov.py + 4} className="ak-c-crosspt">{fmtP(hov.price)}</text>
         <rect x={hov.px - 26} y={H - pB + 2} width={52} height={15} rx={3} className="ak-c-crossp" />
-        <text x={hov.px} y={H - pB + 13} textAnchor="middle" className="ak-c-crosspt">{fmtT(view[hov.i], off + hov.i)}</text>
+        <text x={hov.px} y={H - pB + 13} textAnchor="middle" className="ak-c-crosspt">{labelAt(hov.i)}</text>
       </g>}
 
       {/* OHLC künyesi (TV tarzı, kompakt) */}

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { mean, std, tStat, trainTestSplit, verdict, bonferroniT, expectedFalsePositives } from "../src/lib/stats.js";
 import { runBacktest } from "../src/lib/backtest.js";
-import { getBars, parseKlines, loadReal, isReal } from "../src/lib/data.js";
+import { getBars, parseKlines, loadReal, isReal, pairFor, hasData } from "../src/lib/data.js";
 
 let pass = 0;
 function test(name, fn) {
@@ -300,6 +300,30 @@ test("geniş stop → stoplanma oranı düşer (kazanç oranı artar ya da eşit
   const w = runBacktest(getBars("SOL"), { rr: 2, stopMult: 2 });
   const n = runBacktest(getBars("SOL"), { rr: 2, stopMult: 1 });
   assert.ok(w.winRate >= n.winRate - 2, `geniş ${w.winRate}% < dar ${n.winRate}%`);
+});
+
+console.log("dinamik kripto çifti (AK-031)");
+test("pairFor: bilinen kripto haritadan, bilinmeyen sembol SEMBOL+USDT, kripto-olmayan asla", () => {
+  assert.equal(pairFor("BTC"), "BTCUSDT");
+  assert.equal(pairFor("avax"), "AVAXUSDT");
+  assert.equal(pairFor("ASELS"), null);
+  assert.equal(pairFor("NVDA"), null);
+  assert.equal(pairFor("RND"), null); // kontrol grubu daima sentetik
+});
+test("hasData: tanımsız sembol veri-yok sayılır (sahte sentetik gösterilmez)", () => {
+  assert.equal(hasData("AVAX"), false); // gerçek yüklenmedikçe
+  assert.equal(hasData("SOL"), true);
+});
+
+console.log("id benzersizliği (regresyon koruması)");
+test("aynı milisaniyede eklenen kayıtlar farklı id alır (UUID)", () => {
+  const a = ledger.addTrade({ sym: "BTC", dir: "Long", plan: 2, r: 1, tag: "FOMO" });
+  const b = ledger.addTrade({ sym: "BTC", dir: "Long", plan: 2, r: 1, tag: "FOMO" });
+  const c = sandbox.addSandbox({ sym: "ETH", dir: "Short", plan: 2, r: -1, tag: "FOMO" });
+  const d = sandbox.addSandbox({ sym: "ETH", dir: "Short", plan: 2, r: -1, tag: "FOMO" });
+  assert.ok(a && b && a.id !== b.id, "sicil id çakıştı");
+  assert.ok(c && d && c.id !== d.id, "sandbox id çakıştı");
+  assert.equal(typeof a.id, "string");
 });
 
 console.log(`\n${pass} test geçti${process.exitCode ? " (HATALAR VAR)" : " — motor sağlam."}`);

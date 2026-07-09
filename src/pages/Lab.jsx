@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { FlaskConical, Activity, Play, Pause, SkipBack, SkipForward, RotateCcw, ShieldCheck, ShieldAlert, Search, SlidersHorizontal, Monitor, Dices, Calculator, LayoutGrid, Target } from "lucide-react";
-import { getBars, MARKET_GROUPS, ALL_SYMBOLS, loadReal, isReal } from "../lib/data.js";
+import { getBars, MARKET_GROUPS, ALL_SYMBOLS, loadReal, isReal, hasData, pairFor, tfOf, TIMEFRAMES } from "../lib/data.js";
 import Chart from "../components/Chart.jsx";
 import Timeline from "../components/Timeline.jsx";
 import { runBacktest } from "../lib/backtest.js";
@@ -34,6 +34,7 @@ export default function Lab() {
   const [cost, setCost] = useState(0.05); // gelişmiş: işlem maliyeti (R) — komisyon+slippage
   const [stopM, setStopM] = useState(1);   // gelişmiş: stop genişliği (×ATR)
   const [logS, setLogS] = useState(false); // grafik: log ölçek
+  const [tf, setTf] = useState("4h");       // zaman dilimi (yalnız gerçek-veri sembolleri)
   const [lay, setLay] = useState(loadLayout);   // AK-022: panel görünürlüğü (kalıcı)
   const [viewOpen, setViewOpen] = useState(false);
   const [indOpen, setIndOpen] = useState(false);   // AK-026: göstergeler menüsü (çipler açıkta değil)
@@ -64,7 +65,7 @@ export default function Lab() {
   useEffect(() => {
     if (!replay || !playing) return;
     const id = setInterval(() => {
-      setCursor(c => { if (c >= winEnd) { setPlaying(false); return c; } return c + 1; });
+      setCursor(c => { const end = Math.min(winEnd, _N - 1); if (c >= end) { setPlaying(false); return c; } return c + 1; });
     }, speed);
     return () => clearInterval(id);
   }, [replay, playing, speed, winEnd]);
@@ -121,9 +122,11 @@ export default function Lab() {
   // AK-004b: kripto sembollerinde gerçek Binance verisini arka planda yükle
   useEffect(() => {
     let on = true;
-    loadReal(symbol).then((b) => { if (on && b) { setRes(null); setDataV(v => v + 1); } });
+    setRes(null);
+    loadReal(symbol, tf).then((b) => { if (on) setDataV(v => v + 1); });
     return () => { on = false; };
-  }, [symbol]);
+  }, [symbol, tf]);
+  const dataOk = hasData(symbol); // ne gerçek ne tanımlı sentetik yoksa grafik/backtest kilitli (sahte veri YASAK)
 
   // akıllı tamamlama: yazdıktan ~1.5sn sonra öneriler
   useEffect(() => {
@@ -146,6 +149,7 @@ export default function Lab() {
   function pick(s) { setSymbol(s.sym); setQuery(s.sym); setDebounced(s.sym); setOpen(false); setRes(null); }
 
   function run() {
+    if (!hasData(symbol)) return; // veri yokken sahte backtest yok
     setBusy(true);
     setTimeout(() => { setRes(runBacktest(getBars(symbol), { rr: Number(rr) || 2, maxGapATR: Number(gap) || 0.6, concepts, costR: Number(cost) || 0, stopMult: Number(stopM) || 1 })); setBusy(false); }, 120);
   }
@@ -187,16 +191,28 @@ export default function Lab() {
               </div>
             )}
           </div>
+          {pairFor(symbol) && (
+            <div className="ak-tf">
+              {TIMEFRAMES.map(([k, l]) => (
+                <button key={k} className={tf === k ? "on" : ""} onClick={() => setTf(k)}>{l}</button>
+              ))}
+            </div>
+          )}
           <span className={"ak-datasrc" + (isReal(symbol) ? " real" : "")}>
-            {isReal(symbol) ? "● GERÇEK VERİ · Binance 4H" : "○ örnek veri"}
+            {isReal(symbol) ? `● GERÇEK VERİ · Binance ${(TIMEFRAMES.find(x => x[0] === tfOf(symbol)) || ["", "4s"])[1]}` : "○ örnek veri"}
           </span>
         </div>
-        <Chart bars={getBars(symbol)} concepts={concepts} showEma={showEma} trades={replay ? null : res?.trades} logScale={logS} range={chartRange} onRangeSelect={(gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } }} />
+        {!dataOk && (
+          <div className="ak-nodata">
+            <b>{symbol}</b> için veri bekleniyor… Binance'te {symbol}USDT deneniyor; bulunamazsa burada açıkça söylenir — başka sembolün örnek verisi ASLA gösterilmez.
+          </div>
+        )}
+        {dataOk && <Chart bars={getBars(symbol)} concepts={concepts} showEma={showEma} trades={replay ? null : res?.trades} logScale={logS} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} />}
         {replay && (
           <div className="ak-replay">
             <button className="ak-rp" onClick={() => setCursor(c => Math.max(winStart + 4, c - 1))} title="Geri"><SkipBack size={15} /></button>
             <button className="ak-rp play" onClick={() => setPlaying(p => !p)}>{playing ? <Pause size={16} /> : <Play size={16} />}</button>
-            <button className="ak-rp" onClick={() => setCursor(c => Math.min(winEnd, c + 1))} title="İleri"><SkipForward size={15} /></button>
+            <button className="ak-rp" onClick={() => setCursor(c => Math.min(Math.min(winEnd, _N - 1), c + 1))} title="İleri"><SkipForward size={15} /></button>
             <div className="ak-rp-prog"><div style={{ width: `${((cursor - winStart) / Math.max(1, winEnd - winStart)) * 100}%` }} /></div>
             <div className="ak-rp-speed">{[[1, 280], [2, 140], [4, 70]].map(([x, ms]) => <button key={x} className={speed === ms ? "on" : ""} onClick={() => setSpeed(ms)}>{x}x</button>)}</div>
             <button className="ak-rp txt" onClick={() => { setCursor(winStart + Math.min(30, Math.floor((winEnd - winStart) / 3))); setPlaying(false); }}><RotateCcw size={13} /> Sıfırla</button>
@@ -251,13 +267,18 @@ export default function Lab() {
                 <input value={query} onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
                   onFocus={() => setOpen(true)} placeholder="Sembol ara (örn. SOL, ASELS, NVDA)" spellCheck={false} />
               </div>
-              {open && suggestions.length > 0 && (
+              {open && (suggestions.length > 0 || (query.trim() && pairFor(query.trim()))) && (
                 <div className="ak-sug">
                   {suggestions.map((s) => (
                     <button key={s.sym} onClick={() => pick(s)}>
                       <b>{s.sym}</b><span>{s.name}</span><em>{s.group}</em>
                     </button>
                   ))}
+                  {suggestions.length === 0 && query.trim() && pairFor(query.trim()) && (
+                    <button onClick={() => pick({ sym: query.trim().toUpperCase() })}>
+                      <b>{query.trim().toUpperCase()}</b><span>listede yok — Binance'te dene</span><em>Kripto</em>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
