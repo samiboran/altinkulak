@@ -1,9 +1,25 @@
 import { useMemo, useState, useRef, useEffect } from "react";
 import { findFVG, findOrderBlocks, findBOS, ema, findMitigation, orderFlowArr, findFib } from "../lib/detectors.js";
 
+// Heikin-Ashi dönüşümü: her mum bir önceki HA gövdesine bağlı, o yüzden tüm dizi baştan hesaplanır.
+function heikinAshi(bars) {
+  const out = new Array(bars.length);
+  let prevO, prevC;
+  for (let i = 0; i < bars.length; i++) {
+    const b = bars[i];
+    const c = (b.o + b.h + b.l + b.c) / 4;
+    const o = i === 0 ? (b.o + b.c) / 2 : (prevO + prevC) / 2;
+    const h = Math.max(b.h, o, c);
+    const l = Math.min(b.l, o, c);
+    out[i] = { ...b, o, h, l, c };
+    prevO = o; prevC = c;
+  }
+  return out;
+}
+
 // Canlı mum grafiği + kavram katmanları. Tümü client-side (SVG).
 // props: bars, concepts(array), showEma(bool), maxView(son N bar)
-export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false }) {
+export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false, magnet = true, chartType = "candle", symbol = "", drawMode = null, compareBars = null }) {
   const hasR = range && range.start != null;
   const FUT = 120; // sağda gelecek boşluğu (fib/projeksiyon) — pencere son barı bu kadar aşabilir
   const rawEnd = hasR ? range.end : bars.length - 1;
@@ -20,6 +36,9 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
   const mits = useMemo(() => concepts.includes("mit") ? findMitigation(bars).filter(m => inWin(m.i)) : [], [bars, concepts, off, endIdx]);
   const ofArr = useMemo(() => concepts.includes("of") ? orderFlowArr(bars) : null, [bars, concepts]);
   const fib = useMemo(() => concepts.includes("fib") ? findFib(view, view.length) : null, [view, concepts]);
+  // AK-044: Heikin-Ashi tüm seriden hesaplanır (önceki HA gövdesine bağımlı), sonra pencereye kırpılır
+  const haFull = useMemo(() => chartType === "heikinashi" ? heikinAshi(bars) : null, [bars, chartType]);
+  const plotBars = haFull ? haFull.slice(off, off + view.length) : view;
 
   const W = 1000, H = 480, pL = 6, pT = 12, pB = 26;
   const lo = Math.min(...view.map(b => b.l)), hi = Math.max(...view.map(b => b.h)), rg = hi - lo || 1;
@@ -61,8 +80,16 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
     const py = ((e.clientY - r.top) / r.height) * H;
     if (px < pL || px > W - pR || py < pT || py > H - pB) { setHov(null); return; }
     const i = Math.max(0, Math.min(slots - 1, Math.round(((px - pL) / (W - pL - pR)) * (slots - 1))));
-    const price = priceAt(py);
-    setHov({ i, px: x(i), py, price });
+    let price = priceAt(py), snapPy = py;
+    if (magnet) {
+      const b = view[Math.min(i, view.length - 1)];
+      if (b) {
+        const cands = [b.o, b.h, b.l, b.c];
+        price = cands.reduce((best, v) => Math.abs(v - price) < Math.abs(best - price) ? v : best, cands[0]);
+        snapPy = y(price);
+      }
+    }
+    setHov({ i, px: x(i), py: snapPy, price });
     if (dragRef.current?.mode === "sel") setSel(sl => (sl ? { ...sl, b: i, yb: py } : sl)); // taze i+py — kutu fareyi iki eksende izler
   }
   // AK-028b: imleç odaklı tekerlek zoom (native listener; passive:false şart)
@@ -87,6 +114,60 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
     return () => el.removeEventListener("wheel", onWheel);
   }, [onRangeSelect]);
 
+  // AK-044: dokunmatik pan (tek parmak) + pinch-zoom (iki parmak)
+  const touchRef = useRef(null);
+  const touchDist = (t0, t1) => Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
+  function onTouchStart(e) {
+    const r = e.currentTarget.getBoundingClientRect();
+    if (e.touches.length === 2) {
+      touchRef.current = { mode: "pinch", d0: touchDist(e.touches[0], e.touches[1]), off0: off, len0: view.length, total: bars.length };
+      setHov(null);
+    } else if (e.touches.length === 1) {
+      const t = e.touches[0];
+      touchRef.current = { mode: "pan", x0: t.clientX, off0: off, len0: view.length, total: bars.length, pxPerBar: r.width * ((W - pL - pR) / W) / view.length };
+      const px = ((t.clientX - r.left) / r.width) * W, py = ((t.clientY - r.top) / r.height) * H;
+      if (px >= pL && px <= W - pR && py >= pT && py <= H - pB) {
+        const i = Math.max(0, Math.min(slots - 1, Math.round(((px - pL) / (W - pL - pR)) * (slots - 1))));
+        let price = priceAt(py), snapPy = py;
+        if (magnet) {
+          const b = view[Math.min(i, view.length - 1)];
+          if (b) { const cands = [b.o, b.h, b.l, b.c]; price = cands.reduce((best, v) => Math.abs(v - price) < Math.abs(best - price) ? v : best, cands[0]); snapPy = y(price); }
+        }
+        setHov({ i, px: x(i), py: snapPy, price });
+      }
+    }
+  }
+  function onTouchEnd(e) {
+    if (e.touches.length === 0) { touchRef.current = null; setHov(null); }
+  }
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el || !onRangeSelect) return;
+    const onTouchMoveNative = (e) => {
+      const d = touchRef.current;
+      if (!d) return;
+      e.preventDefault();
+      if (d.mode === "pinch" && e.touches.length === 2) {
+        const d1 = touchDist(e.touches[0], e.touches[1]);
+        const ratio = d.d0 / Math.max(1, d1); // parmaklar açılınca (d1>d0) ratio<1 → yakınlaş (az bar)
+        const span = Math.round(Math.min(d.total, Math.max(20, d.len0 * ratio)));
+        const maxEnd = d.total - 1 + 120;
+        const mid = d.off0 + d.len0 / 2;
+        let gs = Math.round(mid - span / 2);
+        gs = Math.max(0, Math.min(maxEnd - span + 1, gs));
+        onRangeSelect(gs, gs + span - 1);
+      } else if (d.mode === "pan" && e.touches.length === 1) {
+        const t = e.touches[0];
+        const db = Math.round((d.x0 - t.clientX) / Math.max(0.5, d.pxPerBar));
+        const maxEnd = d.total - 1 + 120;
+        let gs = Math.max(0, Math.min(maxEnd - d.len0 + 1, d.off0 + db));
+        onRangeSelect(gs, gs + d.len0 - 1);
+      }
+    };
+    el.addEventListener("touchmove", onTouchMoveNative, { passive: false });
+    return () => el.removeEventListener("touchmove", onTouchMoveNative);
+  }, [onRangeSelect]);
+
   // AK-030: sürükleme modları — varsayılan PAN (TV standardı), Shift+sürükle = alan seç,
   // sağ eksen üzerinde sürükle = dikey ölçek (fiyatı aç/kapa). Çift tık: grafikte tümü, eksende oto-sığdır.
   const [sel, setSel] = useState(null); // {a,b} view index (Shift seçimi)
@@ -95,10 +176,18 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
     e.preventDefault(); // Shift+sürüklede tarayıcının metin seçimine girmesini engelle
     const r = e.currentTarget.getBoundingClientRect();
     const px = ((e.clientX - r.left) / r.width) * W;
+    const py = ((e.clientY - r.top) / r.height) * H;
     if (px > W - pR) { dragRef.current = { mode: "axis", y0: e.clientY, m0: mid, h0: half }; return; }
+    if (drawMode) {
+      const i = Math.max(0, Math.min(slots - 1, Math.round(((px - pL) / (W - pL - pR)) * (slots - 1))));
+      const a = { i: off + i, price: priceAt(py) };
+      const ghost = { type: drawMode, a, b: a };
+      dragRef.current = { mode: "draw", ghost };
+      setDrawGhost(ghost);
+      return;
+    }
     if (e.shiftKey) {
       const i = Math.max(0, Math.min(slots - 1, Math.round(((px - pL) / (W - pL - pR)) * (slots - 1))));
-      const py = Math.max(pT, Math.min(H - pB, ((e.clientY - r.top) / r.height) * H));
       setSel({ a: i, b: i, ya: py, yb: py });
       dragRef.current = { mode: "sel" };
       return;
@@ -108,7 +197,14 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
   function onDrag(e) {
     const d = dragRef.current;
     if (!d) return;
-    if (d.mode === "axis") {
+    if (d.mode === "draw") {
+      const r = e.currentTarget.getBoundingClientRect();
+      const px = ((e.clientX - r.left) / r.width) * W;
+      const py = ((e.clientY - r.top) / r.height) * H;
+      const i = Math.max(0, Math.min(slots - 1, Math.round(((px - pL) / (W - pL - pR)) * (slots - 1))));
+      d.ghost = { ...d.ghost, b: { i: off + i, price: priceAt(py) } };
+      setDrawGhost(d.ghost);
+    } else if (d.mode === "axis") {
       const dy = e.clientY - d.y0;
       const h = Math.min(rg * 6, Math.max(rg * 0.02, d.h0 * Math.exp(dy * 0.004)));
       setVView({ mid: d.m0, half: h });
@@ -122,6 +218,12 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
   function onUpSel() {
     const d = dragRef.current;
     dragRef.current = null;
+    if (d?.mode === "draw") {
+      const g = d.ghost;
+      if (g && (g.a.i !== g.b.i || g.a.price !== g.b.price)) setDraws(ds => [...ds, g]);
+      setDrawGhost(null);
+      return;
+    }
     if (d?.mode === "sel" && sel && onRangeSelect && Math.abs(sel.b - sel.a) >= 3) {
       if (Math.abs(sel.yb - sel.ya) >= 14) { // dikeyde de kutu çizildiyse fiyat bandına dal
         const p0 = priceAt(sel.ya), p1 = priceAt(sel.yb);
@@ -165,10 +267,35 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
   const viewTrades = useMemo(() => (trades || []).filter(t => t.entryIdx >= off && t.entryIdx <= endIdx), [trades, off, endIdx]);
   const lastTrade = viewTrades.length ? viewTrades[viewTrades.length - 1] : null;
 
+  // AK-044: karşılaştırma — ikinci sembolün % getirisi, birincinin fiyat eksenine ölçeklenip aynı grafiğe bindirilir
+  const compareView = useMemo(() => (compareBars ? compareBars.slice(Math.max(0, off), off + view.length) : null), [compareBars, off, view.length]);
+  const cmpLine = useMemo(() => {
+    if (!compareView || compareView.length < 2 || !view.length) return null;
+    const base = compareView[0].c || 1;
+    const priceBase = view[0].c;
+    return compareView.map((b, i) => ({ i, price: priceBase * (1 + (b.c - base) / base) }));
+  }, [compareView, view]);
+
+  // AK-044: serbest çizim araçları (trend çizgisi / dikdörtgen), sembol bazlı localStorage
+  const [draws, setDraws] = useState([]);
+  const [drawGhost, setDrawGhost] = useState(null);
+  useEffect(() => {
+    try { setDraws(JSON.parse(localStorage.getItem(`ak_draw_${symbol}`)) || []); } catch { setDraws([]); }
+    setDrawGhost(null);
+  }, [symbol]);
+  useEffect(() => {
+    try { localStorage.setItem(`ak_draw_${symbol}`, JSON.stringify(draws)); } catch { /* kotayı aşarsa sessiz geç */ }
+  }, [draws, symbol]);
+  function renderDraw(d, key) {
+    const x0 = x(gi(d.a.i)), y0 = y(d.a.price), x1 = x(gi(d.b.i)), y1 = y(d.b.price);
+    if (d.type === "rect") return <rect key={key} x={Math.min(x0, x1)} y={Math.min(y0, y1)} width={Math.abs(x1 - x0)} height={Math.abs(y1 - y0)} className="ak-c-draw-rect" />;
+    return <line key={key} x1={x0} y1={y0} x2={x1} y2={y1} className="ak-c-draw-line" />;
+  }
+
   if (!view || view.length < 2) return <svg className="ak-chart" viewBox={`0 0 1000 480`} />;
 
   return (
-    <svg ref={svgRef} className="ak-chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Fiyat grafiği" onMouseMove={(e) => { onMove(e); onDrag(e); }} onMouseLeave={() => { setHov(null); setSel(null); dragRef.current = null; }} onMouseDown={onDown} onMouseUp={onUpSel} onDoubleClick={onDbl}>
+    <svg id="ak-main-chart" ref={svgRef} className="ak-chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Fiyat grafiği" onMouseMove={(e) => { onMove(e); onDrag(e); }} onMouseLeave={() => { setHov(null); setSel(null); dragRef.current = null; }} onMouseDown={onDown} onMouseUp={onUpSel} onDoubleClick={onDbl} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
       {[0, .2, .4, .6, .8, 1].map((f, i) => {
         const py = pT + f * (H - pT - pB), pv = logScale ? Math.exp(lnHi - f * (lnHi - lnLo)) : ehi - f * erg;
         return <g key={i}><line x1={pL} y1={py} x2={W - pR} y2={py} className="ak-c-grid" /><text x={W - pR + 5} y={py + 3} className="ak-c-axis">{fmtP(pv)}</text></g>;
@@ -208,13 +335,25 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
 
       {emaArr && <polyline className="ak-c-ema" points={emaArr.map((v, i) => `${x(i)},${y(v)}`).join(" ")} />}
 
-      {view.map((b, i) => {
+      {(chartType === "line" || chartType === "area") ? (
+        <g>
+          {chartType === "area" && <polygon points={`${x(0)},${H - pB} ` + plotBars.map((b, i) => `${x(i)},${y(b.c)}`).join(" ") + ` ${x(plotBars.length - 1)},${H - pB}`} className="ak-c-area" />}
+          <polyline className="ak-c-line" points={plotBars.map((b, i) => `${x(i)},${y(b.c)}`).join(" ")} />
+        </g>
+      ) : plotBars.map((b, i) => {
         const up = b.c >= b.o;
         return <g key={i} className={up ? "ak-c-up" : "ak-c-dn"}>
           <line x1={x(i)} y1={y(b.h)} x2={x(i)} y2={y(b.l)} className="ak-c-wick" />
           <rect x={x(i) - bw / 2} y={y(Math.max(b.o, b.c))} width={bw} height={Math.max(.8, Math.abs(y(b.o) - y(b.c)))} className="ak-c-body" />
         </g>;
       })}
+
+      {/* Karşılaştırma: ikinci sembolün normalize edilmiş getirisi (AK-044) */}
+      {cmpLine && <polyline className="ak-c-cmp" points={cmpLine.map(p => `${x(p.i)},${y(p.price)}`).join(" ")} />}
+
+      {/* Serbest çizimler (trend çizgisi / dikdörtgen) */}
+      {draws.map((d, k) => renderDraw(d, k))}
+      {drawGhost && renderDraw(drawGhost, "ghost")}
 
       {/* Mitigation işaretleri */}
       {mits.map((m, k) => {

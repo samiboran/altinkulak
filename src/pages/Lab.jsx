@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { FlaskConical, Activity, Play, Pause, SkipBack, SkipForward, RotateCcw, ShieldCheck, ShieldAlert, Search, SlidersHorizontal, Monitor, Dices, Calculator, LayoutGrid, Target } from "lucide-react";
+import { FlaskConical, Activity, Play, Pause, SkipBack, SkipForward, RotateCcw, ShieldCheck, ShieldAlert, Search, SlidersHorizontal, Monitor, Dices, Calculator, LayoutGrid, Target, Download } from "lucide-react";
 import { getBars, MARKET_GROUPS, ALL_SYMBOLS, loadReal, isReal, hasData, pairFor, tfOf, TIMEFRAMES } from "../lib/data.js";
 import Chart from "../components/Chart.jsx";
 import Timeline from "../components/Timeline.jsx";
@@ -53,6 +53,13 @@ export default function Lab() {
   const [rPct, setRPct] = useState(1);
   const [rEntry, setREntry] = useState(100);
   const [rStop, setRStop] = useState(98);
+  const [chartType, setChartType] = useState("candle"); // AK-044: mum/çizgi/alan/heikin-ashi
+  const [drawMode, setDrawMode] = useState(null);        // AK-044: null | "trendline" | "rect"
+  const [cmpOpen, setCmpOpen] = useState(false);
+  const [compareOn, setCompareOn] = useState(false);
+  const [compareSymbol, setCompareSymbol] = useState(null);
+  const [compareQuery, setCompareQuery] = useState("");
+  const [, setCmpDataV] = useState(0);
 
   const _bars = getBars(symbol);
   const _N = _bars.length;
@@ -128,6 +135,14 @@ export default function Lab() {
   }, [symbol, tf]);
   const dataOk = hasData(symbol); // ne gerçek ne tanımlı sentetik yoksa grafik/backtest kilitli (sahte veri YASAK)
 
+  // AK-044: karşılaştırma sembolü için de gerçek veriyi arka planda yükle
+  useEffect(() => {
+    if (!compareSymbol) return;
+    let on = true;
+    loadReal(compareSymbol, tf).then(() => { if (on) setCmpDataV(v => v + 1); });
+    return () => { on = false; };
+  }, [compareSymbol, tf]);
+
   // akıllı tamamlama: yazdıktan ~1.5sn sonra öneriler
   useEffect(() => {
     const id = setTimeout(() => setDebounced(query), 300); // standart ~300ms
@@ -147,6 +162,32 @@ export default function Lab() {
   }, []);
 
   function pick(s) { setSymbol(s.sym); setQuery(s.sym); setDebounced(s.sym); setOpen(false); setRes(null); }
+
+  function downloadChartPNG() {
+    const svg = document.getElementById("ak-main-chart");
+    if (!svg) return;
+    let svgStr = new XMLSerializer().serializeToString(svg);
+    if (!svgStr.includes("xmlns=")) svgStr = svgStr.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"');
+    const rect = svg.getBoundingClientRect();
+    const scale = 2;
+    const url = URL.createObjectURL(new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" }));
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = rect.width * scale;
+      canvas.height = rect.height * scale;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#0E1416";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      const a = document.createElement("a");
+      a.download = `altinkulak_${symbol}_${Date.now()}.png`;
+      a.href = canvas.toDataURL("image/png");
+      a.click();
+    };
+    img.src = url;
+  }
 
   function run() {
     if (!hasData(symbol)) return; // veri yokken sahte backtest yok
@@ -180,6 +221,30 @@ export default function Lab() {
             )}
           </div>
           <button className={"ak-cchip teal" + (replay ? " on" : "")} onClick={toggleReplay}>Replay</button>
+          <div className="ak-tf">
+            {[["candle", "Mum"], ["line", "Çizgi"], ["area", "Alan"], ["heikinashi", "Heikin-Ashi"]].map(([k, l]) => (
+              <button key={k} className={chartType === k ? "on" : ""} onClick={() => setChartType(k)}>{l}</button>
+            ))}
+          </div>
+          <button className={"ak-cchip" + (drawMode === "trendline" ? " on" : "")} onClick={() => setDrawMode(m => m === "trendline" ? null : "trendline")}>Trend Çizgisi</button>
+          <button className={"ak-cchip" + (drawMode === "rect" ? " on" : "")} onClick={() => setDrawMode(m => m === "rect" ? null : "rect")}>Dikdörtgen</button>
+          <div className="ak-view">
+            <button className={"ak-cchip teal" + (compareOn && compareSymbol ? " on" : "")} onClick={() => setCmpOpen(v => !v)}>Karşılaştır{compareOn && compareSymbol ? ` (${compareSymbol})` : ""}</button>
+            {cmpOpen && (
+              <div className="ak-view-menu">
+                <input type="text" placeholder="Sembol (örn. ETH)" value={compareQuery} spellCheck={false}
+                  onChange={(e) => setCompareQuery(e.target.value)} className="ak-cmp-in" />
+                <button className="ak-view-basic" onClick={() => {
+                  const s = compareQuery.trim().toUpperCase();
+                  if (!s) return;
+                  setCompareSymbol(s); setCompareOn(true); setCmpOpen(false);
+                }}>Ekle</button>
+                {compareSymbol && (
+                  <button className="ak-view-basic" onClick={() => { setCompareOn(false); setCompareSymbol(null); setCompareQuery(""); setCmpOpen(false); }}>Kaldır</button>
+                )}
+              </div>
+            )}
+          </div>
           <div className="ak-view">
             <button className={"ak-cchip" + (viewOpen ? " on" : "")} onClick={() => setViewOpen(v => !v)}><LayoutGrid size={12} /> Görünüm</button>
             {viewOpen && (
@@ -207,7 +272,7 @@ export default function Lab() {
             <b>{symbol}</b> için veri bekleniyor… Binance'te {symbol}USDT deneniyor; bulunamazsa burada açıkça söylenir — başka sembolün örnek verisi ASLA gösterilmez.
           </div>
         )}
-        {dataOk && <Chart bars={getBars(symbol)} concepts={concepts} showEma={showEma} trades={replay ? null : res?.trades} logScale={logS} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} />}
+        {dataOk && <Chart bars={getBars(symbol)} concepts={concepts} showEma={showEma} trades={replay ? null : res?.trades} logScale={logS} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} />}
         {replay && (
           <div className="ak-replay">
             <button className="ak-rp" onClick={() => setCursor(c => Math.max(winStart + 4, c - 1))} title="Geri"><SkipBack size={15} /></button>
@@ -242,6 +307,8 @@ export default function Lab() {
           {[["14G", 84], ["1A", 180], ["3A", 540], ["Tümü", 900]].map(([lb, nb]) => (
             <button key={lb} onClick={() => { setWin({ s: Math.max(0, 1 - nb / 900), e: 1 }); }}>{lb}</button>
           ))}
+          <span className="ak-ranges-sep" />
+          <button title="Grafiği PNG olarak indir" onClick={downloadChartPNG}><Download size={12} /> PNG</button>
         </div>
         {lay.timeline && <Timeline bars={getBars(symbol)} win={win} onChange={setWin}
           lanes={lanes} lanesOn={lanesOn}

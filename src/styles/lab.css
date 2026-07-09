@@ -1,4 +1,4 @@
-.ak-lab{padding:36px 24px 30px;max-width:1180px;margin:0 auto;}
+.ak-lab{padding:36px 24px 30px;max-width:1440px;margin:0 auto;}
 .ak-lab-head{margin-bottom:22px;}
 .ak-lab-grid{display:grid;grid-template-columns:1.1fr 1fr;gap:18px;}
 .ak-panel{background:linear-gradient(180deg,#17211F,#141E1C);border:1px solid var(--line);border-radius:15px;padding:20px;}
@@ -88,6 +88,8 @@
 .ak-view-menu input{accent-color:var(--gold);}
 .ak-view-basic{margin-top:4px;background:transparent;border:1px solid var(--line);border-radius:8px;color:var(--teal-soft);padding:7px;font-size:12px;cursor:pointer;}
 .ak-view-basic:hover{border-color:var(--teal-deep);}
+.ak-cmp-in{background:#0E1816;border:1px solid var(--line);border-radius:8px;color:var(--txt);padding:7px 10px;font-family:'JetBrains Mono';font-size:12.5px;outline:none;}
+.ak-cmp-in:focus{border-color:var(--teal-deep);}
 
 /* Sayfa yükleme (lazy-load fallback) */
 .ak-pageload{min-height:50vh;}
@@ -107,7 +109,7 @@
 
 /* AK-026: hızlı aralık butonları (TV alt şeridi tarzı) */
 .ak-ranges{display:flex;gap:4px;justify-content:flex-end;padding:5px 8px 0;}
-.ak-ranges button{background:transparent;border:none;color:#647974;font-family:'JetBrains Mono';font-size:10.5px;padding:4px 9px;border-radius:6px;cursor:pointer;}
+.ak-ranges button{display:inline-flex;align-items:center;gap:4px;background:transparent;border:none;color:#647974;font-family:'JetBrains Mono';font-size:10.5px;padding:4px 9px;border-radius:6px;cursor:pointer;}
 .ak-ranges button:hover{color:var(--teal-soft);background:#16211F;}
 .ak-ranges-sep{width:1px;background:var(--line);margin:2px 4px;}
 .ak-ranges button.on{color:var(--teal-soft);background:#16211F;}
