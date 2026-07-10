@@ -1,11 +1,14 @@
 import { useState, useEffect } from "react";
-import { Eye, Plus, Trash2, ShieldCheck } from "lucide-react";
+import { Eye, Plus, Trash2, ShieldCheck, Bell, BellRing } from "lucide-react";
 import { getBars, ALL_SYMBOLS, loadReal, isReal, hasData } from "../lib/data.js";
 import { runBacktest } from "../lib/backtest.js";
+import { detectModBSignals } from "../lib/modB.js";
+import { requestNotifyPermission, notify, isSeen, markSeen } from "../lib/notify.js";
 import "../styles/izleme.css";
 
 const WKEY = "ak_watch_v1";
-function load() { try { return JSON.parse(localStorage.getItem(WKEY)) || ["SOL", "BTC", "ASELS"]; } catch { return ["SOL"]; } }
+const POLL_MS = 5 * 60 * 1000; // 5 dakika
+function load() { try { return JSON.parse(localStorage.getItem(WKEY)) || ["BTC", "ETH", "SOL", "AVAX"]; } catch { return ["BTC"]; } }
 
 function Spark({ sym }) {
   const b = getBars(sym).slice(-40).map(x => x.c);
@@ -19,6 +22,8 @@ export default function Izleme() {
   const [list, setList] = useState(load);
   const [q, setQ] = useState("");
   const [, setDataV] = useState(0);
+  const [notifyPerm, setNotifyPerm] = useState(() => (typeof Notification !== "undefined" ? Notification.permission : "unsupported"));
+  const [signals, setSignals] = useState([]);
   useEffect(() => { try { localStorage.setItem(WKEY, JSON.stringify(list)); } catch {} }, [list]);
 
   // AK-004b: listedeki gerçek-kaynaklı semboller arka planda yüklenir
@@ -38,6 +43,38 @@ export default function Izleme() {
     return p.toFixed(4);
   };
 
+  // AK-042: Mod B v1.1 canlı sinyal taraması — sekme açıkken 5dk'da bir, yalnız bu tarayıcıda bildirim.
+  useEffect(() => {
+    let on = true;
+    function scan() {
+      const all = [];
+      for (const sym of list) {
+        if (!hasData(sym)) continue;
+        const b = getBars(sym);
+        if (!b || b.length < 60) continue;
+        all.push(...detectModBSignals(b, sym));
+      }
+      all.sort((a, b) => (b.time || 0) - (a.time || 0));
+      const top = all.slice(0, 10);
+      if (!on) return;
+      setSignals(top);
+      for (const s of top) {
+        if (!isSeen(s.id)) {
+          markSeen(s.id);
+          notify(
+            `Mod B sinyali: ${s.sym} ${s.dir === 1 ? "LONG" : "SHORT"}`,
+            `Giriş ${fmtP(s.entry)} · Stop ${fmtP(s.stop)} · Hedef1 ${fmtP(s.hedef1)}`
+          );
+        }
+      }
+    }
+    scan();
+    const id = setInterval(scan, POLL_MS);
+    return () => { on = false; clearInterval(id); };
+  }, [list]);
+
+  async function enableNotify() { setNotifyPerm(await requestNotifyPermission()); }
+
   function add() { const s = q.trim().toUpperCase(); if (s && !list.includes(s)) setList(l => [...l, s]); setQ(""); }
   function del(s) { setList(l => l.filter(x => x !== s)); }
 
@@ -56,6 +93,17 @@ export default function Izleme() {
       <span className="ak-eyebrow">İZLEME LİSTESİ</span>
       <h1>Takibindekiler</h1>
       <p className="ak-izle-lead">Semboller, son fiyat, mini grafik ve "şu an FVG edge'i var mı" rozeti. Liste bu cihazda saklanır.</p>
+
+      <div className="ak-izle-notify">
+        <button
+          className="ak-btn ak-btn-secondary sm"
+          onClick={enableNotify}
+          disabled={notifyPerm === "granted" || notifyPerm === "unsupported"}
+        >
+          {notifyPerm === "granted" ? <><BellRing size={14} /> Bildirimler açık</> : <><Bell size={14} /> Bildirimleri Aç</>}
+        </button>
+        <span className="ak-izle-notify-note">Mod B v1.1 (EMA50 bias + sıkı FVG + OTE 0.618 + onay mumu) sinyali oluşunca, yalnız bu sekme açıkken bildirim gelir.</span>
+      </div>
 
       <div className="ak-izle-add">
         <input list="ak-wsyms" placeholder="Sembol ekle (SOL, NVDA, GARAN…)" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === "Enter" && add()} />
@@ -82,6 +130,25 @@ export default function Izleme() {
         </div>
       )}
       <p className="ak-izle-note">● = gerçek veri (Binance 4H — listedeki HERHANGİ bir kripto sembolü SEMBOL+USDT olarak denenir) · ○ = örnek veri. Edge rozeti geçmiş 900 barın ölçümüdür, gelecek vaadi ve yatırım tavsiyesi değildir.</p>
+
+      {signals.length > 0 && (
+        <div className="ak-signals">
+          <h2>Son Sinyaller <span className="ak-soon">Mod B v1.1</span></h2>
+          <div className="ak-signal-list">
+            {signals.map((s) => (
+              <div className={"ak-signal-row " + (s.dir === 1 ? "long" : "short")} key={s.id}>
+                <span className="sy">{s.sym}</span>
+                <span className="dir">{s.dir === 1 ? "LONG" : "SHORT"}</span>
+                <span className="lv">Giriş <b>{fmtP(s.entry)}</b></span>
+                <span className="lv">Stop <b>{fmtP(s.stop)}</b></span>
+                <span className="lv">Hedef1 <b>{fmtP(s.hedef1)}</b></span>
+                <span className="lv">Hedef2 <b>{fmtP(s.hedef2)}</b></span>
+              </div>
+            ))}
+          </div>
+          <p className="ak-izle-note">Bu simülasyon/eğitim amaçlıdır; yatırım tavsiyesi değildir. Hedef1'de plan %50 kısmi çıkış öngörür.</p>
+        </div>
+      )}
     </div>
   );
 }

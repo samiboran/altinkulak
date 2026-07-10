@@ -48,6 +48,7 @@ const PROFILES = {
   BTC:  { seed: 101, trend: 0.0006, noise: 0.011, rho: 0.20, cont: 1.5 },
   ETH:  { seed: 202, trend: 0.0008, noise: 0.012, rho: 0.24, cont: 1.9 },
   SOL:  { seed: 303, trend: 0.0011, noise: 0.013, rho: 0.30, cont: 2.4 },
+  AVAX: { seed: 305, trend: 0.0010, noise: 0.014, rho: 0.28, cont: 2.2 },
   // BIST
   ASELS:{ seed: 311, trend: 0.0009, noise: 0.012, rho: 0.26, cont: 2.0 },
   THYAO:{ seed: 312, trend: 0.0007, noise: 0.013, rho: 0.22, cont: 1.4 },
@@ -68,7 +69,7 @@ const PROFILES = {
 
 // Kullanici arayuzu icin grup yapisi
 export const MARKET_GROUPS = [
-  { key: "kripto",  label: "Kripto", symbols: ["BTC", "ETH", "SOL"] },
+  { key: "kripto",  label: "Kripto", symbols: ["BTC", "ETH", "SOL", "AVAX"] },
   { key: "bist",    label: "BIST",   symbols: ["ASELS", "THYAO", "GARAN", "SISE"] },
   { key: "abd",     label: "ABD",    symbols: ["NVDA", "AAPL", "TSLA", "MSFT"] },
   { key: "avrupa",  label: "Avrupa", symbols: ["ASML", "SAP", "MC"], pending: true },
@@ -89,7 +90,7 @@ export const SYMBOLS = Object.keys(PROFILES);
 
 // Sembol arama (akıllı tamamlama) için isimli düz liste
 const NAMES = {
-  BTC:"Bitcoin", ETH:"Ethereum", SOL:"Solana",
+  BTC:"Bitcoin", ETH:"Ethereum", SOL:"Solana", AVAX:"Avalanche",
   ASELS:"Aselsan", THYAO:"Türk Hava Yolları", GARAN:"Garanti BBVA", SISE:"Şişecam",
   NVDA:"NVIDIA", AAPL:"Apple", TSLA:"Tesla", MSFT:"Microsoft",
   ASML:"ASML", SAP:"SAP", MC:"LVMH", RND:"Rastgele (kontrol)",
@@ -103,7 +104,7 @@ export const ALL_SYMBOLS = MARKET_GROUPS.flatMap((g) =>
 // data-api.binance.vision = salt piyasa-verisi aynası (birincil); api.binance.com yedek.
 // BIST/ABD/Avrupa sentetik kalır (lisanslı kaynak = sonraki faz). RND daima sentetik (kontrol).
 
-const REAL_MAP = { BTC: "BTCUSDT", ETH: "ETHUSDT", SOL: "SOLUSDT" };
+const REAL_MAP = { BTC: "BTCUSDT", ETH: "ETHUSDT", SOL: "SOLUSDT", AVAX: "AVAXUSDT" };
 export const REAL_CAPABLE = Object.keys(REAL_MAP);
 const realCache = {};
 const realFail = new Set(); // bu oturumda Binance'te bulunamayanlar — tekrar deneme

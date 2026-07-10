@@ -16,7 +16,7 @@
 .ak-c-ema{fill:none;stroke:var(--teal);stroke-width:1.3;opacity:.8;}
 .ak-c-up .ak-c-wick,.ak-c-up .ak-c-body{stroke:var(--good);} .ak-c-up .ak-c-body{fill:var(--good);}
 .ak-c-dn .ak-c-wick,.ak-c-dn .ak-c-body{stroke:var(--bad);} .ak-c-dn .ak-c-body{fill:var(--bad);}
-.ak-c-wick{stroke-width:1;} .ak-c-body{stroke-width:.4;}
+.ak-c-wick{stroke-width:1;stroke-linecap:round;} .ak-c-body{stroke-width:.4;}
 
 .ak-c-entry{stroke:#0E1416;stroke-width:.5;}
 .ak-c-entry.win{fill:var(--good);}
@@ -94,3 +94,12 @@
 .ak-c-lastline.up{stroke:var(--good);} .ak-c-lastline.dn{stroke:var(--bad);}
 .ak-chart, .ak-chart text{user-select:none;-webkit-user-select:none;}
 .ak-chart{height:clamp(460px,64vh,760px);}
+
+/* AK-047: boşluk basılıyken el aracı imleci */
+.ak-c-grab{cursor:grab;}
+.ak-c-grabbing{cursor:grabbing;}
+
+/* AK-047: sarı yer imi (bookmark) */
+.ak-c-bookmark-line{stroke:var(--gold);stroke-width:1;stroke-dasharray:6 4;opacity:.65;cursor:pointer;}
+.ak-c-bookmark-mark{fill:var(--gold);stroke:#0E1416;stroke-width:.8;cursor:grab;}
+.ak-c-bookmark-mark:active{cursor:grabbing;}

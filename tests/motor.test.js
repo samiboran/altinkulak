@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { mean, std, tStat, trainTestSplit, verdict, bonferroniT, expectedFalsePositives } from "../src/lib/stats.js";
 import { runBacktest } from "../src/lib/backtest.js";
 import { getBars, parseKlines, loadReal, isReal, pairFor, hasData } from "../src/lib/data.js";
+import { detectModBSignals } from "../src/lib/modB.js";
 
 let pass = 0;
 function test(name, fn) {
@@ -311,8 +312,9 @@ test("pairFor: bilinen kripto haritadan, bilinmeyen sembol SEMBOL+USDT, kripto-o
   assert.equal(pairFor("RND"), null); // kontrol grubu daima sentetik
 });
 test("hasData: tanımsız sembol veri-yok sayılır (sahte sentetik gösterilmez)", () => {
-  assert.equal(hasData("AVAX"), false); // gerçek yüklenmedikçe
+  assert.equal(hasData("DOGE"), false); // ne gerçek ne tanımlı sentetik
   assert.equal(hasData("SOL"), true);
+  assert.equal(hasData("AVAX"), true); // AK-042: tanımlı sentetik + gerçek-kaynaklı
 });
 
 console.log("id benzersizliği (regresyon koruması)");
@@ -324,6 +326,90 @@ test("aynı milisaniyede eklenen kayıtlar farklı id alır (UUID)", () => {
   assert.ok(a && b && a.id !== b.id, "sicil id çakıştı");
   assert.ok(c && d && c.id !== d.id, "sandbox id çakıştı");
   assert.equal(typeof a.id, "string");
+});
+
+console.log("Mod B v1.1 sinyal dedektörü (AK-042)");
+// EMA50 bias + siki FVG(<0.3xATR) + OTE(fib 0.618) + onay mumu — kurali karsilayan/karsilamayan
+// senaryolari elle kuruyoruz: uzun yavas trend (bias + fib penceresi) -> yerel ralli -> 0.618
+// pullback -> konsolidasyon (pencere yenilensin) -> son 4 barda siki FVG + onay mumu.
+function buildModBBars({ short = false, gapOffset = 0.03, badConfirm = false, consolidation = 34 } = {}) {
+  const bars = [];
+  let price = 100;
+  for (let i = 0; i < 150; i++) {
+    const o = price, c = price + 0.3;
+    bars.push({ o, h: c + 0.15, l: o - 0.15, c });
+    price = c;
+  }
+  const rallyStart = price;
+  for (let i = 0; i < 20; i++) {
+    const o = price, c = price + 1;
+    bars.push({ o, h: c + 0.15, l: o - 0.15, c });
+    price = c;
+  }
+  const rallyEnd = price;
+  const rg = rallyEnd - rallyStart;
+  const level618 = rallyEnd - rg * 0.618;
+
+  let p = price;
+  const steps = 5;
+  const step = (level618 - p) / steps;
+  for (let k = 0; k < steps; k++) {
+    const o = p, c = p + step;
+    bars.push({ o, h: Math.max(o, c) + 0.1, l: Math.min(o, c) - 0.1, c });
+    p = c;
+  }
+  for (let k = 0; k < consolidation; k++) {
+    const wob = (k % 2 === 0 ? 0.08 : -0.08);
+    const o = p, c = p + wob;
+    bars.push({ o, h: Math.max(o, c) + 0.12, l: Math.min(o, c) - 0.12, c });
+    p = c;
+  }
+  const base = p;
+  bars.push({ o: base + 0.08, h: base + 0.18, l: base - 0.14, c: base - 0.04 });        // i-2
+  bars.push({ o: base - 0.04, h: base + 0.04, l: base - 0.12, c: base - 0.09 });        // i-1
+  const gapLo = base + 0.18;
+  const gapHi = gapLo + gapOffset;
+  bars.push({ o: base - 0.09, h: gapHi + 0.12, l: gapHi, c: gapHi + 0.09 });            // i (siki bull FVG)
+  const confC = badConfirm ? gapHi + 0.09 - 0.2 : gapHi + 0.09 + 0.2;
+  const confO = badConfirm ? gapHi + 0.09 + 0.05 : gapHi + 0.09;
+  bars.push({ o: confO, h: Math.max(confO, confC) + 0.1, l: Math.min(confO, confC) - 0.05, c: confC }); // i+1 onay
+
+  const raw = bars.map((b, i) => ({ t: i, ...b }));
+  if (!short) return raw;
+  const K = 400; // ayna: long kuralinin simetrigi (short) — ayni yapi ters yonde
+  return raw.map((b) => ({ t: b.t, o: K - b.o, c: K - b.c, h: K - b.l, l: K - b.h }));
+}
+
+test("long: bias+siki FVG+OTE+onay hizalanınca sinyal üretir", () => {
+  const sigs = detectModBSignals(buildModBBars(), "TEST");
+  assert.equal(sigs.length, 1);
+  const s = sigs[0];
+  assert.equal(s.dir, 1);
+  assert.ok(s.stop < s.entry && s.entry < s.hedef1 && s.hedef1 < s.hedef2, "long R seviyeleri sirali degil");
+  assert.ok(s.r0 > 0);
+  assert.equal(s.id, `TEST_1_${s.barIndex - 1}`);
+});
+test("short: aynı kural ters yönde de sinyal üretir", () => {
+  const sigs = detectModBSignals(buildModBBars({ short: true }), "TEST");
+  assert.equal(sigs.length, 1);
+  const s = sigs[0];
+  assert.equal(s.dir, -1);
+  assert.ok(s.stop > s.entry && s.entry > s.hedef1 && s.hedef1 > s.hedef2, "short R seviyeleri sirali degil");
+});
+test("FVG 0.3xATR'den geniş olunca sinyal reddedilir", () => {
+  assert.equal(detectModBSignals(buildModBBars({ gapOffset: 0.5 }), "TEST").length, 0);
+});
+test("onay mumu ters yönde kapanınca sinyal reddedilir", () => {
+  assert.equal(detectModBSignals(buildModBBars({ badConfirm: true }), "TEST").length, 0);
+});
+test("60 bardan az veri → boş dizi (çökmez)", () => {
+  assert.deepEqual(detectModBSignals(buildModBBars().slice(0, 50), "TEST"), []);
+});
+test("id deterministik: aynı barlarda tekrar çağrı aynı id'yi üretir (tekrar bildirim önleme temeli)", () => {
+  const bars = buildModBBars();
+  const a = detectModBSignals(bars, "TEST")[0].id;
+  const b = detectModBSignals(bars, "TEST")[0].id;
+  assert.equal(a, b);
 });
 
 console.log(`\n${pass} test geçti${process.exitCode ? " (HATALAR VAR)" : " — motor sağlam."}`);

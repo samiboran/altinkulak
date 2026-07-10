@@ -1,8 +1,22 @@
-import { NavLink, Link } from "react-router-dom";
-import { Search, Bell } from "lucide-react";
+import { useState } from "react";
+import { NavLink, Link, useNavigate } from "react-router-dom";
+import { Search, Bell, User, LogOut } from "lucide-react";
 import AkLogo from "./AkLogo.jsx";
+import { useAuth } from "../lib/AuthProvider.jsx";
+import { signOut } from "../lib/supabase.js";
 
 export default function Navbar() {
+  const { user, loading } = useAuth();
+  const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
+  const handle = user?.email ? user.email.split("@")[0] : "";
+
+  async function handleSignOut() {
+    setOpen(false);
+    await signOut();
+    navigate("/");
+  }
+
   return (
     <header className="ak-top">
       <Link className="ak-brand" to="/">
@@ -21,7 +35,18 @@ export default function Navbar() {
       <div className="ak-tools">
         <button className="ak-icon" aria-label="Ara"><Search size={18} /></button>
         <button className="ak-icon" aria-label="Bildirimler"><Bell size={18} /></button>
-        <Link className="ak-signin" to="/giris">Giriş</Link>
+        {!loading && user ? (
+          <div className="ak-usermenu">
+            <button className="ak-signin ak-userbtn" onClick={() => setOpen(v => !v)}><User size={14} /> @{handle}</button>
+            {open && (
+              <div className="ak-usermenu-pop">
+                <button onClick={handleSignOut}><LogOut size={14} /> Çıkış yap</button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <Link className="ak-signin" to="/giris">Giriş</Link>
+        )}
       </div>
     </header>
   );

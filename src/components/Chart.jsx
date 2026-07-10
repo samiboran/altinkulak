@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useEffect } from "react";
+import { useMemo, useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
 import { findFVG, findOrderBlocks, findBOS, ema, findMitigation, orderFlowArr, findFib } from "../lib/detectors.js";
 
 // Heikin-Ashi dönüşümü: her mum bir önceki HA gövdesine bağlı, o yüzden tüm dizi baştan hesaplanır.
@@ -19,7 +19,7 @@ function heikinAshi(bars) {
 
 // Canlı mum grafiği + kavram katmanları. Tümü client-side (SVG).
 // props: bars, concepts(array), showEma(bool), maxView(son N bar)
-export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false, magnet = true, chartType = "candle", symbol = "", drawMode = null, compareBars = null }) {
+const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = true, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false, magnet = true, chartType = "candle", symbol = "", drawMode = null, compareBars = null }, ref) {
   const hasR = range && range.start != null;
   const FUT = 120; // sağda gelecek boşluğu (fib/projeksiyon) — pencere son barı bu kadar aşabilir
   const rawEnd = hasR ? range.end : bars.length - 1;
@@ -168,6 +168,58 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
     return () => el.removeEventListener("touchmove", onTouchMoveNative);
   }, [onRangeSelect]);
 
+  // AK-047: boşluk basılıyken "el aracı" — hem yatay hem dikey serbest sürükleme
+  const [spaceDown, setSpaceDown] = useState(false);
+  const [handDragging, setHandDragging] = useState(false);
+  const overRef = useRef(false);
+  useEffect(() => {
+    function isTypingTarget(el) {
+      if (!el) return false;
+      const tag = el.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+    }
+    function onKeyDown(e) {
+      if (e.code === "Space" && overRef.current && !isTypingTarget(document.activeElement)) {
+        e.preventDefault();
+        setSpaceDown(true);
+      }
+    }
+    function onKeyUp(e) { if (e.code === "Space") setSpaceDown(false); }
+    function onBlur() { setSpaceDown(false); }
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
+
+  // AK-047: sarı yer imi (bookmark) — sembol bazlı localStorage, alt+tık ile konur, sürüklenebilir
+  const [bookmark, setBookmark] = useState(null); // {barIndex(global), price}
+  useEffect(() => {
+    try { setBookmark(JSON.parse(localStorage.getItem(`ak_bookmark_${symbol}`))); } catch { setBookmark(null); }
+  }, [symbol]);
+  useEffect(() => {
+    try {
+      if (bookmark) localStorage.setItem(`ak_bookmark_${symbol}`, JSON.stringify(bookmark));
+      else localStorage.removeItem(`ak_bookmark_${symbol}`);
+    } catch { /* kotayı aşarsa sessiz geç */ }
+  }, [bookmark, symbol]);
+  function goToBookmark() {
+    if (!bookmark) return;
+    setVView({ mid: bookmark.price, half });
+    if (onRangeSelect) {
+      const width = view.length;
+      const maxEnd = bars.length - 1 + 120;
+      let gs = Math.round(bookmark.barIndex - width / 2);
+      gs = Math.max(0, Math.min(maxEnd - width + 1, gs));
+      onRangeSelect(gs, gs + width - 1);
+    }
+  }
+  useImperativeHandle(ref, () => ({ goToBookmark }));
+
   // AK-030: sürükleme modları — varsayılan PAN (TV standardı), Shift+sürükle = alan seç,
   // sağ eksen üzerinde sürükle = dikey ölçek (fiyatı aç/kapa). Çift tık: grafikte tümü, eksende oto-sığdır.
   const [sel, setSel] = useState(null); // {a,b} view index (Shift seçimi)
@@ -178,6 +230,16 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
     const px = ((e.clientX - r.left) / r.width) * W;
     const py = ((e.clientY - r.top) / r.height) * H;
     if (px > W - pR) { dragRef.current = { mode: "axis", y0: e.clientY, m0: mid, h0: half }; return; }
+    if (e.altKey) {
+      const i = Math.max(0, Math.min(slots - 1, Math.round(((px - pL) / (W - pL - pR)) * (slots - 1))));
+      setBookmark({ barIndex: off + i, price: priceAt(py) });
+      return;
+    }
+    if (spaceDown) {
+      setHandDragging(true);
+      dragRef.current = { mode: "hand", x0: e.clientX, y0: e.clientY, off0: off, len0: view.length, m0: mid, h0: half, pxPerBar: r.width * ((W - pL - pR) / W) / view.length };
+      return;
+    }
     if (drawMode) {
       const i = Math.max(0, Math.min(slots - 1, Math.round(((px - pL) / (W - pL - pR)) * (slots - 1))));
       const a = { i: off + i, price: priceAt(py) };
@@ -208,6 +270,22 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
       const dy = e.clientY - d.y0;
       const h = Math.min(rg * 6, Math.max(rg * 0.02, d.h0 * Math.exp(dy * 0.004)));
       setVView({ mid: d.m0, half: h });
+    } else if (d.mode === "hand") {
+      if (onRangeSelect) {
+        const db = Math.round((d.x0 - e.clientX) / Math.max(0.5, d.pxPerBar));
+        const maxEnd = bars.length - 1 + 120;
+        let gs = Math.max(0, Math.min(maxEnd - d.len0 + 1, d.off0 + db));
+        onRangeSelect(gs, gs + d.len0 - 1);
+      }
+      const dy = e.clientY - d.y0;
+      const pricePerPixel = (d.h0 * 2) / (H - pT - pB);
+      setVView({ mid: d.m0 + dy * pricePerPixel, half: d.h0 });
+    } else if (d.mode === "bookmark") {
+      const r = e.currentTarget.getBoundingClientRect();
+      const px = ((e.clientX - r.left) / r.width) * W;
+      const py = ((e.clientY - r.top) / r.height) * H;
+      const i = Math.max(0, Math.min(slots - 1, Math.round(((px - pL) / (W - pL - pR)) * (slots - 1))));
+      setBookmark({ barIndex: off + i, price: priceAt(py) });
     } else if (d.mode === "pan" && onRangeSelect) {
       const db = Math.round((d.x0 - e.clientX) / Math.max(0.5, d.pxPerBar));
       const maxEnd = bars.length - 1 + 120;
@@ -218,6 +296,7 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
   function onUpSel() {
     const d = dragRef.current;
     dragRef.current = null;
+    setHandDragging(false);
     if (d?.mode === "draw") {
       const g = d.ghost;
       if (g && (g.a.i !== g.b.i || g.a.price !== g.b.price)) setDraws(ds => [...ds, g]);
@@ -294,8 +373,13 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
 
   if (!view || view.length < 2) return <svg className="ak-chart" viewBox={`0 0 1000 480`} />;
 
+  const cursorClass = spaceDown ? (handDragging ? " ak-c-grabbing" : " ak-c-grab") : "";
   return (
-    <svg id="ak-main-chart" ref={svgRef} className="ak-chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Fiyat grafiği" onMouseMove={(e) => { onMove(e); onDrag(e); }} onMouseLeave={() => { setHov(null); setSel(null); dragRef.current = null; }} onMouseDown={onDown} onMouseUp={onUpSel} onDoubleClick={onDbl} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
+    <svg id="ak-main-chart" ref={svgRef} className={"ak-chart" + cursorClass} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Fiyat grafiği"
+      onMouseEnter={() => { overRef.current = true; }}
+      onMouseMove={(e) => { onMove(e); onDrag(e); }}
+      onMouseLeave={() => { overRef.current = false; setHov(null); setSel(null); dragRef.current = null; setHandDragging(false); }}
+      onMouseDown={onDown} onMouseUp={onUpSel} onDoubleClick={onDbl} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
       {[0, .2, .4, .6, .8, 1].map((f, i) => {
         const py = pT + f * (H - pT - pB), pv = logScale ? Math.exp(lnHi - f * (lnHi - lnLo)) : ehi - f * erg;
         return <g key={i}><line x1={pL} y1={py} x2={W - pR} y2={py} className="ak-c-grid" /><text x={W - pR + 5} y={py + 3} className="ak-c-axis">{fmtP(pv)}</text></g>;
@@ -344,9 +428,23 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
         const up = b.c >= b.o;
         return <g key={i} className={up ? "ak-c-up" : "ak-c-dn"}>
           <line x1={x(i)} y1={y(b.h)} x2={x(i)} y2={y(b.l)} className="ak-c-wick" />
-          <rect x={x(i) - bw / 2} y={y(Math.max(b.o, b.c))} width={bw} height={Math.max(.8, Math.abs(y(b.o) - y(b.c)))} className="ak-c-body" />
+          <rect x={x(i) - bw / 2} y={y(Math.max(b.o, b.c))} width={bw} height={Math.max(.8, Math.abs(y(b.o) - y(b.c)))} rx={Math.min(2, bw * 0.25)} className="ak-c-body" />
         </g>;
       })}
+
+      {/* AK-047: sarı yer imi (bookmark) — alt+tık ile konur, sürüklenebilir, çift tık = işarete dön */}
+      {bookmark && (() => {
+        const bx = x(gi(bookmark.barIndex)), by = y(bookmark.price);
+        return (
+          <g className="ak-c-bookmark-g">
+            <line x1={pL} y1={by} x2={W - pR} y2={by} className="ak-c-bookmark-line" onDoubleClick={(e) => { e.stopPropagation(); goToBookmark(); }} />
+            <polygon points={`${bx},${by - 6} ${bx + 6},${by} ${bx},${by + 6} ${bx - 6},${by}`} className="ak-c-bookmark-mark"
+              onMouseDown={(e) => { e.stopPropagation(); dragRef.current = { mode: "bookmark" }; }}
+              onDoubleClick={(e) => { e.stopPropagation(); goToBookmark(); }}
+            />
+          </g>
+        );
+      })()}
 
       {/* Karşılaştırma: ikinci sembolün normalize edilmiş getirisi (AK-044) */}
       {cmpLine && <polyline className="ak-c-cmp" points={cmpLine.map(p => `${x(p.i)},${y(p.price)}`).join(" ")} />}
@@ -405,4 +503,6 @@ export default function Chart({ bars, concepts = ["fvg"], showEma = true, maxVie
       </g>
     </svg>
   );
-}
+});
+
+export default Chart;

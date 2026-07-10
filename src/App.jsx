@@ -3,6 +3,7 @@ import { Routes, Route, Outlet } from "react-router-dom";
 import Navbar from "./components/Navbar.jsx";
 import Footer from "./components/Footer.jsx";
 import Home from "./pages/Home.jsx";
+import { AuthProvider } from "./lib/AuthProvider.jsx";
 
 // AK-022: route lazy-load — ilk boyama hızı için yalnız Home + kabuk peşin yüklenir.
 // Hedef: girişsiz kullanıcı fiyatı <1sn görsün (TradingView hızlı-bakış trafiği).
@@ -22,7 +23,7 @@ const Ders = lazy(() => import("./pages/Ders.jsx"));
 
 function Layout() {
   return (
-    <>
+    <AuthProvider>
       <Navbar />
       <main>
         <Suspense fallback={<div className="ak-pageload" aria-busy="true" />}>
@@ -30,7 +31,7 @@ function Layout() {
         </Suspense>
       </main>
       <Footer />
-    </>
+    </AuthProvider>
   );
 }
 

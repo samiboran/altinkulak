@@ -39,6 +39,11 @@ main{min-height:60vh;}
 .ak-icon:hover{background:var(--panel);color:var(--txt);}
 .ak-signin{height:36px;padding:0 16px;display:inline-flex;align-items:center;border-radius:10px;font-weight:600;font-size:14px;border:1px solid var(--line);transition:.15s;}
 .ak-signin:hover{border-color:var(--teal);color:var(--teal-soft);}
+.ak-usermenu{position:relative;}
+.ak-userbtn{gap:7px;font-family:'JetBrains Mono';}
+.ak-usermenu-pop{position:absolute;top:calc(100% + 6px);right:0;z-index:30;background:#121C1A;border:1px solid var(--line);border-radius:11px;padding:6px;min-width:150px;box-shadow:0 8px 24px rgba(0,0,0,.4);}
+.ak-usermenu-pop button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:9px 10px;border-radius:8px;font-size:13px;color:var(--muted);}
+.ak-usermenu-pop button:hover{background:var(--panel2);color:var(--bad);}
 
 /* ---- buttons (tek dil: duz altin, tutarli yaricap) ---- */
 .ak-btn{height:42px;padding:0 18px;border-radius:10px;border:1px solid transparent;

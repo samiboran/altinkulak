@@ -125,6 +125,7 @@ export default function Lab() {
   const [busy, setBusy] = useState(false);
   const [, setDataV] = useState(0); // gerçek veri gelince yeniden çizim tetikler
   const boxRef = useRef(null);
+  const chartRef = useRef(null); // AK-047: yer imi imperative handle (goToBookmark)
 
   // AK-004b: kripto sembollerinde gerçek Binance verisini arka planda yükle
   useEffect(() => {
@@ -263,6 +264,9 @@ export default function Lab() {
               ))}
             </div>
           )}
+          <div className="ak-tf ak-tf-gold">
+            <button onClick={() => chartRef.current?.goToBookmark()} title="Alt+tık ile sarı yer imi koy, buraya bas ya da işarete çift tıkla dön">◆ İşarete dön</button>
+          </div>
           <span className={"ak-datasrc" + (isReal(symbol) ? " real" : "")}>
             {isReal(symbol) ? `● GERÇEK VERİ · Binance ${(TIMEFRAMES.find(x => x[0] === tfOf(symbol)) || ["", "4s"])[1]}` : "○ örnek veri"}
           </span>
@@ -272,7 +276,7 @@ export default function Lab() {
             <b>{symbol}</b> için veri bekleniyor… Binance'te {symbol}USDT deneniyor; bulunamazsa burada açıkça söylenir — başka sembolün örnek verisi ASLA gösterilmez.
           </div>
         )}
-        {dataOk && <Chart bars={getBars(symbol)} concepts={concepts} showEma={showEma} trades={replay ? null : res?.trades} logScale={logS} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} />}
+        {dataOk && <Chart ref={chartRef} bars={getBars(symbol)} concepts={concepts} showEma={showEma} trades={replay ? null : res?.trades} logScale={logS} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} />}
         {replay && (
           <div className="ak-replay">
             <button className="ak-rp" onClick={() => setCursor(c => Math.max(winStart + 4, c - 1))} title="Geri"><SkipBack size={15} /></button>

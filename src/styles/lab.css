@@ -116,8 +116,12 @@
 
 /* Zaman dilimi seçici (AK-032) */
 .ak-tf{display:inline-flex;gap:2px;background:#101A18;border:1px solid var(--line);border-radius:9px;padding:2px;}
-.ak-tf button{border:none;background:transparent;color:#647974;font-family:'JetBrains Mono';font-size:10.5px;padding:5px 9px;border-radius:7px;cursor:pointer;}
+.ak-tf button{border:none;background:transparent;color:#647974;font-family:'JetBrains Mono';font-size:10.5px;padding:5px 9px;border-radius:7px;cursor:pointer;white-space:nowrap;}
 .ak-tf button.on{background:var(--panel2);color:var(--teal-soft);}
 .ak-tf button:not(.on):hover{color:var(--txt);}
+
+/* AK-047: yer imine dön — TIMEFRAMES ile birebir boyut, yalnız renk sarı/altın */
+.ak-tf-gold button{color:var(--gold);}
+.ak-tf-gold button:hover{background:var(--panel2);color:var(--gold-2);}
 .ak-nodata{border:1px dashed #4a4326;border-radius:14px;padding:40px 20px;text-align:center;color:var(--muted);font-size:13.5px;line-height:1.6;}
 .ak-nodata b{color:var(--gold);}
