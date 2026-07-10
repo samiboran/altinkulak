@@ -158,11 +158,21 @@ const realTF = {}; // sembol -> yüklü zaman dilimi
 export function tfOf(symbol) { return realTF[symbol?.toUpperCase()] || "4h"; }
 export const TIMEFRAMES = [["5m", "5dk"], ["15m", "15dk"], ["1h", "1s"], ["4h", "4s"], ["1d", "1G"]];
 
+// AK-052: eşzamanlı istek koruması. Kullanıcı zaman dilimini hızlı değiştirirse (ör. 1s -> 4s)
+// iki loadReal çağrısı aynı anda uçuşabilir; ağ sırası isteklerin BAŞLATILMA sırasıyla aynı
+// olmak zorunda değildir. Eski (artık istenmeyen) istek geç dönerse paylaşılan realCache/realTF'i
+// ezip sessizce yanlış zaman dilimini gösterebilir. Çözüm: sembol başına "en son başlatılan istek"
+// sayacı — yalnız hâlâ en güncel olan istek paylaşılan önbelleğe yazar; eskisi kendi çağırana
+// doğru veriyi döner ama global durumu bozmaz.
+const fetchGen = {};
 export async function loadReal(symbol, tf = "4h") {
   const sym = String(symbol).toUpperCase();
   const pair = pairFor(sym);
   if (!pair || realFail.has(sym)) return null;  // kaynak yok ya da bu oturumda bulunamadı
   if (realCache[sym] && realTF[sym] === tf) return realCache[sym];
+
+  const myGen = (fetchGen[sym] = (fetchGen[sym] || 0) + 1);
+  const stillLatest = () => fetchGen[sym] === myGen;
 
   // localStorage önbelleği (varsa ve tazeyse ağa çıkma)
   const lsKey = `ak_bars_v2_${sym}_${tf}`;
@@ -170,7 +180,7 @@ export async function loadReal(symbol, tf = "4h") {
     try {
       const c = JSON.parse(localStorage.getItem(lsKey));
       if (c && Date.now() - c.ts < LS_TTL && Array.isArray(c.bars) && c.bars.length > 100) {
-        realCache[sym] = c.bars; realTF[sym] = tf;
+        if (stillLatest()) { realCache[sym] = c.bars; realTF[sym] = tf; }
         return c.bars;
       }
     } catch { /* bozuk önbellek — yeniden çek */ }
@@ -189,9 +199,11 @@ export async function loadReal(symbol, tf = "4h") {
       const raw = await r.json();
       if (!Array.isArray(raw) || raw.length < 100) continue;
       const bars = parseKlines(raw);
-      realCache[sym] = bars; realTF[sym] = tf;
-      if (typeof localStorage !== "undefined") {
-        try { localStorage.setItem(lsKey, JSON.stringify({ ts: Date.now(), bars })); } catch { /* dolu — önemsiz */ }
+      if (stillLatest()) {
+        realCache[sym] = bars; realTF[sym] = tf;
+        if (typeof localStorage !== "undefined") {
+          try { localStorage.setItem(lsKey, JSON.stringify({ ts: Date.now(), bars })); } catch { /* dolu — önemsiz */ }
+        }
       }
       return bars;
     } catch { /* ağ hatası — sıradaki URL */ }

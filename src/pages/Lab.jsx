@@ -86,6 +86,7 @@ export default function Lab() {
   const [rStop, setRStop] = useState(98);
   const [chartType, setChartType] = useState("candle"); // AK-044: mum/çizgi/alan/heikin-ashi
   const [drawMode, setDrawMode] = useState(null);        // AK-044: null | "trendline" | "rect"
+  const [drawCount, setDrawCount] = useState(0);         // AK-052: "Tümünü Temizle" yalnız çizim varken görünür
   const [cmpOpen, setCmpOpen] = useState(false);
   const [compareOn, setCompareOn] = useState(false);
   const [compareSymbol, setCompareSymbol] = useState(null);
@@ -277,6 +278,7 @@ export default function Lab() {
           </div>
           <button className={"ak-cchip" + (drawMode === "trendline" ? " on" : "")} onClick={() => setDrawMode(m => m === "trendline" ? null : "trendline")}>Trend Çizgisi</button>
           <button className={"ak-cchip" + (drawMode === "rect" ? " on" : "")} onClick={() => setDrawMode(m => m === "rect" ? null : "rect")}>Dikdörtgen</button>
+          {drawCount > 0 && <button className="ak-cchip" onClick={() => chartRef.current?.clearDraws()}>Tümünü Temizle</button>}
           <div className="ak-view">
             <button className={"ak-cchip teal" + (compareOn && compareSymbol ? " on" : "")} onClick={() => setCmpOpen(v => !v)}>Karşılaştır{compareOn && compareSymbol ? ` (${compareSymbol})` : ""}</button>
             {cmpOpen && (
@@ -331,7 +333,7 @@ export default function Lab() {
             <b>{symbol}</b> için veri bekleniyor… Binance'te {symbol}USDT deneniyor; bulunamazsa burada açıkça söylenir — başka sembolün örnek verisi ASLA gösterilmez.
           </div>
         )}
-        {dataOk && <Chart ref={chartRef} bars={getBars(symbol)} concepts={concepts} maList={maList} trades={replay ? null : res?.trades} logScale={logS} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} />}
+        {dataOk && <Chart ref={chartRef} bars={getBars(symbol)} concepts={concepts} maList={maList} trades={replay ? null : res?.trades} logScale={logS} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} onDrawsChange={setDrawCount} />}
         {replay && (
           <div className="ak-replay">
             <button className="ak-rp" onClick={() => setCursor(c => Math.max(winStart + 4, c - 1))} title="Geri"><SkipBack size={15} /></button>

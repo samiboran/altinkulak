@@ -8,6 +8,7 @@ import "../styles/izleme.css";
 
 const WKEY = "ak_watch_v1";
 const SKEY = "ak_my_system_v1";
+const BADGE_KEY = "ak_seen_signal_ids_v1"; // AK-052: notify.js'teki isSeen/markSeen'den ayrı — sadece "YENİ" rozeti için
 const POLL_MS = 5 * 60 * 1000; // 5 dakika
 function load() { try { return JSON.parse(localStorage.getItem(WKEY)) || ["BTC", "ETH", "SOL", "AVAX"]; } catch { return ["BTC"]; } }
 function loadSystem() {
@@ -17,6 +18,8 @@ function loadSystem() {
   } catch {}
   return { name: "Sistemim", ...DEFAULT_PARAMS };
 }
+function loadBadgeSeen() { try { return new Set(JSON.parse(localStorage.getItem(BADGE_KEY)) || []); } catch { return new Set(); } }
+function saveBadgeSeen(set) { try { localStorage.setItem(BADGE_KEY, JSON.stringify([...set])); } catch { /* dolu — önemsiz */ } }
 
 // AK-048: goreli zaman. s.time gercek epoch ms degilse (mock/ornek veride barIndex'e duser,
 // yani 1e12'den kucuktur) sessizce null doner — yanlis tarih gostermektense hic gostermemek.
@@ -89,7 +92,12 @@ export default function Izleme() {
       all.sort((a, b) => (b.time || 0) - (a.time || 0));
       const top = all.slice(0, 10);
       if (!on) return;
-      setSignals(top);
+      // AK-052: "YENİ" rozeti — bildirim iznine bakmaz, kendi görülme kaydını tutar
+      const badgeSeen = loadBadgeSeen();
+      setSignals(top.map(s => ({ ...s, isNew: !badgeSeen.has(s.id) })));
+      const updated = new Set(badgeSeen);
+      for (const s of top) updated.add(s.id);
+      saveBadgeSeen(updated);
       for (const s of top) {
         if (!isSeen(s.id)) {
           markSeen(s.id);
@@ -201,6 +209,7 @@ export default function Izleme() {
           <div className="ak-signal-list">
             {signals.map((s) => (
               <div className={"ak-signal-row " + (s.dir === 1 ? "long" : "short")} key={s.id}>
+                {s.isNew && <span className="ak-badge-new">YENİ</span>}
                 <span className="sy">{s.sym}</span>
                 <span className="dir">{s.dir === 1 ? "LONG" : "SHORT"}</span>
                 <span className="lv">Giriş <b>{fmtP(s.entry)}</b></span>

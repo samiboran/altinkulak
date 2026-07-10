@@ -65,7 +65,14 @@
 
 /* AK-044: serbest çizim araçları */
 .ak-c-draw-line{stroke:var(--gold);stroke-width:1.6;}
-.ak-c-draw-rect{fill:rgba(230,180,80,.08);stroke:var(--gold);stroke-width:1;stroke-dasharray:3 3;}
+.ak-c-draw-hit{stroke:transparent;stroke-width:14;cursor:pointer;fill:none;}
+.ak-c-draw-line.sel{stroke:var(--gold-2);stroke-width:2.4;}
+.ak-c-draw-rect{fill:rgba(230,180,80,.08);stroke:var(--gold);stroke-width:1;stroke-dasharray:3 3;cursor:pointer;}
+.ak-c-draw-rect.sel{stroke:var(--gold-2);stroke-width:1.6;fill:rgba(230,180,80,.14);}
+/* AK-052: seçili çizim üzerindeki küçük çöp kutusu (sil) ikonu — sağ-tık alternatifine mobil erişim */
+.ak-c-draw-del{cursor:pointer;}
+.ak-c-draw-del circle{fill:#2A1714;stroke:var(--bad);stroke-width:1;}
+.ak-c-draw-del line{stroke:var(--bad);stroke-width:1.4;stroke-linecap:round;}
 
 /* trade replay */
 .ak-replay{display:flex;align-items:center;gap:8px;margin-top:10px;padding:8px 10px;background:var(--panel);border:1px solid var(--line);border-radius:11px;}
@@ -102,7 +109,10 @@
 .ak-c-grab{cursor:grab;}
 .ak-c-grabbing{cursor:grabbing;}
 
-/* AK-047: sarı yer imi (bookmark) */
+/* AK-047/AK-052: sarı yer imi (bookmark) — nişangah/+ tarzı, kompakt */
 .ak-c-bookmark-line{stroke:var(--gold);stroke-width:1;stroke-dasharray:6 4;opacity:.65;cursor:pointer;}
-.ak-c-bookmark-mark{fill:var(--gold);stroke:#0E1416;stroke-width:.8;cursor:grab;}
+.ak-c-bookmark-mark{cursor:grab;}
 .ak-c-bookmark-mark:active{cursor:grabbing;}
+.ak-c-bookmark-mark circle:not(.ak-c-bookmark-hit){fill:var(--gold);}
+.ak-c-bookmark-mark line{stroke:var(--gold);stroke-width:1.4;stroke-linecap:round;}
+.ak-c-bookmark-hit{fill:transparent;stroke:none;}

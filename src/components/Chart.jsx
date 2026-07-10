@@ -26,7 +26,7 @@ const EMPTY_MA_LIST = [];
 // props: bars, concepts(array), showEma(bool), maList([{period,color}]), maxView(son N bar)
 // AK-050: maList verilirse çoklu MA (her biri kendi periyot+rengiyle) çizilir; verilmezse
 // showEma(bool) eski tek-EMA20 davranışını birebir korur (geriye uyumluluk).
-const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = true, maList = null, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false, magnet = true, chartType = "candle", symbol = "", drawMode = null, compareBars = null }, ref) {
+const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = true, maList = null, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false, magnet = true, chartType = "candle", symbol = "", drawMode = null, compareBars = null, onDrawsChange = null }, ref) {
   const hasR = range && range.start != null;
   const FUT = 120; // sağda gelecek boşluğu (fib/projeksiyon) — pencere son barı bu kadar aşabilir
   const rawEnd = hasR ? range.end : bars.length - 1;
@@ -223,7 +223,11 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
     } catch { /* kotayı aşarsa sessiz geç */ }
   }, [bookmark, symbol]);
   function goToBookmark() {
-    if (!bookmark) return;
+    if (!bookmark) {
+      // AK-052: bookmark yoksa mevcut görünümün merkezinde otomatik biri oluşturulur — kullanıcı hiç "yok" durumuyla karşılaşmaz.
+      setBookmark({ barIndex: off + Math.floor(view.length / 2), price: mid });
+      return;
+    }
     setVView({ mid: bookmark.price, half });
     if (onRangeSelect) {
       const width = view.length;
@@ -233,7 +237,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
       onRangeSelect(gs, gs + width - 1);
     }
   }
-  useImperativeHandle(ref, () => ({ goToBookmark }));
+  useImperativeHandle(ref, () => ({ goToBookmark, clearDraws: () => { setDraws([]); setSelectedDraw(null); } }));
 
   // AK-030: sürükleme modları — varsayılan PAN (TV standardı), Shift+sürükle = alan seç,
   // sağ eksen üzerinde sürükle = dikey ölçek (fiyatı aç/kapa). Çift tık: grafikte tümü, eksende oto-sığdır.
@@ -241,6 +245,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
   const dragRef = useRef(null);
   function onDown(e) {
     e.preventDefault(); // Shift+sürüklede tarayıcının metin seçimine girmesini engelle
+    if (selectedDraw != null) setSelectedDraw(null); // boş alana tıklanınca seçili çizim bırakılır (bir çizime tıklanmışsa click olayı hemen ardından yeniden seçer)
     const r = e.currentTarget.getBoundingClientRect();
     const px = ((e.clientX - r.left) / r.width) * W;
     const py = ((e.clientY - r.top) / r.height) * H;
@@ -373,17 +378,45 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
   // AK-044: serbest çizim araçları (trend çizgisi / dikdörtgen), sembol bazlı localStorage
   const [draws, setDraws] = useState([]);
   const [drawGhost, setDrawGhost] = useState(null);
+  const [selectedDraw, setSelectedDraw] = useState(null); // AK-052: mobil "tek dokunuşla seç" -> çöp kutusu ikonu
   useEffect(() => {
     try { setDraws(JSON.parse(localStorage.getItem(`ak_draw_${symbol}`)) || []); } catch { setDraws([]); }
     setDrawGhost(null);
+    setSelectedDraw(null);
   }, [symbol]);
   useEffect(() => {
     try { localStorage.setItem(`ak_draw_${symbol}`, JSON.stringify(draws)); } catch { /* kotayı aşarsa sessiz geç */ }
+    onDrawsChange && onDrawsChange(draws.length);
   }, [draws, symbol]);
-  function renderDraw(d, key) {
+  function removeDraw(idx) { setDraws(ds => ds.filter((_, i) => i !== idx)); setSelectedDraw(null); }
+  // AK-052: sağ-tık = sil (masaüstü); tek tık = seç -> küçük çöp kutusu ikonu belirir (mobil de bu yolla çalışır)
+  function renderDraw(d, key, idx) {
     const x0 = x(gi(d.a.i)), y0 = y(d.a.price), x1 = x(gi(d.b.i)), y1 = y(d.b.price);
-    if (d.type === "rect") return <rect key={key} x={Math.min(x0, x1)} y={Math.min(y0, y1)} width={Math.abs(x1 - x0)} height={Math.abs(y1 - y0)} className="ak-c-draw-rect" />;
-    return <line key={key} x1={x0} y1={y0} x2={x1} y2={y1} className="ak-c-draw-line" />;
+    const isGhost = idx == null;
+    const isSel = !isGhost && selectedDraw === idx;
+    const evts = isGhost ? {} : {
+      onContextMenu: (e) => { e.preventDefault(); e.stopPropagation(); removeDraw(idx); },
+      onClick: (e) => { e.stopPropagation(); setSelectedDraw(s => s === idx ? null : idx); },
+    };
+    const delCx = (x0 + x1) / 2, delCy = Math.min(y0, y1) - 10;
+    return (
+      <g key={key}>
+        {d.type === "rect"
+          ? <rect x={Math.min(x0, x1)} y={Math.min(y0, y1)} width={Math.abs(x1 - x0)} height={Math.abs(y1 - y0)} className={"ak-c-draw-rect" + (isSel ? " sel" : "")} {...evts} />
+          : <>
+              {/* görünmez geniş isabet şeridi — ince çizgiye sağ-tık/dokunuş zor olmasın diye */}
+              <line x1={x0} y1={y0} x2={x1} y2={y1} className="ak-c-draw-hit" {...evts} />
+              <line x1={x0} y1={y0} x2={x1} y2={y1} className={"ak-c-draw-line" + (isSel ? " sel" : "")} style={{ pointerEvents: "none" }} />
+            </>}
+        {isSel && (
+          <g className="ak-c-draw-del" transform={`translate(${delCx},${delCy})`} onClick={(e) => { e.stopPropagation(); removeDraw(idx); }}>
+            <circle r="8" />
+            <line x1="-3.5" y1="-3.5" x2="3.5" y2="3.5" />
+            <line x1="3.5" y1="-3.5" x2="-3.5" y2="3.5" />
+          </g>
+        )}
+      </g>
+    );
   }
 
   if (!view || view.length < 2) return <svg className="ak-chart" viewBox={`0 0 1000 480`} />;
@@ -460,10 +493,18 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
         return (
           <g className="ak-c-bookmark-g">
             <line x1={pL} y1={by} x2={W - pR} y2={by} className="ak-c-bookmark-line" onDoubleClick={(e) => { e.stopPropagation(); goToBookmark(); }} />
-            <polygon points={`${bx},${by - 6} ${bx + 6},${by} ${bx},${by + 6} ${bx - 6},${by}`} className="ak-c-bookmark-mark"
+            {/* AK-052: nişangah/+ tarzı, kompakt (eski 6px eşkenar dörtgenden küçük) */}
+            <g className="ak-c-bookmark-mark" transform={`translate(${bx},${by})`}
               onMouseDown={(e) => { e.stopPropagation(); dragRef.current = { mode: "bookmark" }; }}
               onDoubleClick={(e) => { e.stopPropagation(); goToBookmark(); }}
-            />
+            >
+              <circle r="7" className="ak-c-bookmark-hit" />
+              <circle r="1.5" />
+              <line x1="-4" y1="0" x2="-1.5" y2="0" />
+              <line x1="1.5" y1="0" x2="4" y2="0" />
+              <line x1="0" y1="-4" x2="0" y2="-1.5" />
+              <line x1="0" y1="1.5" x2="0" y2="4" />
+            </g>
           </g>
         );
       })()}
@@ -472,7 +513,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
       {cmpLine && <polyline className="ak-c-cmp" points={cmpLine.map(p => `${x(p.i)},${y(p.price)}`).join(" ")} />}
 
       {/* Serbest çizimler (trend çizgisi / dikdörtgen) */}
-      {draws.map((d, k) => renderDraw(d, k))}
+      {draws.map((d, k) => renderDraw(d, k, k))}
       {drawGhost && renderDraw(drawGhost, "ghost")}
 
       {/* Mitigation işaretleri */}

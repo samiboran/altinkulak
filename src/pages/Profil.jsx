@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams } from "react-router-dom";
-import { ShieldCheck, GitFork, Plus, Trash2, TrendingUp, Wallet, Award } from "lucide-react";
+import { ShieldCheck, GitFork, Plus, Trash2, TrendingUp, Wallet, Award, UserX } from "lucide-react";
 import { getBars, ALL_SYMBOLS, loadReal } from "../lib/data.js";
+import { MEMBERS, STRATEGIES, edgeScore } from "../lib/communityData.js";
 import "../styles/profil.css";
 
 const PKEY = "ak_portfolio_v1";
@@ -23,14 +24,16 @@ function priceOf(h) {
   return h.cost;
 }
 
-const STRATS = [
-  { s: "SOL · FVG · 1:2", t: 3.4, ok: true, forks: 142 },
-  { s: "BTC · FVG+BOS · 1:3", t: 5.9, ok: true, forks: 88 },
-  { s: "ETH · FVG+OB · 1:2", t: 2.0, ok: false, forks: 12 },
-];
-
 export default function Profil() {
   const { handle = "elifquant" } = useParams();
+  const member = MEMBERS[handle];
+  // AK-054: bu handle'a ait gerçek stratejiler — sabit STRATS yerine communityData.js'ten filtrelenir
+  const userStrats = useMemo(() => STRATEGIES.filter(s => s.user === handle), [handle]);
+  const bestT = userStrats.length ? Math.max(...userStrats.map(s => s.t)) : 0;
+  const verifiedCount = userStrats.filter(s => s.t >= 2).length; // t>=2 = motorun genelindeki "edge" eşiği
+  const totalForks = userStrats.reduce((a, s) => a + s.forks, 0);
+  const score = member ? edgeScore({ tStat: bestT, oosTrades: member.n }) : 0;
+
   const [tab, setTab] = useState("portfoy");
   const [port, setPort] = useState(loadP);
   const [f, setF] = useState({ sym: "", tur: "Kripto", adet: "", cost: "", manual: "" });
@@ -59,6 +62,17 @@ export default function Profil() {
     setPort(p => p.map(x => x.id === id ? { ...x, manual: n > 0 ? n : null } : x));
   }
 
+  if (!member) {
+    return (
+      <div className="ak-prof">
+        <div className="ak-prof-missing">
+          <UserX size={26} />
+          <p>@{handle} adında bir kullanıcı yok.</p>
+        </div>
+      </div>
+    );
+  }
+
   const rows = port.map(h => {
     const cur = priceOf(h);
     const val = cur * h.adet, costVal = h.cost * h.adet, pnl = val - costVal, pnlPct = costVal ? (pnl / costVal) * 100 : 0;
@@ -75,18 +89,18 @@ export default function Profil() {
         <div className="ak-prof-id">
           <h1>@{handle}</h1>
           <div className="ak-prof-badges">
-            <span className="ak-rank"><Award size={13} /> Edge Rütbesi: Usta · Katkı: Eğitimci <em style={{opacity:.55,fontStyle:"normal"}}>(demo)</em></span>
-            <span className="ak-prof-meta">İstatistikle doğrulanmış 2 strateji</span>
+            <span className="ak-rank"><Award size={13} /> Edge Rütbesi: {member.edge} · Katkı: {member.contrib} <em style={{opacity:.55,fontStyle:"normal"}}>(demo)</em></span>
+            <span className="ak-prof-meta">İstatistikle doğrulanmış {verifiedCount} strateji</span>
           </div>
         </div>
         <button className="ak-btn ak-btn-secondary">Takip et</button>
       </div>
 
       <div className="ak-prof-stats">
-        <div className="ak-ps"><b>5.9</b><span>en iyi t-stat</span></div>
-        <div className="ak-ps"><b>2</b><span>doğrulanmış strateji</span></div>
-        <div className="ak-ps"><b>57</b><span>edge skoru</span></div>
-        <div className="ak-ps"><b>242</b><span>fork</span></div>
+        <div className="ak-ps"><b>{userStrats.length ? bestT.toFixed(1) : "—"}</b><span>en iyi t-stat</span></div>
+        <div className="ak-ps"><b>{verifiedCount}</b><span>doğrulanmış strateji</span></div>
+        <div className="ak-ps"><b>{score}</b><span>edge skoru</span></div>
+        <div className="ak-ps"><b>{totalForks}</b><span>fork</span></div>
       </div>
 
       <div className="ak-prof-tabs">
@@ -141,15 +155,20 @@ export default function Profil() {
 
       {tab === "strat" && (
         <div className="ak-prof-strats">
-          {STRATS.map((s, i) => (
-            <div className="ak-pstrat" key={i}>
-              <ShieldCheck size={16} className={s.ok ? "ok" : "no"} />
-              <span className="nm">{s.s}</span>
-              <em className={"t " + (s.ok ? "ok" : "no")}>t = {s.t}</em>
-              <span className="fk"><GitFork size={12} /> {s.forks}</span>
-              <button className="ak-btn ak-btn-ghost">Fork'la</button>
-            </div>
-          ))}
+          {userStrats.length === 0 ? (
+            <div className="ak-port-empty"><TrendingUp size={26} /><p>@{handle} henüz paylaşılmış bir strateji doğrulamadı.</p></div>
+          ) : userStrats.map((s, i) => {
+            const ok = s.t >= 2; // motor genelindeki "edge" eşiği
+            return (
+              <div className="ak-pstrat" key={i}>
+                <ShieldCheck size={16} className={ok ? "ok" : "no"} />
+                <span className="nm">{s.sym} · {s.setup} · 1:{s.rr}</span>
+                <em className={"t " + (ok ? "ok" : "no")}>t = {s.t}</em>
+                <span className="fk"><GitFork size={12} /> {s.forks}</span>
+                <button className="ak-btn ak-btn-ghost">Fork'la</button>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
