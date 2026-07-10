@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { FlaskConical, Activity, Play, Pause, SkipBack, SkipForward, RotateCcw, ShieldCheck, ShieldAlert, Search, SlidersHorizontal, Monitor, Dices, Calculator, LayoutGrid, Target, Download } from "lucide-react";
-import { getBars, MARKET_GROUPS, ALL_SYMBOLS, loadReal, isReal, hasData, pairFor, tfOf, TIMEFRAMES } from "../lib/data.js";
+import { getBars, MARKET_GROUPS, ALL_SYMBOLS, loadReal, isReal, hasData, pairFor, tfOf, TIMEFRAMES, stats24h } from "../lib/data.js";
 import Chart from "../components/Chart.jsx";
 import Timeline from "../components/Timeline.jsx";
 import { runBacktest } from "../lib/backtest.js";
@@ -9,6 +9,28 @@ import "../styles/lab.css";
 import "../styles/chart.css";
 
 const CONCEPTS = [["fvg","FVG"],["ob","Order Block"],["bos","BOS"],["mit","Mitigation"],["of","Order Flow"],["fib","Fibonacci"]];
+
+// AK-050: MA20/50/200 sabit renkleri — CSS değişkenleri üzerinden (sabit hex yazılmaz).
+// 20 mevcut .ak-c-ema turkuazında kalır (varsayılan görünüm eskisiyle birebir aynı olsun diye).
+const MA_COLORS = { 20: "var(--teal)", 50: "var(--ma-purple)", 200: "var(--teal-soft)" };
+
+// AK-051: 24s Y/D/Hacim şeridi için kompakt biçimlendiriciler (Chart.jsx'teki fmtP ile tutarlı)
+function fmtP(p) {
+  if (!Number.isFinite(p)) return "";
+  const a = Math.abs(p);
+  if (a >= 10000) return Math.round(p).toLocaleString("en-US");
+  if (a >= 1000) return p.toFixed(0);
+  if (a >= 100) return p.toFixed(1);
+  if (a >= 1) return p.toFixed(2);
+  return p.toFixed(4);
+}
+function fmtVol(v) {
+  if (!Number.isFinite(v)) return "";
+  if (v >= 1e9) return (v / 1e9).toFixed(2) + "B";
+  if (v >= 1e6) return (v / 1e6).toFixed(2) + "M";
+  if (v >= 1e3) return (v / 1e3).toFixed(1) + "K";
+  return v.toFixed(2);
+}
 
 function Equity({ curve }) {
   if (!curve || curve.length < 2) return null;
@@ -41,7 +63,16 @@ export default function Lab() {
   function setPanel(k, v) { setLay(L => { const n = { ...L, [k]: v }; saveLayout(n); return n; }); }
   function resetBasic() { setLay({ ...BASIC }); saveLayout({ ...BASIC }); setViewOpen(false); }
   const [concepts, setConcepts] = useState(["fvg"]);
-  const [showEma, setShowEma] = useState(true);
+  // AK-050: çoklu MA — yalnız 20 varsayılan açık (eski showEma davranışıyla birebir aynı görünüm)
+  const [maOn, setMaOn] = useState({ 20: true, 50: false, 200: false });
+  const [maCustomOn, setMaCustomOn] = useState(false);
+  const [maCustomPeriod, setMaCustomPeriod] = useState("");
+  const maList = useMemo(() => {
+    const out = [20, 50, 200].filter(p => maOn[p]).map(p => ({ period: p, color: MA_COLORS[p] }));
+    const cp = parseInt(maCustomPeriod, 10);
+    if (maCustomOn && Number.isInteger(cp) && cp > 1) out.push({ period: cp, color: "var(--sage)" });
+    return out;
+  }, [maOn, maCustomOn, maCustomPeriod]);
   const [win, setWin] = useState({ s: 0.84, e: 1 });
   const [lanes, setLanes] = useState(["liq"]);
   const [lanesOn, setLanesOn] = useState(true);
@@ -123,7 +154,7 @@ export default function Lab() {
 
   const [res, setRes] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [, setDataV] = useState(0); // gerçek veri gelince yeniden çizim tetikler
+  const [dataV, setDataV] = useState(0); // gerçek veri gelince yeniden çizim tetikler
   const boxRef = useRef(null);
   const chartRef = useRef(null); // AK-047: yer imi imperative handle (goToBookmark)
 
@@ -135,6 +166,8 @@ export default function Lab() {
     return () => { on = false; };
   }, [symbol, tf]);
   const dataOk = hasData(symbol); // ne gerçek ne tanımlı sentetik yoksa grafik/backtest kilitli (sahte veri YASAK)
+  // AK-051: 24s Y/D/Hacim — yalnız gerçek veride; dataV gerçek veri gelince yeniden hesaplatır
+  const stats24 = useMemo(() => (isReal(symbol) ? stats24h(getBars(symbol)) : null), [symbol, dataV]);
 
   // AK-044: karşılaştırma sembolü için de gerçek veriyi arka planda yükle
   useEffect(() => {
@@ -216,7 +249,22 @@ export default function Lab() {
                 {CONCEPTS.map(([k, l]) => (
                   <label key={k}><input type="checkbox" checked={concepts.includes(k)} onChange={() => setConcepts(c => c.includes(k) ? c.filter(z => z !== k) : [...c, k])} /> {l}</label>
                 ))}
-                <label><input type="checkbox" checked={showEma} onChange={() => setShowEma(v => !v)} /> EMA 20</label>
+                <span className="ak-ma-title">HAREKETLİ ORTALAMA</span>
+                {[20, 50, 200].map(p => (
+                  <label key={p}>
+                    <input type="checkbox" checked={!!maOn[p]} onChange={() => setMaOn(m => ({ ...m, [p]: !m[p] }))} />
+                    <i className="ak-ma-dot" style={{ background: MA_COLORS[p] }} /> MA {p}
+                  </label>
+                ))}
+                <label>
+                  <input type="checkbox" checked={maCustomOn} onChange={() => setMaCustomOn(v => !v)} />
+                  <i className="ak-ma-dot" style={{ background: "var(--sage)" }} /> Özel
+                  <input
+                    type="number" className="ak-ma-custom" placeholder="periyot" min="2" max="500"
+                    value={maCustomPeriod} onClick={e => e.stopPropagation()}
+                    onChange={e => setMaCustomPeriod(e.target.value)}
+                  />
+                </label>
                 <label><input type="checkbox" checked={lanesOn} onChange={() => setLanesOn(v => !v)} /> Zaman şeridi katmanları</label>
               </div>
             )}
@@ -271,12 +319,19 @@ export default function Lab() {
             {isReal(symbol) ? `● GERÇEK VERİ · Binance ${(TIMEFRAMES.find(x => x[0] === tfOf(symbol)) || ["", "4s"])[1]}` : "○ örnek veri"}
           </span>
         </div>
+        {stats24 && (
+          <div className="ak-24h">
+            <span>24s Y: <b>{fmtP(stats24.high)}</b></span>
+            <span>D: <b>{fmtP(stats24.low)}</b></span>
+            <span>Hacim: <b>{fmtVol(stats24.volSum)}</b></span>
+          </div>
+        )}
         {!dataOk && (
           <div className="ak-nodata">
             <b>{symbol}</b> için veri bekleniyor… Binance'te {symbol}USDT deneniyor; bulunamazsa burada açıkça söylenir — başka sembolün örnek verisi ASLA gösterilmez.
           </div>
         )}
-        {dataOk && <Chart ref={chartRef} bars={getBars(symbol)} concepts={concepts} showEma={showEma} trades={replay ? null : res?.trades} logScale={logS} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} />}
+        {dataOk && <Chart ref={chartRef} bars={getBars(symbol)} concepts={concepts} maList={maList} trades={replay ? null : res?.trades} logScale={logS} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} />}
         {replay && (
           <div className="ak-replay">
             <button className="ak-rp" onClick={() => setCursor(c => Math.max(winStart + 4, c - 1))} title="Geri"><SkipBack size={15} /></button>

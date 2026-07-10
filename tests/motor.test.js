@@ -3,8 +3,8 @@
 import assert from "node:assert/strict";
 import { mean, std, tStat, trainTestSplit, verdict, bonferroniT, expectedFalsePositives } from "../src/lib/stats.js";
 import { runBacktest } from "../src/lib/backtest.js";
-import { getBars, parseKlines, loadReal, isReal, pairFor, hasData } from "../src/lib/data.js";
-import { detectModBSignals } from "../src/lib/modB.js";
+import { getBars, parseKlines, loadReal, isReal, pairFor, hasData, stats24h } from "../src/lib/data.js";
+import { detectModBSignals, DEFAULT_PARAMS } from "../src/lib/modB.js";
 
 let pass = 0;
 function test(name, fn) {
@@ -317,6 +317,28 @@ test("hasData: tanımsız sembol veri-yok sayılır (sahte sentetik gösterilmez
   assert.equal(hasData("AVAX"), true); // AK-042: tanımlı sentetik + gerçek-kaynaklı
 });
 
+console.log("24s Y/D/Hacim (AK-051)");
+test("stats24h: sentetik barlarda (time yok) null döner", () => {
+  assert.equal(stats24h(getBars("SOL")), null);
+});
+test("stats24h: boş/eksik veride null döner", () => {
+  assert.equal(stats24h([]), null);
+  assert.equal(stats24h(null), null);
+});
+test("stats24h: gerçek barlarda son 24 saatin yüksek/düşük/hacmini doğru hesaplar", () => {
+  const now = Date.now();
+  const bars = [
+    { time: now - 30 * 3600 * 1000, h: 200, l: 190, v: 5 },  // 24s dışında — hariç tutulmalı
+    { time: now - 20 * 3600 * 1000, h: 110, l: 95,  v: 10 },
+    { time: now - 10 * 3600 * 1000, h: 120, l: 90,  v: 20 },
+    { time: now - 1 * 3600 * 1000,  h: 105, l: 100, v: 7 },
+  ];
+  const s = stats24h(bars);
+  assert.equal(s.high, 120);
+  assert.equal(s.low, 90);
+  assert.equal(s.volSum, 37); // 200/190 barı hariç: 10+20+7
+});
+
 console.log("id benzersizliği (regresyon koruması)");
 test("aynı milisaniyede eklenen kayıtlar farklı id alır (UUID)", () => {
   const a = ledger.addTrade({ sym: "BTC", dir: "Long", plan: 2, r: 1, tag: "FOMO" });
@@ -409,6 +431,37 @@ test("id deterministik: aynı barlarda tekrar çağrı aynı id'yi üretir (tekr
   const bars = buildModBBars();
   const a = detectModBSignals(bars, "TEST")[0].id;
   const b = detectModBSignals(bars, "TEST")[0].id;
+  assert.equal(a, b);
+});
+
+console.log("Sistemim — parametreli Mod B (AK-049)");
+test("REGRESYON: params verilmezse DEFAULT_PARAMS ile birebir aynı sonuç (eski davranış korunur)", () => {
+  const bars = buildModBBars();
+  const a = detectModBSignals(bars, "TEST");
+  const b = detectModBSignals(bars, "TEST", DEFAULT_PARAMS);
+  assert.deepEqual(a, b);
+});
+test("ATR çarpanı sıkılaştırılınca eskiden geçen sinyal artık reddedilir (parametre gerçekten bağlı)", () => {
+  const bars = buildModBBars();
+  assert.equal(detectModBSignals(bars, "TEST").length, 1);
+  assert.equal(detectModBSignals(bars, "TEST", { maxGapAtr: 0.001 }).length, 0);
+});
+test("riskMult değişince stop mesafesi orantılı değişir (R hesaplama parametreye bağlı)", () => {
+  const bars = buildModBBars();
+  const s1 = detectModBSignals(bars, "TEST", { riskMult: 2 })[0];
+  const s2 = detectModBSignals(bars, "TEST", { riskMult: 4 })[0];
+  const risk1 = Math.abs(s1.entry - s1.stop), risk2 = Math.abs(s2.entry - s2.stop);
+  assert.ok(Math.abs(risk2 / risk1 - 2) < 0.001, `risk oranı 2 değil: ${risk2 / risk1}`);
+});
+test("emaPeriod parametresi bağlı: geçerli params ile motor çökmez", () => {
+  const bars = buildModBBars();
+  const sigs = detectModBSignals(bars, "TEST", { emaPeriod: 20 });
+  assert.ok(Array.isArray(sigs));
+});
+test("fibLevel=0.618 (varsayılan) eski inOTE bandı ile birebir aynı davranır", () => {
+  const bars = buildModBBars();
+  const a = detectModBSignals(bars, "TEST").length;
+  const b = detectModBSignals(bars, "TEST", { fibLevel: 0.618 }).length;
   assert.equal(a, b);
 });
 

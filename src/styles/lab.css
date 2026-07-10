@@ -80,6 +80,10 @@
 .ak-datasrc{margin-left:auto;font-family:'JetBrains Mono';font-size:10.5px;letter-spacing:.4px;color:#647974;border:1px solid var(--line);border-radius:99px;padding:5px 11px;white-space:nowrap;}
 .ak-datasrc.real{color:var(--good);border-color:#2b5548;background:rgba(79,201,166,.07);}
 
+/* AK-051: 24s Yüksek/Düşük/Hacim şeridi — yalnız gerçek veride */
+.ak-24h{display:flex;gap:14px;flex-wrap:wrap;padding:6px 2px 2px;font-family:'JetBrains Mono';font-size:11.5px;color:var(--muted);}
+.ak-24h b{color:var(--txt);font-weight:600;}
+
 /* Görünüm menüsü (AK-022) */
 .ak-view{position:relative;}
 .ak-view .ak-cchip{display:inline-flex;align-items:center;gap:5px;}
@@ -90,6 +94,12 @@
 .ak-view-basic:hover{border-color:var(--teal-deep);}
 .ak-cmp-in{background:#0E1816;border:1px solid var(--line);border-radius:8px;color:var(--txt);padding:7px 10px;font-family:'JetBrains Mono';font-size:12.5px;outline:none;}
 .ak-cmp-in:focus{border-color:var(--teal-deep);}
+
+/* AK-050: çoklu MA seçimi (Göstergeler menüsü içinde) */
+.ak-ma-title{font-size:11px;color:var(--muted);font-family:'JetBrains Mono';letter-spacing:.4px;margin-top:2px;}
+.ak-ma-dot{width:8px;height:8px;border-radius:50%;flex:none;}
+.ak-ma-custom{width:64px;background:#0E1816;border:1px solid var(--line);border-radius:7px;color:var(--txt);padding:4px 7px;font-family:'JetBrains Mono';font-size:11.5px;outline:none;margin-left:auto;}
+.ak-ma-custom:focus{border-color:var(--teal-deep);}
 
 /* Sayfa yükleme (lazy-load fallback) */
 .ak-pageload{min-height:50vh;}

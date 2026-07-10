@@ -134,6 +134,25 @@ export function parseKlines(raw) {
   return raw.map((k, i) => ({ t: i, time: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5] || 0 }));
 }
 
+// AK-051: son 24 saatin yüksek/düşük/hacim özeti — yalnız gerçek veride anlamlı
+// (sentetik barlarda `time` yok; şimdiki zamandan 24s geriye giden barlar TF'ye göre otomatik değişir).
+export function stats24h(bars) {
+  if (!bars || !bars.length) return null;
+  if (!bars[bars.length - 1].time) return null; // sentetik veri — zaman damgası yok
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  let high = -Infinity, low = Infinity, volSum = 0, n = 0;
+  for (let i = bars.length - 1; i >= 0; i--) {
+    const b = bars[i];
+    if (b.time < cutoff) break; // zaman artan sıralı — daha eskiye bakmaya gerek yok
+    high = Math.max(high, b.h);
+    low = Math.min(low, b.l);
+    volSum += b.v || 0;
+    n++;
+  }
+  if (n === 0) return null;
+  return { high, low, volSum };
+}
+
 export function isReal(symbol) { return !!realCache[symbol?.toUpperCase()]; }
 const realTF = {}; // sembol -> yüklü zaman dilimi
 export function tfOf(symbol) { return realTF[symbol?.toUpperCase()] || "4h"; }

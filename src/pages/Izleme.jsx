@@ -1,14 +1,36 @@
 import { useState, useEffect } from "react";
-import { Eye, Plus, Trash2, ShieldCheck, Bell, BellRing } from "lucide-react";
+import { Eye, Plus, Trash2, ShieldCheck, Bell, BellRing, Settings } from "lucide-react";
 import { getBars, ALL_SYMBOLS, loadReal, isReal, hasData } from "../lib/data.js";
 import { runBacktest } from "../lib/backtest.js";
-import { detectModBSignals } from "../lib/modB.js";
+import { detectModBSignals, DEFAULT_PARAMS } from "../lib/modB.js";
 import { requestNotifyPermission, notify, isSeen, markSeen } from "../lib/notify.js";
 import "../styles/izleme.css";
 
 const WKEY = "ak_watch_v1";
+const SKEY = "ak_my_system_v1";
 const POLL_MS = 5 * 60 * 1000; // 5 dakika
 function load() { try { return JSON.parse(localStorage.getItem(WKEY)) || ["BTC", "ETH", "SOL", "AVAX"]; } catch { return ["BTC"]; } }
+function loadSystem() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SKEY));
+    if (saved && typeof saved === "object") return { name: "Sistemim", ...DEFAULT_PARAMS, ...saved };
+  } catch {}
+  return { name: "Sistemim", ...DEFAULT_PARAMS };
+}
+
+// AK-048: goreli zaman. s.time gercek epoch ms degilse (mock/ornek veride barIndex'e duser,
+// yani 1e12'den kucuktur) sessizce null doner — yanlis tarih gostermektense hic gostermemek.
+function timeAgo(ms) {
+  if (!ms || ms < 1e12) return null;
+  const diff = Date.now() - ms;
+  if (diff < 0) return null;
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return "az önce";
+  if (min < 60) return `${min} dk önce`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} sa ${min % 60} dk önce`;
+  return `${Math.floor(hr / 24)} gün önce`;
+}
 
 function Spark({ sym }) {
   const b = getBars(sym).slice(-40).map(x => x.c);
@@ -24,7 +46,17 @@ export default function Izleme() {
   const [, setDataV] = useState(0);
   const [notifyPerm, setNotifyPerm] = useState(() => (typeof Notification !== "undefined" ? Notification.permission : "unsupported"));
   const [signals, setSignals] = useState([]);
+  const [system, setSystem] = useState(loadSystem);
+  const [showSettings, setShowSettings] = useState(false);
   useEffect(() => { try { localStorage.setItem(WKEY, JSON.stringify(list)); } catch {} }, [list]);
+  useEffect(() => { try { localStorage.setItem(SKEY, JSON.stringify(system)); } catch {} }, [system]);
+
+  // AK-048: dakikada bir "X dk önce" metnini tazele — signals dizisi yeniden hesaplanmaz
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 60000);
+    return () => clearInterval(id);
+  }, []);
 
   // AK-004b: listedeki gerçek-kaynaklı semboller arka planda yüklenir
   useEffect(() => {
@@ -43,7 +75,7 @@ export default function Izleme() {
     return p.toFixed(4);
   };
 
-  // AK-042: Mod B v1.1 canlı sinyal taraması — sekme açıkken 5dk'da bir, yalnız bu tarayıcıda bildirim.
+  // AK-049: kullanıcının kendi ayarladığı "Sistemim" ile canlı sinyal taraması — sekme açıkken 5dk'da bir, yalnız bu tarayıcıda bildirim.
   useEffect(() => {
     let on = true;
     function scan() {
@@ -52,7 +84,7 @@ export default function Izleme() {
         if (!hasData(sym)) continue;
         const b = getBars(sym);
         if (!b || b.length < 60) continue;
-        all.push(...detectModBSignals(b, sym));
+        all.push(...detectModBSignals(b, sym, system));
       }
       all.sort((a, b) => (b.time || 0) - (a.time || 0));
       const top = all.slice(0, 10);
@@ -62,7 +94,7 @@ export default function Izleme() {
         if (!isSeen(s.id)) {
           markSeen(s.id);
           notify(
-            `Mod B sinyali: ${s.sym} ${s.dir === 1 ? "LONG" : "SHORT"}`,
+            `${system.name || "Sistemim"}: ${s.sym} ${s.dir === 1 ? "LONG" : "SHORT"}`,
             `Giriş ${fmtP(s.entry)} · Stop ${fmtP(s.stop)} · Hedef1 ${fmtP(s.hedef1)}`
           );
         }
@@ -71,12 +103,14 @@ export default function Izleme() {
     scan();
     const id = setInterval(scan, POLL_MS);
     return () => { on = false; clearInterval(id); };
-  }, [list]);
+  }, [list, system]);
 
   async function enableNotify() { setNotifyPerm(await requestNotifyPermission()); }
 
   function add() { const s = q.trim().toUpperCase(); if (s && !list.includes(s)) setList(l => [...l, s]); setQ(""); }
   function del(s) { setList(l => l.filter(x => x !== s)); }
+  function setParam(key, val) { setSystem(s => ({ ...s, [key]: val })); }
+  function resetSystem() { setSystem({ name: "Sistemim", ...DEFAULT_PARAMS }); }
 
   const rows = list.map(sym => {
     if (!hasData(sym)) return { sym, bad: true }; // ne gerçek ne tanımlı sentetik -> "veri yok" (sahte edge yakma!)
@@ -102,8 +136,38 @@ export default function Izleme() {
         >
           {notifyPerm === "granted" ? <><BellRing size={14} /> Bildirimler açık</> : <><Bell size={14} /> Bildirimleri Aç</>}
         </button>
-        <span className="ak-izle-notify-note">Mod B v1.1 (EMA50 bias + sıkı FVG + OTE 0.618 + onay mumu) sinyali oluşunca, yalnız bu sekme açıkken bildirim gelir.</span>
+        <button className="ak-btn ak-btn-secondary sm" onClick={() => setShowSettings(v => !v)}>
+          <Settings size={14} /> {system.name || "Sistemim"}
+        </button>
+        <span className="ak-izle-notify-note">"{system.name || "Sistemim"}" kuralına uyan sinyal oluşunca, yalnız bu sekme açıkken bildirim gelir.</span>
       </div>
+
+      {showSettings && (
+        <div className="ak-sys-panel">
+          <p className="ak-sys-warn">Bu SİZİN ayarlarınız, yalnızca bu tarayıcıda saklanır — başka hiçbir kullanıcı sizinkini görmez. Varsayılan değerler geçmişte doğrulanmış bir <b>başlangıç şablonudur</b>, resmi Altınkulak tavsiyesi değildir.</p>
+          <label className="ak-sys-field">
+            <span>Sistem adı</span>
+            <input type="text" value={system.name || ""} onChange={e => setParam("name", e.target.value)} placeholder="Sistemim" maxLength={40} />
+          </label>
+          <label className="ak-sys-field">
+            <span>ATR çarpanı (FVG sıkılığı) — {system.maxGapAtr.toFixed(2)}</span>
+            <input type="range" min="0.1" max="1" step="0.05" value={system.maxGapAtr} onChange={e => setParam("maxGapAtr", Number(e.target.value))} />
+          </label>
+          <label className="ak-sys-field">
+            <span>Risk (R = ATR14 × ) — {system.riskMult.toFixed(1)}</span>
+            <input type="range" min="0.5" max="4" step="0.1" value={system.riskMult} onChange={e => setParam("riskMult", Number(e.target.value))} />
+          </label>
+          <label className="ak-sys-field">
+            <span>EMA periyodu — {system.emaPeriod}</span>
+            <input type="range" min="10" max="200" step="5" value={system.emaPeriod} onChange={e => setParam("emaPeriod", Number(e.target.value))} />
+          </label>
+          <label className="ak-sys-field">
+            <span>Fib/OTE seviyesi — {system.fibLevel.toFixed(3)}</span>
+            <input type="range" min="0.5" max="0.786" step="0.001" value={system.fibLevel} onChange={e => setParam("fibLevel", Number(e.target.value))} />
+          </label>
+          <button className="ak-btn ak-btn-secondary sm" onClick={resetSystem}>Varsayılana dön</button>
+        </div>
+      )}
 
       <div className="ak-izle-add">
         <input list="ak-wsyms" placeholder="Sembol ekle (SOL, NVDA, GARAN…)" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === "Enter" && add()} />
@@ -133,7 +197,7 @@ export default function Izleme() {
 
       {signals.length > 0 && (
         <div className="ak-signals">
-          <h2>Son Sinyaller <span className="ak-soon">Mod B v1.1</span></h2>
+          <h2>{system.name || "Sistemim"} Sinyalleri <span className="ak-soon">kişisel ayar</span></h2>
           <div className="ak-signal-list">
             {signals.map((s) => (
               <div className={"ak-signal-row " + (s.dir === 1 ? "long" : "short")} key={s.id}>
@@ -143,10 +207,11 @@ export default function Izleme() {
                 <span className="lv">Stop <b>{fmtP(s.stop)}</b></span>
                 <span className="lv">Hedef1 <b>{fmtP(s.hedef1)}</b></span>
                 <span className="lv">Hedef2 <b>{fmtP(s.hedef2)}</b></span>
+                {timeAgo(s.time) && <span className="ago" title={new Date(s.time).toLocaleString("tr-TR")}>{timeAgo(s.time)}</span>}
               </div>
             ))}
           </div>
-          <p className="ak-izle-note">Bu simülasyon/eğitim amaçlıdır; yatırım tavsiyesi değildir. Hedef1'de plan %50 kısmi çıkış öngörür.</p>
+          <p className="ak-izle-note">Bu simülasyon/eğitim amaçlıdır; yatırım tavsiyesi değildir, kendi ayarladığınız kişisel kuralın çıktısıdır. Hedef1'de plan %50 kısmi çıkış öngörür.</p>
         </div>
       )}
     </div>

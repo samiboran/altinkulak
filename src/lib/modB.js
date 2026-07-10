@@ -1,9 +1,14 @@
-// Mod B v1.1 — dogrulanmis kural: 4H EMA50 bias + siki FVG (<0.3xATR14) + OTE (fib 0.618 bolgesi) + onay mumu.
+// Sistemim — kullanicinin kendi ayarladigi kural: 4H EMA bias + siki FVG (<MAX_GAP_ATR x ATR14) + OTE (fib bolgesi) + onay mumu.
 // Saf fonksiyon: input bars -> sinyal listesi. UI/bildirim burada yok (bkz. notify.js, Izleme.jsx).
-import { ema, atr, findFib, inOTE, fibSideOk } from "./detectors.js";
+// DEFAULT_PARAMS = eskiden "Mod B v1.1" olarak sabitlenmis, dogrulanmis degerler — artik yalnizca baslangic sablonu.
+import { ema, atr, findFib, fibSideOk } from "./detectors.js";
 
-const MAX_GAP_ATR = 0.3;   // FVG, ATR14'un bu katindan dar olmali (siki bosluk)
-const RISK_MULT = 2;       // R (risk birimi) = RISK_MULT x ATR14(sinyal barinda)
+export const DEFAULT_PARAMS = {
+  maxGapAtr: 0.3,  // FVG, ATR14'un bu katindan dar olmali (siki bosluk)
+  riskMult: 2,     // R (risk birimi) = riskMult x ATR14(sinyal barinda)
+  emaPeriod: 50,   // bias EMA periyodu
+  fibLevel: 0.618, // OTE bolgesinin merkez fib orani
+};
 
 // 3 barlik FVG: bars[i-2] ile bars[i] arasindaki dokunulmamis bosluk.
 function fvgAt(bars, i) {
@@ -12,18 +17,32 @@ function fvgAt(bars, i) {
   return null;
 }
 
+// detectors.inOTE'nin parametreli hali: sabit 0.5-0.786 bandi yerine, ayni bant genisligi
+// fibLevel etrafinda merkezlenir (fibLevel=0.618 => bant birebir eski inOTE ile ayni).
+function inOTECustom(price, fib, fibLevel) {
+  if (!fib) return false;
+  const rg = fib.hi - fib.lo || 1;
+  const lowR = fibLevel - 0.118, highR = fibLevel + 0.168;
+  const a = fib.up ? fib.hi - rg * highR : fib.lo + rg * lowR;
+  const b = fib.up ? fib.hi - rg * lowR : fib.lo + rg * highR;
+  const lo = Math.min(a, b), hi = Math.max(a, b);
+  return price >= lo && price <= hi;
+}
+
 // bars: 4H OHLC dizisi ({o,h,l,c}, gercek veri icin +time Binance ms). sym: sinyal id'sinde kullanilir.
+// params: kullanicinin "Sistemim" ayarlari — verilmezse DEFAULT_PARAMS kullanilir (eski davranisla birebir).
 // Donen her sinyal: { id, sym, dir, entry, stop, hedef1, hedef2, r0, barIndex, time }
-export function detectModBSignals(bars, sym = "") {
+export function detectModBSignals(bars, sym = "", params = {}) {
+  const p = { ...DEFAULT_PARAMS, ...params };
   if (!bars || bars.length < 60) return [];
-  const e50 = ema(bars, 50);
+  const e50 = ema(bars, p.emaPeriod);
   const a14 = atr(bars, 14);
   const out = [];
 
   for (let i = 2; i < bars.length - 1; i++) {
     if (e50[i] == null || !a14[i]) continue;
 
-    // 1) 4H EMA50 bias
+    // 1) 4H EMA bias
     const dir = bars[i].c > e50[i] ? 1 : bars[i].c < e50[i] ? -1 : 0;
     if (!dir) continue;
 
@@ -31,12 +50,12 @@ export function detectModBSignals(bars, sym = "") {
     const gap = fvgAt(bars, i);
     if (!gap || gap.dir !== dir) continue;
     const gapSize = gap.hi - gap.lo;
-    if (gapSize <= 0 || gapSize >= a14[i] * MAX_GAP_ATR) continue;
+    if (gapSize <= 0 || gapSize >= a14[i] * p.maxGapAtr) continue;
 
-    // 3) OTE (fib 0.618 bolgesi) + indirim/primli taraf
+    // 3) OTE (fib bolgesi) + indirim/primli taraf
     const fib = findFib(bars.slice(0, i + 1));
     const mid = (gap.lo + gap.hi) / 2;
-    if (!inOTE(mid, fib) || !fibSideOk(mid, fib, dir)) continue;
+    if (!inOTECustom(mid, fib, p.fibLevel) || !fibSideOk(mid, fib, dir)) continue;
 
     // 4) onay mumu: bir sonraki bar, bias yonunde kapanir
     const conf = bars[i + 1];
@@ -46,7 +65,7 @@ export function detectModBSignals(bars, sym = "") {
     if (!confirmed) continue;
 
     const r0 = a14[i];               // R0 = ATR14, sinyal (FVG) barinda
-    const risk = r0 * RISK_MULT;     // 1R = 2xATR14
+    const risk = r0 * p.riskMult;    // 1R = riskMult x ATR14
     const entry = conf.c;
     const stop = dir === 1 ? entry - risk : entry + risk;
     const hedef1 = dir === 1 ? entry + risk : entry - risk;         // 1R — burada %50 kismi cikis

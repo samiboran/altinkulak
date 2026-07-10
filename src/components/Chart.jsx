@@ -17,9 +17,16 @@ function heikinAshi(bars) {
   return out;
 }
 
+// AK-050: modül seviyesinde sabit referanslar — showEma yoluyla her render'da yeni dizi
+// oluşup useMemo'yu boşuna tetiklemesin diye.
+const LEGACY_MA_LIST = [{ period: 20, color: null }];
+const EMPTY_MA_LIST = [];
+
 // Canlı mum grafiği + kavram katmanları. Tümü client-side (SVG).
-// props: bars, concepts(array), showEma(bool), maxView(son N bar)
-const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = true, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false, magnet = true, chartType = "candle", symbol = "", drawMode = null, compareBars = null }, ref) {
+// props: bars, concepts(array), showEma(bool), maList([{period,color}]), maxView(son N bar)
+// AK-050: maList verilirse çoklu MA (her biri kendi periyot+rengiyle) çizilir; verilmezse
+// showEma(bool) eski tek-EMA20 davranışını birebir korur (geriye uyumluluk).
+const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = true, maList = null, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false, magnet = true, chartType = "candle", symbol = "", drawMode = null, compareBars = null }, ref) {
   const hasR = range && range.start != null;
   const FUT = 120; // sağda gelecek boşluğu (fib/projeksiyon) — pencere son barı bu kadar aşabilir
   const rawEnd = hasR ? range.end : bars.length - 1;
@@ -28,7 +35,15 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
   const off = hasR ? range.start : bars.length - view.length; // global -> view kaydırma
   // güvenlik: 2 bardan az görünüm çizilemez (bölme sıfıra düşer)
   const endIdx = off + view.length - 1;
-  const emaArr = useMemo(() => (showEma ? ema(bars).slice(off, off + view.length) : null), [bars, showEma, off, view.length]);
+  // AK-050: maList yoksa eski tek-EMA20 listesine düşer (görünüm birebir aynı kalsın diye
+  // renk atanmaz — .ak-c-ema sınıfının varsayılan turkuaz rengi kullanılır). Lab.jsx maList'i
+  // kendi useMemo'sunda üretir, referansı sabit kalır, gereksiz yeniden hesap olmaz.
+  // maList != null: çağıran yeni özelliği kullanıyor demektir — boş dizi de dahil (kullanıcı hepsini kapatmış olabilir).
+  const activeMaList = maList != null ? maList : (showEma ? LEGACY_MA_LIST : EMPTY_MA_LIST);
+  const maArrs = useMemo(
+    () => activeMaList.map((m) => ({ ...m, arr: ema(bars, m.period).slice(off, off + view.length) })),
+    [bars, activeMaList, off, view.length]
+  );
   const inWin = i => i >= off && i <= endIdx;
   const fvgs = useMemo(() => concepts.includes("fvg") ? findFVG(bars).filter(g => inWin(g.i)) : [], [bars, concepts, off, endIdx]);
   const obs = useMemo(() => concepts.includes("ob") ? findOrderBlocks(bars).filter(o => inWin(o.i)) : [], [bars, concepts, off, endIdx]);
@@ -417,7 +432,14 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
         return <rect key={"of" + i} x={x(i) - bw / 2} y={H - pB - 5} width={bw} height={4} className={d === 1 ? "ak-c-of up" : "ak-c-of dn"} />;
       })}
 
-      {emaArr && <polyline className="ak-c-ema" points={emaArr.map((v, i) => `${x(i)},${y(v)}`).join(" ")} />}
+      {maArrs.map((m) => (
+        <polyline
+          key={m.period}
+          className="ak-c-ema"
+          style={m.color ? { stroke: m.color } : undefined}
+          points={m.arr.map((v, i) => `${x(i)},${y(v)}`).join(" ")}
+        />
+      ))}
 
       {(chartType === "line" || chartType === "area") ? (
         <g>
