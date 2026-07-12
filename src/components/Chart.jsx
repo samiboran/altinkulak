@@ -244,6 +244,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
   const [sel, setSel] = useState(null); // {a,b} view index (Shift seçimi)
   const dragRef = useRef(null);
   function onDown(e) {
+    if (e.button === 2) return; // AK-052: sağ-tık = çizim silme; sol-tık akışlarına (pan/çizim) karışmasın
     e.preventDefault(); // Shift+sürüklede tarayıcının metin seçimine girmesini engelle
     if (selectedDraw != null) setSelectedDraw(null); // boş alana tıklanınca seçili çizim bırakılır (bir çizime tıklanmışsa click olayı hemen ardından yeniden seçer)
     const r = e.currentTarget.getBoundingClientRect();
@@ -492,7 +493,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
         const bx = x(gi(bookmark.barIndex)), by = y(bookmark.price);
         return (
           <g className="ak-c-bookmark-g">
-            <line x1={pL} y1={by} x2={W - pR} y2={by} className="ak-c-bookmark-line" onDoubleClick={(e) => { e.stopPropagation(); goToBookmark(); }} />
+            <line x1={bx} y1={pT} x2={bx} y2={H - pB} className="ak-c-bookmark-line" onDoubleClick={(e) => { e.stopPropagation(); goToBookmark(); }} />
             {/* AK-052: nişangah/+ tarzı, kompakt (eski 6px eşkenar dörtgenden küçük) */}
             <g className="ak-c-bookmark-mark" transform={`translate(${bx},${by})`}
               onMouseDown={(e) => { e.stopPropagation(); dragRef.current = { mode: "bookmark" }; }}
