@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Eye, Plus, Trash2, ShieldCheck, Bell, BellRing, Settings } from "lucide-react";
-import { getBars, ALL_SYMBOLS, loadReal, isReal, hasData } from "../lib/data.js";
+import { getBars, ALL_SYMBOLS, loadReal, isReal, hasData, stats24h } from "../lib/data.js";
 import { runBacktest } from "../lib/backtest.js";
 import { detectModBSignals, DEFAULT_PARAMS } from "../lib/modB.js";
 import { requestNotifyPermission, notify, isSeen, markSeen } from "../lib/notify.js";
@@ -51,6 +51,7 @@ export default function Izleme() {
   const [signals, setSignals] = useState([]);
   const [system, setSystem] = useState(loadSystem);
   const [showSettings, setShowSettings] = useState(false);
+  const [sortMode, setSortMode] = useState("varsayilan"); // AK-057: varsayilan | az | chg24h
   useEffect(() => { try { localStorage.setItem(WKEY, JSON.stringify(list)); } catch {} }, [list]);
   useEffect(() => { try { localStorage.setItem(SKEY, JSON.stringify(system)); } catch {} }, [system]);
 
@@ -127,14 +128,41 @@ export default function Izleme() {
     const last = b[b.length - 1].c, prev = b[b.length - 2].c, chg = ((last - prev) / prev) * 100;
     const r = runBacktest(b, { rr: 2, maxGapATR: 0.6, concepts: ["fvg"], costR: 0.05 });
     const meta = ALL_SYMBOLS.find(x => x.sym === sym);
-    return { sym, name: meta?.name || sym, group: meta?.group || "—", real: isReal(sym), last, chg, t: r.tStat, edge: r.verdict.good };
+    const real = isReal(sym);
+    // AK-057: 24s değişim yalnız gerçek veride anlamlı — sentetikte null (sıralama dışı kalır)
+    const chg24h = real ? stats24h(b)?.chgPct ?? null : null;
+    return { sym, name: meta?.name || sym, group: meta?.group || "—", real, last, chg, chg24h, t: r.tStat, edge: r.verdict.good };
   });
+
+  // AK-057: sıralama — "24s Değişim" yalnız gerçek-veri satırlarını sıralar, sentetik/veri-yok
+  // satırlar sıralama dışı bırakılıp listenin sonunda orijinal sırayla kalır.
+  const sortedRows = (() => {
+    if (sortMode === "az") return [...rows].sort((a, b) => a.sym.localeCompare(b.sym));
+    if (sortMode === "chg24h") {
+      const ranked = rows.filter(r => !r.bad && r.chg24h != null).sort((a, b) => b.chg24h - a.chg24h);
+      const rest = rows.filter(r => r.bad || r.chg24h == null);
+      return [...ranked, ...rest];
+    }
+    return rows;
+  })();
+
+  // En çok yükselen/düşen — yalnız gerçek veri satırları arasında
+  const movers = rows.filter(r => !r.bad && r.chg24h != null);
+  const topGainer = movers.length ? movers.reduce((a, b) => (b.chg24h > a.chg24h ? b : a)) : null;
+  const topLoser = movers.length ? movers.reduce((a, b) => (b.chg24h < a.chg24h ? b : a)) : null;
 
   return (
     <div className="ak-izle">
       <span className="ak-eyebrow">İZLEME LİSTESİ</span>
       <h1>Takibindekiler</h1>
       <p className="ak-izle-lead">Semboller, son fiyat, mini grafik ve "şu an FVG edge'i var mı" rozeti. Liste bu cihazda saklanır.</p>
+
+      {(topGainer || topLoser) && (
+        <div className="ak-movers">
+          {topGainer && <span className="up">▲ En çok yükselen: <b>{topGainer.sym}</b> {topGainer.chg24h >= 0 ? "+" : ""}{topGainer.chg24h.toFixed(2)}%</span>}
+          {topLoser && <span className="dn">▼ En çok düşen: <b>{topLoser.sym}</b> {topLoser.chg24h >= 0 ? "+" : ""}{topLoser.chg24h.toFixed(2)}%</span>}
+        </div>
+      )}
 
       <div className="ak-izle-notify">
         <button
@@ -183,11 +211,19 @@ export default function Izleme() {
         <button className="ak-btn ak-btn-primary" onClick={add}><Plus size={15} /> Ekle</button>
       </div>
 
+      {rows.length > 0 && (
+        <div className="ak-seg" style={{ marginBottom: 10 }}>
+          <button className={sortMode === "varsayilan" ? "on" : ""} onClick={() => setSortMode("varsayilan")}>Varsayılan</button>
+          <button className={sortMode === "az" ? "on" : ""} onClick={() => setSortMode("az")}>A-Z</button>
+          <button className={sortMode === "chg24h" ? "on" : ""} onClick={() => setSortMode("chg24h")}>24s Değişim</button>
+        </div>
+      )}
+
       {rows.length === 0 ? (
         <div className="ak-izle-empty"><Eye size={26} /><p>Liste boş. Sembol ekle.</p></div>
       ) : (
         <div className="ak-izle-list">
-          {rows.map(r => r.bad ? (
+          {sortedRows.map(r => r.bad ? (
             <div className="ak-wrow bad" key={r.sym}><span className="sy">{r.sym}</span><span className="nm">veri yok — Binance'te {r.sym}USDT bulunamadı, sentetik profili de tanımlı değil</span><button className="ak-del" onClick={() => del(r.sym)}><Trash2 size={14} /></button></div>
           ) : (
             <div className="ak-wrow" key={r.sym}>

@@ -45,6 +45,16 @@ main{min-height:60vh;}
 .ak-usermenu-pop button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:9px 10px;border-radius:8px;font-size:13px;color:var(--muted);}
 .ak-usermenu-pop button:hover{background:var(--panel2);color:var(--bad);}
 
+/* ---- ticker strip (Lab/Izleme) ---- */
+.ak-ticker{overflow:hidden;border-bottom:1px solid var(--line);background:var(--panel);}
+.ak-ticker-track{display:flex;width:max-content;animation:ak-ticker-scroll 40s linear infinite;}
+.ak-ticker-item{display:flex;align-items:center;gap:8px;padding:9px 20px;white-space:nowrap;font-family:'JetBrains Mono';font-size:12.5px;border-right:1px solid var(--line);}
+.ak-ticker-item .sy{color:var(--txt);font-weight:600;}
+.ak-ticker-item .last{color:var(--muted);}
+.ak-ticker-item .chg.pos{color:var(--good);} .ak-ticker-item .chg.neg{color:var(--bad);}
+@keyframes ak-ticker-scroll{from{transform:translateX(0);}to{transform:translateX(-50%);}}
+@media(prefers-reduced-motion:reduce){ .ak-ticker-track{animation:none;overflow-x:auto;} }
+
 /* ---- buttons (tek dil: duz altin, tutarli yaricap) ---- */
 .ak-btn{height:42px;padding:0 18px;border-radius:10px;border:1px solid transparent;
   display:inline-flex;align-items:center;justify-content:center;gap:7px;font-weight:600;font-size:14px;transition:.15s;cursor:pointer;}

@@ -158,7 +158,14 @@ export default function Ben() {
 
       <div className="ak-ben-logwrap">
         <div className="ak-ben-loghead">
-          <h2>{mode === "sicil" ? "Sicil" : "Sandbox"}</h2>
+          <div className="ak-ben-tabs">
+            <button className={"ak-ben-tab" + (mode === "sicil" ? " on" : "")} onClick={() => setMode("sicil")}>
+              <BookLock size={13} /> Sicil <span className="ak-ben-tabcount">{trades.length}</span>
+            </button>
+            <button className={"ak-ben-tab" + (mode === "sandbox" ? " on" : "")} onClick={() => setMode("sandbox")}>
+              <FlaskConical size={13} /> Sandbox <span className="ak-ben-tabcount">{sand.length}</span>
+            </button>
+          </div>
           <span className="ak-sync"><Monitor size={13} /> Masaüstü: tam · <Smartphone size={13} /> Telefon: özet</span>
         </div>
         {(mode === "sicil" ? trades : sand).length === 0 ? (
@@ -169,10 +176,9 @@ export default function Ben() {
           </div>
         ) : (
           <div className="ak-log">
-            <div className="ak-log-h"><span>Tarih</span><span>Sembol</span><span>Yön</span><span>Plan</span><span>Sonuç</span><span>Etiket</span></div>
+            <div className="ak-log-h"><span>Sembol</span><span>Yön</span><span>Plan</span><span>R</span><span>Etiket</span><span>Tarih</span></div>
             {[...(mode === "sicil" ? trades : sand)].reverse().map((l) => (
               <div className={"ak-log-r" + (mode === "sandbox" ? " sand" : "")} key={l.id}>
-                <span className="dt">{fmtD(l.d)}</span>
                 <span className="sy">{l.sym}</span>
                 <span className="dr">{l.dir}</span>
                 <span className="pl">1:{l.plan.toFixed(1)}</span>
@@ -181,6 +187,7 @@ export default function Ben() {
                   {l.tag}
                   {mode === "sandbox" && <button className="ak-del" onClick={() => { removeSandbox(l.id); setSand(listSandbox()); }} title="Sil (sandbox)"><Trash2 size={13} /></button>}
                 </span>
+                <span className="dt">{fmtD(l.d)}</span>
               </div>
             ))}
           </div>

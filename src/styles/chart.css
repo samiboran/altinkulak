@@ -104,6 +104,15 @@
 .ak-c-lastline.up{stroke:var(--good);} .ak-c-lastline.dn{stroke:var(--bad);}
 .ak-chart, .ak-chart text{user-select:none;-webkit-user-select:none;}
 .ak-chart{height:clamp(460px,64vh,760px);}
+/* AK-055: RSI paneli açıkken mevcut mum/hacim alanı küçülmesin diye toplam yükseklik büyür */
+.ak-chart.has-rsi{height:calc(clamp(460px,64vh,760px) + 80px);}
+
+/* AK-055: ayrı RSI alt-paneli — hacim panelinin altında, 0-100 skala */
+.ak-c-rsi-sep{stroke:var(--line);stroke-width:1;}
+.ak-c-rsi-grid{stroke:#1b2624;stroke-width:.6;}
+.ak-c-rsi-grid.ref{stroke:#473c1c;stroke-dasharray:3 3;opacity:.8;}
+.ak-c-rsi-line{fill:none;stroke:var(--teal-soft);stroke-width:1.3;}
+.ak-c-rsi-label{fill:#647974;font-size:9px;font-family:'JetBrains Mono';}
 
 /* AK-047: boşluk basılıyken el aracı imleci */
 .ak-c-grab{cursor:grab;}

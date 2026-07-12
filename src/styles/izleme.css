@@ -26,6 +26,11 @@
 .ak-wrow .nm .src.real{color:var(--good);}
 .ak-wrow .last{font-family:'JetBrains Mono';font-size:14px;font-weight:600;color:var(--txt);min-width:76px;text-align:right;}
 
+/* AK-057: en çok yükselen/düşen mini özet */
+.ak-movers{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:16px;font-family:'JetBrains Mono';font-size:13px;}
+.ak-movers .up{color:var(--good);} .ak-movers .dn{color:var(--bad);}
+.ak-movers b{color:var(--txt);}
+
 .ak-izle-notify{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;}
 .ak-izle-notify-note{font-size:12px;color:var(--muted);}
 

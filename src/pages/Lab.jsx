@@ -67,6 +67,7 @@ export default function Lab() {
   const [maOn, setMaOn] = useState({ 20: true, 50: false, 200: false });
   const [maCustomOn, setMaCustomOn] = useState(false);
   const [maCustomPeriod, setMaCustomPeriod] = useState("");
+  const [showRsi, setShowRsi] = useState(false); // AK-055: ayrı RSI paneli — varsayılan kapalı
   const maList = useMemo(() => {
     const out = [20, 50, 200].filter(p => maOn[p]).map(p => ({ period: p, color: MA_COLORS[p] }));
     const cp = parseInt(maCustomPeriod, 10);
@@ -267,6 +268,8 @@ export default function Lab() {
                   />
                 </label>
                 <label><input type="checkbox" checked={lanesOn} onChange={() => setLanesOn(v => !v)} /> Zaman şeridi katmanları</label>
+                <span className="ak-ma-title">GÖSTERGE PANELİ</span>
+                <label><input type="checkbox" checked={showRsi} onChange={() => setShowRsi(v => !v)} /> RSI (14)</label>
               </div>
             )}
           </div>
@@ -333,7 +336,7 @@ export default function Lab() {
             <b>{symbol}</b> için veri bekleniyor… Binance'te {symbol}USDT deneniyor; bulunamazsa burada açıkça söylenir — başka sembolün örnek verisi ASLA gösterilmez.
           </div>
         )}
-        {dataOk && <Chart ref={chartRef} bars={getBars(symbol)} concepts={concepts} maList={maList} trades={replay ? null : res?.trades} logScale={logS} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} onDrawsChange={setDrawCount} />}
+        {dataOk && <Chart ref={chartRef} bars={getBars(symbol)} concepts={concepts} maList={maList} trades={replay ? null : res?.trades} logScale={logS} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} onDrawsChange={setDrawCount} showRsi={showRsi} />}
         {replay && (
           <div className="ak-replay">
             <button className="ak-rp" onClick={() => setCursor(c => Math.max(winStart + 4, c - 1))} title="Geri"><SkipBack size={15} /></button>

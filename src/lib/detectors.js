@@ -21,6 +21,28 @@ export function ema(bars, period = 20) {
   return bars.map((b, i) => (e = i ? b.c * k + e * (1 - k) : b.c));
 }
 
+// RSI (Wilder yumuşatma): ilk `period` barlık ortalama kazanç/kayıp, sonrası (period-1)/period
+// üstel ağırlıklı devam. İlk `period` bar için değer yok (null) — lookahead yok.
+export function rsi(bars, period = 14) {
+  const out = new Array(bars.length).fill(null);
+  if (bars.length <= period) return out;
+  let gainSum = 0, lossSum = 0;
+  for (let i = 1; i <= period; i++) {
+    const diff = bars[i].c - bars[i - 1].c;
+    if (diff > 0) gainSum += diff; else lossSum += -diff;
+  }
+  let avgGain = gainSum / period, avgLoss = lossSum / period;
+  out[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  for (let i = period + 1; i < bars.length; i++) {
+    const diff = bars[i].c - bars[i - 1].c;
+    const gain = diff > 0 ? diff : 0, loss = diff < 0 ? -diff : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+    out[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  }
+  return out;
+}
+
 // FVG: 3 barlık dokunulmamış boşluk, ATR ölçekli
 export function findFVG(bars, maxGapATR = 0.6) {
   const a = atr(bars), out = [];

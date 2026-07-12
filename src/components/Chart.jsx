@@ -1,5 +1,5 @@
 import { useMemo, useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
-import { findFVG, findOrderBlocks, findBOS, ema, findMitigation, orderFlowArr, findFib } from "../lib/detectors.js";
+import { findFVG, findOrderBlocks, findBOS, ema, rsi, findMitigation, orderFlowArr, findFib } from "../lib/detectors.js";
 
 // Heikin-Ashi dönüşümü: her mum bir önceki HA gövdesine bağlı, o yüzden tüm dizi baştan hesaplanır.
 function heikinAshi(bars) {
@@ -26,7 +26,7 @@ const EMPTY_MA_LIST = [];
 // props: bars, concepts(array), showEma(bool), maList([{period,color}]), maxView(son N bar)
 // AK-050: maList verilirse çoklu MA (her biri kendi periyot+rengiyle) çizilir; verilmezse
 // showEma(bool) eski tek-EMA20 davranışını birebir korur (geriye uyumluluk).
-const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = true, maList = null, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false, magnet = true, chartType = "candle", symbol = "", drawMode = null, compareBars = null, onDrawsChange = null }, ref) {
+const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = true, maList = null, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false, magnet = true, chartType = "candle", symbol = "", drawMode = null, compareBars = null, onDrawsChange = null, showRsi = false }, ref) {
   const hasR = range && range.start != null;
   const FUT = 120; // sağda gelecek boşluğu (fib/projeksiyon) — pencere son barı bu kadar aşabilir
   const rawEnd = hasR ? range.end : bars.length - 1;
@@ -54,8 +54,15 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
   // AK-044: Heikin-Ashi tüm seriden hesaplanır (önceki HA gövdesine bağımlı), sonra pencereye kırpılır
   const haFull = useMemo(() => chartType === "heikinashi" ? heikinAshi(bars) : null, [bars, chartType]);
   const plotBars = haFull ? haFull.slice(off, off + view.length) : view;
+  // AK-055: ayrı RSI paneli — mum/hacim panelini büyütmez, altına ek alan olarak eklenir
+  const rsiArr = useMemo(() => showRsi ? rsi(bars, 14) : null, [bars, showRsi]);
+  const rsiView = rsiArr ? rsiArr.slice(off, off + view.length) : null;
 
   const W = 1000, H = 480, pL = 6, pT = 12, pB = 26;
+  const RSI_H = 80, RSI_PAD_T = 10, RSI_PAD_B = 14;
+  const rsiTop = H + RSI_PAD_T, rsiBottom = H + RSI_H - RSI_PAD_B;
+  const yRsi = (v) => rsiBottom - (v / 100) * (rsiBottom - rsiTop);
+  const svgH = H + (showRsi ? RSI_H : 0);
   const lo = Math.min(...view.map(b => b.l)), hi = Math.max(...view.map(b => b.h)), rg = hi - lo || 1;
   // Fiyat büyüklüğüne göre ondalık (AK-027): 104,230 · 1,043 · 84.2 · 1.04 · 0.0432
   const fmtP = (p) => {
@@ -424,7 +431,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
 
   const cursorClass = spaceDown ? (handDragging ? " ak-c-grabbing" : " ak-c-grab") : "";
   return (
-    <svg id="ak-main-chart" ref={svgRef} className={"ak-chart" + cursorClass} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Fiyat grafiği"
+    <svg id="ak-main-chart" ref={svgRef} className={"ak-chart" + cursorClass + (showRsi ? " has-rsi" : "")} viewBox={`0 0 ${W} ${svgH}`} preserveAspectRatio="none" role="img" aria-label="Fiyat grafiği"
       onMouseEnter={() => { overRef.current = true; }}
       onMouseMove={(e) => { onMove(e); onDrag(e); }}
       onMouseLeave={() => { overRef.current = false; setHov(null); setSel(null); dragRef.current = null; setHandDragging(false); }}
@@ -565,6 +572,24 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
           O {fmtP(legendBar.o)}  Y {fmtP(legendBar.h)}  D {fmtP(legendBar.l)}  K {fmtP(legendBar.c)}  {chg >= 0 ? "+" : ""}{chg.toFixed(2)}%
         </text>
       </g>
+
+      {/* AK-055: ayrı RSI paneli — hacim panelinin altında, 0-100 skala + 30/70 referans */}
+      {showRsi && rsiView && (
+        <g className="ak-c-rsi-g">
+          <line x1={pL} y1={H} x2={W - pR} y2={H} className="ak-c-rsi-sep" />
+          {[0, 30, 70, 100].map((v) => (
+            <g key={"rl" + v}>
+              <line x1={pL} y1={yRsi(v)} x2={W - pR} y2={yRsi(v)} className={"ak-c-rsi-grid" + (v === 30 || v === 70 ? " ref" : "")} />
+              <text x={W - pR + 5} y={yRsi(v) + 3} className="ak-c-axis">{v}</text>
+            </g>
+          ))}
+          <text x={pL + 4} y={rsiTop + 8} className="ak-c-rsi-label">RSI 14</text>
+          <polyline
+            className="ak-c-rsi-line"
+            points={rsiView.map((v, i) => (v == null ? null : `${x(i)},${yRsi(v)}`)).filter(Boolean).join(" ")}
+          />
+        </g>
+      )}
     </svg>
   );
 });

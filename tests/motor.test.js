@@ -338,6 +338,17 @@ test("stats24h: gerçek barlarda son 24 saatin yüksek/düşük/hacmini doğru h
   assert.equal(s.low, 90);
   assert.equal(s.volSum, 37); // 200/190 barı hariç: 10+20+7
 });
+test("stats24h: chgPct = (son kapanış - 24s önceki açılış) / açılış (AK-057)", () => {
+  const now = Date.now();
+  const bars = [
+    { time: now - 30 * 3600 * 1000, o: 50,  h: 55,  l: 48,  c: 52,  v: 1 },  // 24s dışında
+    { time: now - 20 * 3600 * 1000, o: 100, h: 110, l: 95,  c: 105, v: 10 }, // pencerenin en eski barı — açılış referansı
+    { time: now - 5  * 3600 * 1000, o: 105, h: 120, l: 100, c: 110, v: 20 },
+    { time: now - 1  * 3600 * 1000, o: 110, h: 115, l: 108, c: 111, v: 7 },  // son kapanış
+  ];
+  const s = stats24h(bars);
+  assert.ok(Math.abs(s.chgPct - 11) < 1e-9, `beklenen ~11, gelen ${s.chgPct}`); // (111-100)/100*100
+});
 
 console.log("id benzersizliği (regresyon koruması)");
 test("aynı milisaniyede eklenen kayıtlar farklı id alır (UUID)", () => {

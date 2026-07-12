@@ -1,7 +1,8 @@
 import { lazy, Suspense } from "react";
-import { Routes, Route, Outlet } from "react-router-dom";
+import { Routes, Route, Outlet, useLocation } from "react-router-dom";
 import Navbar from "./components/Navbar.jsx";
 import Footer from "./components/Footer.jsx";
+import TickerStrip from "./components/TickerStrip.jsx";
 import Home from "./pages/Home.jsx";
 import { AuthProvider } from "./lib/AuthProvider.jsx";
 
@@ -21,10 +22,15 @@ const Giris = lazy(() => import("./pages/Giris.jsx"));
 const Profil = lazy(() => import("./pages/Profil.jsx"));
 const Ders = lazy(() => import("./pages/Ders.jsx"));
 
+// AK-060: kayan sembol seridi yalnizca izleme agirlikli sayfalarda gorunur
+const TICKER_PATHS = ["/lab", "/izleme"];
+
 function Layout() {
+  const { pathname } = useLocation();
   return (
     <AuthProvider>
       <Navbar />
+      {TICKER_PATHS.includes(pathname) && <TickerStrip />}
       <main>
         <Suspense fallback={<div className="ak-pageload" aria-busy="true" />}>
           <Outlet />

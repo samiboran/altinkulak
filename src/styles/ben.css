@@ -6,8 +6,13 @@
 .ak-ben-stat .v{font-family:'JetBrains Mono';font-size:24px;color:var(--txt);display:block;}
 .ak-ben-stat .v.ok{color:var(--good);}
 .ak-ben-stat .k{font-size:12px;color:var(--muted);margin-top:3px;display:block;}
-.ak-ben-loghead{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;}
-.ak-ben-loghead h2{font-family:'Chakra Petch';font-size:17px;color:var(--txt);margin:0;}
+.ak-ben-loghead{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;border-bottom:1px solid var(--line);}
+.ak-ben-tabs{display:flex;gap:4px;}
+.ak-ben-tab{display:inline-flex;align-items:center;gap:6px;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);font-family:'Chakra Petch';font-size:14.5px;padding:9px 4px 11px;margin-bottom:-1px;cursor:pointer;transition:.13s;}
+.ak-ben-tab:hover{color:var(--txt);}
+.ak-ben-tab.on{color:var(--txt);border-bottom-color:var(--gold);}
+.ak-ben-tabcount{font-family:'JetBrains Mono';font-size:11px;color:#647974;background:#0E1816;border-radius:8px;padding:1px 7px;}
+.ak-ben-tab.on .ak-ben-tabcount{color:var(--gold-2);}
 .ak-sync{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);font-family:'JetBrains Mono';}
 .ak-log{border:1px solid var(--line);border-radius:13px;overflow:hidden;}
 .ak-log-h,.ak-log-r{display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr 1fr;gap:8px;padding:12px 16px;align-items:center;font-size:13.5px;}

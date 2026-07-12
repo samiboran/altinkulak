@@ -138,19 +138,23 @@ export function parseKlines(raw) {
 // (sentetik barlarda `time` yok; şimdiki zamandan 24s geriye giden barlar TF'ye göre otomatik değişir).
 export function stats24h(bars) {
   if (!bars || !bars.length) return null;
-  if (!bars[bars.length - 1].time) return null; // sentetik veri — zaman damgası yok
+  const lastBar = bars[bars.length - 1];
+  if (!lastBar.time) return null; // sentetik veri — zaman damgası yok
   const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-  let high = -Infinity, low = Infinity, volSum = 0, n = 0;
+  let high = -Infinity, low = Infinity, volSum = 0, openPrice = null, n = 0;
   for (let i = bars.length - 1; i >= 0; i--) {
     const b = bars[i];
     if (b.time < cutoff) break; // zaman artan sıralı — daha eskiye bakmaya gerek yok
     high = Math.max(high, b.h);
     low = Math.min(low, b.l);
     volSum += b.v || 0;
+    openPrice = b.o; // döngü geriye doğru gittiği için son atanan değer 24s penceresinin EN ESKİ barının açılışı olur
     n++;
   }
   if (n === 0) return null;
-  return { high, low, volSum };
+  // AK-057: Binance'in 24s ticker tanımıyla tutarlı — (son kapanış - 24s önceki açılış) / açılış
+  const chgPct = openPrice ? ((lastBar.c - openPrice) / openPrice) * 100 : 0;
+  return { high, low, volSum, chgPct };
 }
 
 export function isReal(symbol) { return !!realCache[symbol?.toUpperCase()]; }
