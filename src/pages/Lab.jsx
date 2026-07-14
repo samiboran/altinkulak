@@ -4,9 +4,13 @@ import { getBars, MARKET_GROUPS, ALL_SYMBOLS, loadReal, isReal, hasData, pairFor
 import Chart from "../components/Chart.jsx";
 import Timeline from "../components/Timeline.jsx";
 import { runBacktest } from "../lib/backtest.js";
+import { addSandbox } from "../lib/sandbox.js";
 import { PANELS, BASIC, loadLayout, saveLayout } from "../lib/layout.js";
 import "../styles/lab.css";
 import "../styles/chart.css";
+
+const FAV_KEY = "ak_favorites_v1"; // AK-061: Izleme.jsx ile paylaşılan aynı anahtar
+function loadFavorites() { try { return new Set(JSON.parse(localStorage.getItem(FAV_KEY)) || []); } catch { return new Set(); } }
 
 const CONCEPTS = [["fvg","FVG"],["ob","Order Block"],["bos","BOS"],["mit","Mitigation"],["of","Order Flow"],["fib","Fibonacci"]];
 
@@ -51,6 +55,7 @@ export default function Lab() {
   const [debounced, setDebounced] = useState("SOL");
   const [symbol, setSymbol] = useState("SOL");
   const [open, setOpen] = useState(false);
+  const [favorites] = useState(loadFavorites); // AK-061: sembol seçicide favorileri üstte grupla (salt-okunur — işaretleme Izleme.jsx'te)
   const [rr, setRr] = useState(2);
   const [gap, setGap] = useState(0.6);   // gelişmiş: FVG boşluk eşiği (×ATR)
   const [cost, setCost] = useState(0.05); // gelişmiş: işlem maliyeti (R) — komisyon+slippage
@@ -93,6 +98,15 @@ export default function Lab() {
   const [compareSymbol, setCompareSymbol] = useState(null);
   const [compareQuery, setCompareQuery] = useState("");
   const [, setCmpDataV] = useState(0);
+  const [paperMsg, setPaperMsg] = useState(null); // AK-058: kağıt-işlem kutusu → "sandbox'a eklendi" kısa bildirim
+
+  // AK-058: Chart.jsx'teki kağıt-işlem kutusu (Long/Short) buraya bağlanır — grafik sandbox.js'e dokunmaz.
+  function handleSandboxAdd(sym, dir, plan) {
+    const e = addSandbox({ sym, dir, plan, r: 0, tag: "Plana uydu" });
+    if (!e) return;
+    setPaperMsg(`${sym} ${dir} · 1:${Number(plan).toFixed(1)} — Sandbox'a eklendi`);
+    setTimeout(() => setPaperMsg((m) => (m === `${sym} ${dir} · 1:${Number(plan).toFixed(1)} — Sandbox'a eklendi` ? null : m)), 2500);
+  }
 
   const _bars = getBars(symbol);
   const _N = _bars.length;
@@ -185,11 +199,14 @@ export default function Lab() {
     return () => clearTimeout(id);
   }, [query]);
 
-  const suggestions = useMemo(() => {
+  // AK-061: favoriler ayrı bir grupta üstte — arama metniyle eşleşen tüm semboller önce favori/
+  // favori-olmayan diye ikiye ayrılır, sonra favori-olmayan taraf 6 ile sınırlanır.
+  const matchedSymbols = useMemo(() => {
     const q = debounced.trim().toLowerCase();
-    if (!q) return ALL_SYMBOLS.slice(0, 6);
-    return ALL_SYMBOLS.filter((s) => s.sym.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)).slice(0, 6);
+    return q ? ALL_SYMBOLS.filter((s) => s.sym.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)) : ALL_SYMBOLS;
   }, [debounced]);
+  const favSuggestions = useMemo(() => matchedSymbols.filter((s) => favorites.has(s.sym)), [matchedSymbols, favorites]);
+  const otherSuggestions = useMemo(() => matchedSymbols.filter((s) => !favorites.has(s.sym)).slice(0, 6), [matchedSymbols, favorites]);
 
   useEffect(() => {
     function onDoc(e) { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); }
@@ -369,7 +386,8 @@ export default function Lab() {
             <b>{symbol}</b> için veri bekleniyor… Binance'te {symbol}USDT deneniyor; bulunamazsa burada açıkça söylenir — başka sembolün örnek verisi ASLA gösterilmez.
           </div>
         )}
-        {dataOk && <Chart ref={chartRef} bars={getBars(symbol)} concepts={concepts} maList={maList} trades={replay ? null : res?.trades} logScale={logS} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} onDrawsChange={setDrawCount} showRsi={showRsi} />}
+        {dataOk && <Chart ref={chartRef} bars={getBars(symbol)} concepts={concepts} maList={maList} trades={replay ? null : res?.trades} logScale={logS} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} onDrawsChange={setDrawCount} showRsi={showRsi} onSandboxAdd={handleSandboxAdd} />}
+        {paperMsg && <p className="ak-paper-toast">{paperMsg}</p>}
         {replay && (
           <div className="ak-replay">
             <button className="ak-rp" onClick={() => setCursor(c => Math.max(winStart + 4, c - 1))} title="Geri"><SkipBack size={15} /></button>
@@ -431,14 +449,29 @@ export default function Lab() {
                 <input value={query} onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
                   onFocus={() => setOpen(true)} placeholder="Sembol ara (örn. SOL, ASELS, NVDA)" spellCheck={false} />
               </div>
-              {open && (suggestions.length > 0 || (query.trim() && pairFor(query.trim()))) && (
+              {open && (favSuggestions.length > 0 || otherSuggestions.length > 0 || (query.trim() && pairFor(query.trim()))) && (
                 <div className="ak-sug">
-                  {suggestions.map((s) => (
-                    <button key={s.sym} onClick={() => pick(s)}>
-                      <b>{s.sym}</b><span>{s.name}</span><em>{s.group}</em>
-                    </button>
-                  ))}
-                  {suggestions.length === 0 && query.trim() && pairFor(query.trim()) && (
+                  {favSuggestions.length > 0 && (
+                    <>
+                      <span className="ak-sug-group">★ FAVORİLER</span>
+                      {favSuggestions.map((s) => (
+                        <button key={s.sym} onClick={() => pick(s)}>
+                          <b>{s.sym}</b><span>{s.name}</span><em>{s.group}</em>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  {otherSuggestions.length > 0 && (
+                    <>
+                      {favSuggestions.length > 0 && <span className="ak-sug-group">TÜMÜ</span>}
+                      {otherSuggestions.map((s) => (
+                        <button key={s.sym} onClick={() => pick(s)}>
+                          <b>{s.sym}</b><span>{s.name}</span><em>{s.group}</em>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  {favSuggestions.length === 0 && otherSuggestions.length === 0 && query.trim() && pairFor(query.trim()) && (
                     <button onClick={() => pick({ sym: query.trim().toUpperCase() })}>
                       <b>{query.trim().toUpperCase()}</b><span>listede yok — Binance'te dene</span><em>Kripto</em>
                     </button>

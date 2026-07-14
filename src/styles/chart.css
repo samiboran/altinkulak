@@ -9,6 +9,20 @@
 .ak-cchip.on{border-color:#473c1c;background:#241E10;color:var(--gold-2);}
 .ak-cchip.teal.on{border-color:#1f5249;background:#10241F;color:var(--teal-soft);}
 .ak-chart{width:100%;height:340px;background:linear-gradient(180deg,#11181A,#0E1416);border:1px solid var(--line);border-radius:14px;touch-action:none;}
+
+/* AK-058: kağıt-işlem kutusu — sağ üst, Binance Long/Short kutusunun eğitim/kaldıraçsız hali */
+.ak-c-outer{position:relative;}
+.ak-paperbox{position:absolute;top:14px;right:14px;display:flex;flex-direction:column;align-items:flex-end;gap:5px;pointer-events:none;}
+.ak-paperbox-note{font-family:'JetBrains Mono';font-size:9.5px;color:#647974;background:rgba(14,20,22,.7);padding:2px 7px;border-radius:6px;}
+.ak-paperbox-row{display:flex;gap:5px;pointer-events:auto;}
+.ak-paperbox-row input{width:52px;background:#0E1816;border:1px solid var(--line);border-radius:7px;color:var(--txt);padding:5px 6px;font-size:12px;font-family:'JetBrains Mono';outline:none;}
+.ak-paperbox-row input:focus{border-color:var(--teal-deep);}
+.ak-paperbox-long,.ak-paperbox-short{border:none;border-radius:7px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Chakra Petch';}
+.ak-paperbox-long{background:var(--good);color:#0E1816;}
+.ak-paperbox-long:hover{filter:brightness(1.1);}
+.ak-paperbox-short{background:var(--bad);color:#1A0E0E;}
+.ak-paperbox-short:hover{filter:brightness(1.1);}
+@media(max-width:560px){ .ak-paperbox{top:8px;right:8px;} .ak-paperbox-row input{width:42px;} .ak-paperbox-long,.ak-paperbox-short{padding:5px 9px;font-size:11px;} }
 .ak-c-grid{stroke:#1b2624;stroke-width:1;}
 .ak-c-axis{fill:#647974;font-size:9px;font-family:'JetBrains Mono';}
 .ak-c-fvg.up{fill:rgba(230,180,80,.16);stroke:rgba(230,180,80,.4);stroke-width:.6;}
@@ -117,6 +131,10 @@
 /* AK-047: boşluk basılıyken el aracı imleci */
 .ak-c-grab{cursor:grab;}
 .ak-c-grabbing{cursor:grabbing;}
+
+/* AK-056: görünümdeki en yüksek/en düşük bar için otomatik fiyat etiketi */
+.ak-c-hitick{stroke:#647974;stroke-width:.7;opacity:.7;}
+.ak-c-hilab{fill:#CFE7E0;font-size:8.5px;font-family:'JetBrains Mono';}
 
 /* AK-047/AK-052: sarı yer imi (bookmark) — nişangah/+ tarzı, kompakt */
 .ak-c-bookmark-line{stroke:var(--gold);stroke-width:1;stroke-dasharray:6 4;opacity:.65;cursor:pointer;}

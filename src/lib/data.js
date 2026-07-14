@@ -162,6 +162,26 @@ const realTF = {}; // sembol -> yüklü zaman dilimi
 export function tfOf(symbol) { return realTF[symbol?.toUpperCase()] || "4h"; }
 export const TIMEFRAMES = [["5m", "5dk"], ["15m", "15dk"], ["1h", "1s"], ["4h", "4s"], ["1d", "1G"]];
 
+// AK-064: sembol -> Binance'ten en son BAŞARILI eşleşmenin zaman damgası (ağ isteği ya da
+// hâlâ taze localStorage önbelleği — ikisi de "gerçekten Binance'ten geldi" anlamına gelir).
+const fetchedAt = {};
+
+// Saf fonksiyon (test edilir): "canli" (<60sn), "gecikmeli" (<LS_TTL, ör. "312 sn gecikme"),
+// "baglanti_yok" (LS_TTL'den eski — önbellek bayatladı, sonraki loadReal ağa çıkacak ama henüz sonuç gelmedi).
+export function freshnessStatus(ageSec) {
+  if (ageSec < 60) return "canli";
+  if (ageSec < LS_TTL / 1000) return "gecikmeli";
+  return "baglanti_yok";
+}
+
+// Gerçek veri hiç yüklenmediyse (sentetik sembol) null döner — badge yalnız isReal(true) iken gösterilmeli.
+export function getFreshness(symbol) {
+  const ts = fetchedAt[symbol?.toUpperCase()];
+  if (!ts) return null;
+  const ageSec = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  return { status: freshnessStatus(ageSec), ageSec };
+}
+
 // AK-052: eşzamanlı istek koruması. Kullanıcı zaman dilimini hızlı değiştirirse (ör. 1s -> 4s)
 // iki loadReal çağrısı aynı anda uçuşabilir; ağ sırası isteklerin BAŞLATILMA sırasıyla aynı
 // olmak zorunda değildir. Eski (artık istenmeyen) istek geç dönerse paylaşılan realCache/realTF'i
@@ -184,7 +204,7 @@ export async function loadReal(symbol, tf = "4h") {
     try {
       const c = JSON.parse(localStorage.getItem(lsKey));
       if (c && Date.now() - c.ts < LS_TTL && Array.isArray(c.bars) && c.bars.length > 100) {
-        if (stillLatest()) { realCache[sym] = c.bars; realTF[sym] = tf; }
+        if (stillLatest()) { realCache[sym] = c.bars; realTF[sym] = tf; fetchedAt[sym] = c.ts; }
         return c.bars;
       }
     } catch { /* bozuk önbellek — yeniden çek */ }
@@ -204,7 +224,7 @@ export async function loadReal(symbol, tf = "4h") {
       if (!Array.isArray(raw) || raw.length < 100) continue;
       const bars = parseKlines(raw);
       if (stillLatest()) {
-        realCache[sym] = bars; realTF[sym] = tf;
+        realCache[sym] = bars; realTF[sym] = tf; fetchedAt[sym] = Date.now();
         if (typeof localStorage !== "undefined") {
           try { localStorage.setItem(lsKey, JSON.stringify({ ts: Date.now(), bars })); } catch { /* dolu — önemsiz */ }
         }

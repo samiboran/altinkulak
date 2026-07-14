@@ -26,7 +26,7 @@ const EMPTY_MA_LIST = [];
 // props: bars, concepts(array), showEma(bool), maList([{period,color}]), maxView(son N bar)
 // AK-050: maList verilirse çoklu MA (her biri kendi periyot+rengiyle) çizilir; verilmezse
 // showEma(bool) eski tek-EMA20 davranışını birebir korur (geriye uyumluluk).
-const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = true, maList = null, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false, magnet = true, chartType = "candle", symbol = "", drawMode = null, compareBars = null, onDrawsChange = null, showRsi = false }, ref) {
+const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = true, maList = null, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false, magnet = true, chartType = "candle", symbol = "", drawMode = null, compareBars = null, onDrawsChange = null, showRsi = false, onSandboxAdd = null }, ref) {
   const hasR = range && range.start != null;
   const FUT = 120; // sağda gelecek boşluğu (fib/projeksiyon) — pencere son barı bu kadar aşabilir
   const rawEnd = hasR ? range.end : bars.length - 1;
@@ -92,6 +92,14 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
     : ehi - ((py - pT) / (H - pT - pB)) * erg;
   const step = (W - pL - pR) / view.length, bw = Math.max(1.6, step * 0.62);
   const gi = i => i - off; // global index -> view x index
+
+  // AK-058: kağıt-işlem kutusu — grafik sandbox.js'e dokunmaz, yalnız onSandboxAdd(sym,dir,plan) tetikler
+  const [paperPlan, setPaperPlan] = useState(2);
+  function paperTrade(dir) {
+    const plan = Number(paperPlan);
+    if (!Number.isFinite(plan) || plan <= 0) return;
+    onSandboxAdd?.(symbol, dir, plan);
+  }
 
   // Crosshair (AK-026): imleç -> bar/fiyat eşlemesi
   const [hov, setHov] = useState(null); // {i(view), px, py, price}
@@ -431,6 +439,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
 
   const cursorClass = spaceDown ? (handDragging ? " ak-c-grabbing" : " ak-c-grab") : "";
   return (
+    <div className="ak-c-outer">
     <svg id="ak-main-chart" ref={svgRef} className={"ak-chart" + cursorClass + (showRsi ? " has-rsi" : "")} viewBox={`0 0 ${W} ${svgH}`} preserveAspectRatio="none" role="img" aria-label="Fiyat grafiği"
       onMouseEnter={() => { overRef.current = true; }}
       onMouseMove={(e) => { onMove(e); onDrag(e); }}
@@ -494,6 +503,25 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
           <rect x={x(i) - bw / 2} y={y(Math.max(b.o, b.c))} width={bw} height={Math.max(.8, Math.abs(y(b.o) - y(b.c)))} rx={Math.min(2, bw * 0.25)} className="ak-c-body" />
         </g>;
       })}
+
+      {/* AK-056: görünümdeki en yüksek/en düşük bara fiyat etiketi — pan/zoom sonrası plotBars'tan yeniden bulunur */}
+      {(() => {
+        let hiI = 0, loI = 0;
+        for (let i = 1; i < plotBars.length; i++) {
+          if (plotBars[i].h > plotBars[hiI].h) hiI = i;
+          if (plotBars[i].l < plotBars[loI].l) loI = i;
+        }
+        const anchorFor = (idx) => idx <= 1 ? "start" : idx >= plotBars.length - 2 ? "end" : "middle";
+        const hiB = plotBars[hiI], loB = plotBars[loI];
+        return (
+          <g className="ak-c-hilo">
+            <line x1={x(hiI)} y1={y(hiB.h) - 8} x2={x(hiI)} y2={y(hiB.h) - 2} className="ak-c-hitick" />
+            <text x={x(hiI)} y={y(hiB.h) - 10} textAnchor={anchorFor(hiI)} className="ak-c-hilab">{fmtP(hiB.h)}</text>
+            <line x1={x(loI)} y1={y(loB.l) + 2} x2={x(loI)} y2={y(loB.l) + 8} className="ak-c-hitick" />
+            <text x={x(loI)} y={y(loB.l) + 19} textAnchor={anchorFor(loI)} className="ak-c-hilab">{fmtP(loB.l)}</text>
+          </g>
+        );
+      })()}
 
       {/* AK-047: sarı yer imi (bookmark) — alt+tık ile konur, sürüklenebilir, çift tık = işarete dön */}
       {bookmark && (() => {
@@ -591,6 +619,20 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
         </g>
       )}
     </svg>
+    {/* AK-058: kağıt-işlem kutusu — Binance Long/Short kutusunun eğitim amaçlı, kaldıraçsız hali. Sandbox'a bağlı. */}
+    <div className="ak-paperbox">
+      <span className="ak-paperbox-note">Kağıt işlem — gerçek para değil</span>
+      <div className="ak-paperbox-row">
+        <input
+          type="number" min="0.5" step="0.5" value={paperPlan}
+          onChange={(e) => setPaperPlan(e.target.value)}
+          title="Plan R:R"
+        />
+        <button className="ak-paperbox-long" onClick={() => paperTrade("Long")}>Long</button>
+        <button className="ak-paperbox-short" onClick={() => paperTrade("Short")}>Short</button>
+      </div>
+    </div>
+    </div>
   );
 });
 

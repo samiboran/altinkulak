@@ -47,6 +47,7 @@
 .ak-sug b{font-family:'JetBrains Mono';font-size:13px;color:var(--teal-soft);min-width:54px;}
 .ak-sug span{flex:1;color:var(--txt);font-size:13px;}
 .ak-sug em{font-style:normal;font-size:11px;color:var(--muted);font-family:'JetBrains Mono';}
+.ak-sug-group{display:block;padding:7px 13px 4px;font-family:'JetBrains Mono';font-size:10px;letter-spacing:.4px;color:var(--gold-2);border-bottom:1px solid var(--line);background:#0C1412;}
 .ak-active-sym{font-size:12.5px;color:var(--muted);margin:8px 0 4px;}
 .ak-active-sym b{color:var(--teal-soft);font-family:'JetBrains Mono';}
 
@@ -135,3 +136,6 @@
 .ak-tf-gold button:hover{background:var(--panel2);color:var(--gold-2);}
 .ak-nodata{border:1px dashed #4a4326;border-radius:14px;padding:40px 20px;text-align:center;color:var(--muted);font-size:13.5px;line-height:1.6;}
 .ak-nodata b{color:var(--gold);}
+
+/* AK-058: kağıt-işlem kutusu → kısa "sandbox'a eklendi" bildirimi */
+.ak-paper-toast{margin:8px 0 0;font-size:12.5px;color:var(--teal-soft);font-family:'JetBrains Mono';}

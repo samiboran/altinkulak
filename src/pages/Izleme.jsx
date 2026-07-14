@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { Eye, Plus, Trash2, ShieldCheck, Bell, BellRing, Settings } from "lucide-react";
-import { getBars, ALL_SYMBOLS, loadReal, isReal, hasData, stats24h } from "../lib/data.js";
+import { Eye, Plus, Trash2, ShieldCheck, Bell, BellRing, Settings, Star } from "lucide-react";
+import { getBars, ALL_SYMBOLS, loadReal, isReal, hasData, stats24h, getFreshness } from "../lib/data.js";
 import { runBacktest } from "../lib/backtest.js";
 import { detectModBSignals, DEFAULT_PARAMS } from "../lib/modB.js";
 import { requestNotifyPermission, notify, isSeen, markSeen } from "../lib/notify.js";
@@ -9,8 +9,10 @@ import "../styles/izleme.css";
 const WKEY = "ak_watch_v1";
 const SKEY = "ak_my_system_v1";
 const BADGE_KEY = "ak_seen_signal_ids_v1"; // AK-052: notify.js'teki isSeen/markSeen'den ayrı — sadece "YENİ" rozeti için
+const FAV_KEY = "ak_favorites_v1"; // AK-061: Lab.jsx sembol seçiciyle paylaşılan aynı anahtar
 const POLL_MS = 5 * 60 * 1000; // 5 dakika
 function load() { try { return JSON.parse(localStorage.getItem(WKEY)) || ["BTC", "ETH", "SOL", "AVAX"]; } catch { return ["BTC"]; } }
+function loadFavorites() { try { return new Set(JSON.parse(localStorage.getItem(FAV_KEY)) || []); } catch { return new Set(); } }
 function loadSystem() {
   try {
     const saved = JSON.parse(localStorage.getItem(SKEY));
@@ -35,6 +37,19 @@ function timeAgo(ms) {
   return `${Math.floor(hr / 24)} gün önce`;
 }
 
+// AK-064: "Binance'e bağlı · X sn/dk gecikme" rozeti için okunabilir süre
+function fmtDelay(ageSec) {
+  if (ageSec < 60) return `${ageSec} sn`;
+  if (ageSec < 3600) return `${Math.floor(ageSec / 60)} dk`;
+  return `${Math.floor(ageSec / 3600)} sa`;
+}
+function freshnessLabel(fresh) {
+  if (!fresh) return null;
+  if (fresh.status === "canli") return "Binance'e bağlı · az önce";
+  if (fresh.status === "gecikmeli") return `Binance'e bağlı · ${fmtDelay(fresh.ageSec)} gecikme`;
+  return `Bağlantı yok · ${fmtDelay(fresh.ageSec)} önce senkron`;
+}
+
 function Spark({ sym }) {
   const b = getBars(sym).slice(-40).map(x => x.c);
   const lo = Math.min(...b), hi = Math.max(...b), rg = hi - lo || 1;
@@ -52,7 +67,9 @@ export default function Izleme() {
   const [system, setSystem] = useState(loadSystem);
   const [showSettings, setShowSettings] = useState(false);
   const [sortMode, setSortMode] = useState("varsayilan"); // AK-057: varsayilan | az | chg24h
+  const [favorites, setFavorites] = useState(loadFavorites); // AK-061: favori semboller, listenin en üstüne sabitlenir
   useEffect(() => { try { localStorage.setItem(WKEY, JSON.stringify(list)); } catch {} }, [list]);
+  useEffect(() => { try { localStorage.setItem(FAV_KEY, JSON.stringify([...favorites])); } catch {} }, [favorites]);
   useEffect(() => { try { localStorage.setItem(SKEY, JSON.stringify(system)); } catch {} }, [system]);
 
   // AK-048: dakikada bir "X dk önce" metnini tazele — signals dizisi yeniden hesaplanmaz
@@ -120,6 +137,7 @@ export default function Izleme() {
   function del(s) { setList(l => l.filter(x => x !== s)); }
   function setParam(key, val) { setSystem(s => ({ ...s, [key]: val })); }
   function resetSystem() { setSystem({ name: "Sistemim", ...DEFAULT_PARAMS }); }
+  function toggleFav(sym) { setFavorites(f => { const n = new Set(f); n.has(sym) ? n.delete(sym) : n.add(sym); return n; }); }
 
   const rows = list.map(sym => {
     if (!hasData(sym)) return { sym, bad: true }; // ne gerçek ne tanımlı sentetik -> "veri yok" (sahte edge yakma!)
@@ -131,7 +149,8 @@ export default function Izleme() {
     const real = isReal(sym);
     // AK-057: 24s değişim yalnız gerçek veride anlamlı — sentetikte null (sıralama dışı kalır)
     const chg24h = real ? stats24h(b)?.chgPct ?? null : null;
-    return { sym, name: meta?.name || sym, group: meta?.group || "—", real, last, chg, chg24h, t: r.tStat, edge: r.verdict.good };
+    const fresh = real ? getFreshness(sym) : null; // AK-064: "Binance'e bağlı · X gecikme" rozeti
+    return { sym, name: meta?.name || sym, group: meta?.group || "—", real, last, chg, chg24h, fresh, t: r.tStat, edge: r.verdict.good };
   });
 
   // AK-057: sıralama — "24s Değişim" yalnız gerçek-veri satırlarını sıralar, sentetik/veri-yok
@@ -144,6 +163,14 @@ export default function Izleme() {
       return [...ranked, ...rest];
     }
     return rows;
+  })();
+
+  // AK-061: favoriler, seçili sıralama modundan bağımsız olarak listenin en üstüne sabitlenir
+  // (kendi aralarındaki sıra sortedRows'tan korunur — sadece iki parçaya ayrılıp yeniden birleştirilir).
+  const pinnedRows = (() => {
+    const favs = sortedRows.filter(r => favorites.has(r.sym));
+    const rest = sortedRows.filter(r => !favorites.has(r.sym));
+    return favs.length ? [...favs, ...rest] : sortedRows;
   })();
 
   // En çok yükselen/düşen — yalnız gerçek veri satırları arasında
@@ -223,11 +250,14 @@ export default function Izleme() {
         <div className="ak-izle-empty"><Eye size={26} /><p>Liste boş. Sembol ekle.</p></div>
       ) : (
         <div className="ak-izle-list">
-          {sortedRows.map(r => r.bad ? (
-            <div className="ak-wrow bad" key={r.sym}><span className="sy">{r.sym}</span><span className="nm">veri yok — Binance'te {r.sym}USDT bulunamadı, sentetik profili de tanımlı değil</span><button className="ak-del" onClick={() => del(r.sym)}><Trash2 size={14} /></button></div>
+          {pinnedRows.map(r => r.bad ? (
+            <div className="ak-wrow bad" key={r.sym}>
+              <button className={"ak-fav" + (favorites.has(r.sym) ? " on" : "")} onClick={() => toggleFav(r.sym)} title={favorites.has(r.sym) ? "Favorilerden çıkar" : "Favorile"}><Star size={14} fill={favorites.has(r.sym) ? "currentColor" : "none"} /></button>
+              <span className="sy">{r.sym}</span><span className="nm">veri yok — Binance'te {r.sym}USDT bulunamadı, sentetik profili de tanımlı değil</span><button className="ak-del" onClick={() => del(r.sym)}><Trash2 size={14} /></button></div>
           ) : (
             <div className="ak-wrow" key={r.sym}>
-              <div className="ak-wid"><span className="sy">{r.sym}</span><span className="nm">{r.name} · {r.group} <i className={"src" + (r.real ? " real" : "")}>{r.real ? "● gerçek" : "○ örnek"}</i></span></div>
+              <button className={"ak-fav" + (favorites.has(r.sym) ? " on" : "")} onClick={() => toggleFav(r.sym)} title={favorites.has(r.sym) ? "Favorilerden çıkar" : "Favorile"}><Star size={14} fill={favorites.has(r.sym) ? "currentColor" : "none"} /></button>
+              <div className="ak-wid"><span className="sy">{r.sym}</span><span className="nm">{r.name} · {r.group} <i className={"src" + (r.real ? " real" : "")}>{r.real ? "● gerçek" : "○ örnek"}</i>{r.fresh && <i className={"fresh " + r.fresh.status}>{freshnessLabel(r.fresh)}</i>}</span></div>
               <Spark sym={r.sym} />
               <span className="last">{fmtP(r.last)}</span>
               <span className={"chg " + (r.chg >= 0 ? "pos" : "neg")}>{r.chg >= 0 ? "+" : ""}{r.chg.toFixed(2)}%</span>

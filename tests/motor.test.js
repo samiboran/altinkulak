@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { mean, std, tStat, trainTestSplit, verdict, bonferroniT, expectedFalsePositives } from "../src/lib/stats.js";
 import { runBacktest } from "../src/lib/backtest.js";
-import { getBars, parseKlines, loadReal, isReal, pairFor, hasData, stats24h } from "../src/lib/data.js";
+import { getBars, parseKlines, loadReal, isReal, pairFor, hasData, stats24h, getFreshness, freshnessStatus } from "../src/lib/data.js";
 import { detectModBSignals, DEFAULT_PARAMS } from "../src/lib/modB.js";
 
 let pass = 0;
@@ -372,6 +372,19 @@ test("stats24h: chgPct = (son kapanış - 24s önceki açılış) / açılış (
   ];
   const s = stats24h(bars);
   assert.ok(Math.abs(s.chgPct - 11) < 1e-9, `beklenen ~11, gelen ${s.chgPct}`); // (111-100)/100*100
+});
+
+console.log("Binance bağlantı tazeliği (AK-064)");
+test("freshnessStatus: eşikler doğru sınıflandırır", () => {
+  assert.equal(freshnessStatus(0), "canli");
+  assert.equal(freshnessStatus(59), "canli");
+  assert.equal(freshnessStatus(60), "gecikmeli");
+  assert.equal(freshnessStatus(3599), "gecikmeli");
+  assert.equal(freshnessStatus(3600), "baglanti_yok");
+  assert.equal(freshnessStatus(999999), "baglanti_yok");
+});
+test("getFreshness: hiç Binance eşleşmesi olmayan sembolde null döner (sentetik)", () => {
+  assert.equal(getFreshness("BILINMEYEN_SEMBOL_XYZ"), null);
 });
 
 console.log("id benzersizliği (regresyon koruması)");

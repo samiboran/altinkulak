@@ -1,11 +1,77 @@
 import { useState, useEffect, useRef } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
-import { Play, AlertTriangle, RotateCcw } from "lucide-react";
+import { Play, AlertTriangle, RotateCcw, Wand2 } from "lucide-react";
 import { getBars, hasData, ALL_SYMBOLS } from "../lib/data.js";
 import { runUserCode } from "../lib/sandboxRunner.js";
 import "../styles/kodeditoru.css";
 import "../styles/izleme.css"; // AK-065: sonuç listesi Izleme'deki sinyal satırı stiliyle aynı
+
+// AK-067: "Basit Mod" — checkbox seçimlerinden AK-065 sözleşmesine uyan (mySignal(bars,helpers))
+// kod YEREL olarak (API çağrısı yok, maliyet sıfır) metin birleştirmeyle üretilir.
+const DIR_LABEL = { both: "İkisi", long: "Long", short: "Short" };
+
+function buildSimpleCode({ useFvg, useFib, useRsi, dirPref, fromDate, toDate }) {
+  const active = [];
+  if (useFvg) active.push("FVG");
+  if (useFib) active.push("Fibonacci (OTE)");
+  if (useRsi) active.push("RSI");
+
+  const fromMs = fromDate ? new Date(fromDate + "T00:00:00.000Z").getTime() : null;
+  const toMs = toDate ? new Date(toDate + "T23:59:59.999Z").getTime() : null;
+
+  const L = [];
+  L.push("// Basit Mod tarafından otomatik üretildi — düzenleyebilirsin.");
+  L.push(`// Seçili yapı taşları: ${active.length ? active.join(" + ") : "(yok)"} · yön: ${DIR_LABEL[dirPref] || "İkisi"}`);
+  L.push("function mySignal(bars, helpers) {");
+  L.push("  var atr = helpers.atr, rsi = helpers.rsi, findFib = helpers.findFib;");
+  L.push(`  var fromMs = ${fromMs != null ? fromMs : "null"}, toMs = ${toMs != null ? toMs : "null"};`);
+  L.push("  var a14 = atr(bars, 14);");
+  if (useRsi) L.push("  var rsiArr = rsi(bars, 14);");
+  L.push("  var out = [];");
+  L.push("  for (var i = 60; i < bars.length; i++) {");
+  L.push("    var b = bars[i];");
+  L.push("    if (b.time != null) { if (fromMs != null && b.time < fromMs) continue; if (toMs != null && b.time > toMs) continue; }");
+  L.push("    var dirs = [];");
+  if (useFvg) {
+    L.push("    var fvgDir = null;");
+    L.push("    if (bars[i - 2].h < b.l) fvgDir = 1; else if (bars[i - 2].l > b.h) fvgDir = -1;");
+    L.push("    if (fvgDir == null) continue;");
+    L.push("    dirs.push(fvgDir);");
+  }
+  if (useFib) {
+    L.push("    var fib = findFib(bars.slice(0, i + 1), 60);");
+    L.push("    if (!fib) continue;");
+    L.push("    var oteLo = Math.min(fib.ote.a, fib.ote.b), oteHi = Math.max(fib.ote.a, fib.ote.b);");
+    L.push("    if (b.c < oteLo || b.c > oteHi) continue;");
+    L.push("    dirs.push(fib.up ? 1 : -1);");
+  }
+  if (useRsi) {
+    L.push("    var rv = rsiArr[i];");
+    L.push("    if (rv == null) continue;");
+    L.push("    var rsiDir = rv < 30 ? 1 : (rv > 70 ? -1 : null);");
+    L.push("    if (rsiDir == null) continue;");
+    L.push("    dirs.push(rsiDir);");
+  }
+  L.push("    if (dirs.length === 0) continue;"); // hiç yapı taşı seçilmemiş — sinyal yok
+  L.push("    var dir = dirs[0];");
+  L.push("    for (var k = 1; k < dirs.length; k++) if (dirs[k] !== dir) { dir = null; break; }");
+  L.push("    if (dir == null) continue;"); // seçili yapı taşları aynı yönde anlaşmadı
+  if (dirPref === "long") L.push("    if (dir !== 1) continue;");
+  if (dirPref === "short") L.push("    if (dir !== -1) continue;");
+  L.push("    var r0 = a14[i];");
+  L.push("    if (!r0) continue;");
+  L.push("    var risk = r0 * 2;");
+  L.push("    var entry = b.c;");
+  L.push("    var stop = dir === 1 ? entry - risk : entry + risk;");
+  L.push("    var hedef1 = dir === 1 ? entry + risk : entry - risk;");
+  L.push("    var hedef2 = dir === 1 ? entry + risk * 3 : entry - risk * 3;");
+  L.push("    out.push({ i: i, dir: dir, entry: entry, stop: stop, hedef1: hedef1, hedef2: hedef2 });");
+  L.push("  }");
+  L.push("  return out;");
+  L.push("}");
+  return L.join("\n") + "\n";
+}
 
 const LSKEY = "ak_user_scripts_v1";
 
@@ -55,6 +121,24 @@ export default function KodEditoru() {
   const [out, setOut] = useState(null); // {ok, result, error, ms}
   const runToken = useRef(0); // AK-065: eskimiş (üst üste tıklanmış) çalıştırmaların sonucu yok sayılır
 
+  // AK-067: Basit Mod — kod yazmadan checkbox kombinasyonu
+  const [mode, setMode] = useState("kod"); // "kod" | "basit"
+  const [sFvg, setSFvg] = useState(true);
+  const [sFib, setSFib] = useState(false);
+  const [sRsi, setSRsi] = useState(true);
+  const [sDir, setSDir] = useState("both");
+  const [sFrom, setSFrom] = useState("");
+  const [sTo, setSTo] = useState("");
+  const noneSelected = !sFvg && !sFib && !sRsi;
+
+  function generateSimple() {
+    if (noneSelected) return;
+    const generated = buildSimpleCode({ useFvg: sFvg, useFib: sFib, useRsi: sRsi, dirPref: sDir, fromDate: sFrom, toDate: sTo });
+    setCode(generated);
+    setOut(null);
+    setMode("kod");
+  }
+
   useEffect(() => {
     try { localStorage.setItem(LSKEY, JSON.stringify({ code, symbol })); } catch { /* kotayı aşarsa sessiz geç */ }
   }, [code, symbol]);
@@ -88,6 +172,44 @@ export default function KodEditoru() {
         Hazır yapı taşlarıyla (<code>ema</code>, <code>atr</code>, <code>rsi</code>, <code>findFib</code>, <code>fibSideOk</code>) kendi <code>mySignal(bars, helpers)</code> fonksiyonunu yaz, "Çalıştır"a bas, sonucu gör.
         Kod SADECE bu tarayıcıda, izole bir sandbox'ta (iframe) çalışır — sunucuya gönderilmez, hiçbir başka kullanıcı görmez.
       </p>
+
+      <div className="ak-kod-modes">
+        <button className={"ak-kod-tab" + (mode === "kod" ? " on" : "")} onClick={() => setMode("kod")}>Kod</button>
+        <button className={"ak-kod-tab" + (mode === "basit" ? " on" : "")} onClick={() => setMode("basit")}><Wand2 size={13} /> Basit Mod</button>
+      </div>
+
+      {mode === "basit" && (
+        <div className="ak-kod-basit">
+          <p className="ak-kod-basit-lead">Kod yazmadan hazır yapı taşlarını birleştir — seçimlerine göre kod bu tarayıcıda, yerel olarak (yapay zekâ/API kullanılmadan) üretilir.</p>
+          <div className="ak-kod-basit-row">
+            <label><input type="checkbox" checked={sFvg} onChange={() => setSFvg(v => !v)} /> FVG (boşluk)</label>
+            <label><input type="checkbox" checked={sFib} onChange={() => setSFib(v => !v)} /> Fibonacci (OTE bölgesi)</label>
+            <label><input type="checkbox" checked={sRsi} onChange={() => setSRsi(v => !v)} /> RSI (aşırı alım/satım)</label>
+          </div>
+          <div className="ak-kod-basit-row">
+            <label className="ak-kod-basit-sel">
+              <span>Yön</span>
+              <select value={sDir} onChange={(e) => setSDir(e.target.value)}>
+                <option value="both">İkisi</option>
+                <option value="long">Long</option>
+                <option value="short">Short</option>
+              </select>
+            </label>
+            <label className="ak-kod-basit-sel">
+              <span>Tarih (başlangıç)</span>
+              <input type="date" value={sFrom} onChange={(e) => setSFrom(e.target.value)} />
+            </label>
+            <label className="ak-kod-basit-sel">
+              <span>Tarih (bitiş)</span>
+              <input type="date" value={sTo} onChange={(e) => setSTo(e.target.value)} />
+            </label>
+          </div>
+          {noneSelected && <p className="ak-kod-basit-warn">En az bir yapı taşı seç.</p>}
+          <button className="ak-btn ak-btn-primary" onClick={generateSimple} disabled={noneSelected}>
+            <Wand2 size={15} /> Kodu Oluştur ve Editöre Yaz
+          </button>
+        </div>
+      )}
 
       <div className="ak-kod-toolbar">
         <select value={symbol} onChange={(e) => setSymbol(e.target.value)} disabled={running}>
