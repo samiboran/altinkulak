@@ -1,13 +1,19 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { FlaskConical, Activity, Play, Pause, SkipBack, SkipForward, RotateCcw, ShieldCheck, ShieldAlert, Search, SlidersHorizontal, Monitor, Dices, Calculator, LayoutGrid, Target, Download } from "lucide-react";
+import { FlaskConical, Code2, Activity, Play, Pause, SkipBack, SkipForward, RotateCcw, ShieldCheck, ShieldAlert, Search, SlidersHorizontal, Monitor, Dices, Calculator, LayoutGrid, Target, Download } from "lucide-react";
 import { getBars, MARKET_GROUPS, ALL_SYMBOLS, loadReal, isReal, hasData, pairFor, tfOf, TIMEFRAMES, stats24h } from "../lib/data.js";
+import { atr } from "../lib/detectors.js";
+import { subscribe as subscribeLive } from "../lib/liveData.js";
 import Chart from "../components/Chart.jsx";
 import Timeline from "../components/Timeline.jsx";
-import { runBacktest } from "../lib/backtest.js";
+import SistemimKoduPanel from "../components/SistemimKoduPanel.jsx";
+import { runBacktest, simulateOutcome, randomEntryControl, monteCarlo } from "../lib/backtest.js";
+import { tStat, verdict, sharpeLike, trainTestSplit } from "../lib/stats.js";
+import { runUserCode } from "../lib/sandboxRunner.js";
 import { addSandbox } from "../lib/sandbox.js";
 import { PANELS, BASIC, loadLayout, saveLayout } from "../lib/layout.js";
 import "../styles/lab.css";
 import "../styles/chart.css";
+import "../styles/kodeditoru.css";
 
 const FAV_KEY = "ak_favorites_v1"; // AK-061: Izleme.jsx ile paylaşılan aynı anahtar
 function loadFavorites() { try { return new Set(JSON.parse(localStorage.getItem(FAV_KEY)) || []); } catch { return new Set(); } }
@@ -34,6 +40,69 @@ function fmtVol(v) {
   if (v >= 1e6) return (v / 1e6).toFixed(2) + "M";
   if (v >= 1e3) return (v / 1e3).toFixed(1) + "K";
   return v.toFixed(2);
+}
+
+// AK-073: "Kendi Kodum" — kullanıcının mySignal(bars,helpers) çıktısını (ham {i,dir,entry,stop,hedef1,hedef2}
+// sinyal listesi) simulateOutcome ile gerçek işleme çevirir. hedef1 birincil hedeftir (karar: hedef2 outcome'a girmez).
+function simulateSignals(bars, signals, lookahead = 40) {
+  const trades = [];
+  for (const s of signals || []) {
+    if (!s || typeof s !== "object") continue;
+    if (s.dir !== 1 && s.dir !== -1) continue;
+    if (!Number.isFinite(s.entry) || !Number.isFinite(s.stop) || !Number.isFinite(s.hedef1)) continue;
+    const entryIdx = Number.isInteger(s.i) ? s.i : Math.round(s.i);
+    if (!Number.isInteger(entryIdx) || entryIdx < 0 || entryIdx >= bars.length) continue;
+    const { outcome } = simulateOutcome(bars, entryIdx, s.dir, s.entry, s.stop, s.hedef1, lookahead);
+    if (outcome != null) trades.push({ entryIdx, dir: s.dir, entry: s.entry, stop: s.stop, target: s.hedef1, outcome });
+  }
+  return trades;
+}
+
+// runBacktest() ile AYNI istatistik şeklini (trades/winRate/tStat/controlP95/verdict/mc/curve...) üretir —
+// Sonuç paneli ve Chart'ın trades prop'u hangi kaynaktan geldiğine bakmaksızın aynı şekilde çalışır.
+// Kullanıcı kodunda tek sabit bir R:R yoktur (her sinyal kendi hedef1/stop'unu belirler); kontrol grubu
+// için gözlemlenen ortalama kazanç R'si kullanılır (adil kıyas, bilinmeyen rr için makul yaklaşım).
+function buildCodeStats(bars, allSignals, testBars, testSignals) {
+  const allSim = simulateSignals(bars, allSignals);
+  const testSim = simulateSignals(testBars, testSignals);
+  const allR = allSim.map((t) => t.outcome);
+  const testR = testSim.map((t) => t.outcome);
+  const winsArr = allR.filter((x) => x > 0), lossArr = allR.filter((x) => x < 0);
+  const winRate = allR.length ? Math.round((winsArr.length / allR.length) * 100) : 0;
+  const expectancy = allR.length ? allR.reduce((a, x) => a + x, 0) / allR.length : 0;
+  const grossWin = winsArr.reduce((a, x) => a + x, 0), grossLoss = Math.abs(lossArr.reduce((a, x) => a + x, 0));
+  const profitFactor = grossLoss ? grossWin / grossLoss : (grossWin > 0 ? 99 : 0);
+  const avgWin = winsArr.length ? grossWin / winsArr.length : 0;
+  const avgLoss = lossArr.length ? grossLoss / lossArr.length : 0;
+
+  let eq = 0, peak = 0, maxDD = 0;
+  const curve = [];
+  for (const r of allR) { eq += r; peak = Math.max(peak, eq); maxDD = Math.max(maxDD, peak - eq); curve.push(eq); }
+
+  const tOOS = tStat(testR);
+  const avgRR = winsArr.length ? winsArr.reduce((a, x) => a + x, 0) / winsArr.length : 2;
+  const atrArr = atr(testBars, 14);
+  const control = randomEntryControl(testBars, atrArr, avgRR, Math.max(testR.length, 2), 40, 300, 777, 0, 1);
+  const v = verdict(tOOS, control);
+
+  return {
+    trades: allSim,
+    costR: 0,
+    tradeCount: allSim.length,
+    oosTrades: testSim.length,
+    winRate,
+    maxDD: Math.round(maxDD * 10) / 10,
+    tStat: Math.round(tOOS * 10) / 10,
+    controlP95: Math.round(control.p95 * 10) / 10,
+    sharpe: Math.round(sharpeLike(allR) * 100) / 100,
+    expectancy: Math.round(expectancy * 100) / 100,
+    profitFactor: Math.round(profitFactor * 100) / 100,
+    avgWin: Math.round(avgWin * 100) / 100,
+    avgLoss: Math.round(avgLoss * 100) / 100,
+    mc: monteCarlo(allR),
+    curve,
+    verdict: v,
+  };
 }
 
 function Equity({ curve }) {
@@ -174,12 +243,67 @@ export default function Lab() {
   const boxRef = useRef(null);
   const chartRef = useRef(null); // AK-047: yer imi imperative handle (goToBookmark)
 
+  // AK-073: "Hazır Strateji" / "Kendi Kodum" sekmesi — ikisi de AYNI res state'ini besler,
+  // Chart'ın trades prop'u ve Sonuç paneli kaynağa bakmaksızın aynı şekilde çalışır.
+  const [stratMode, setStratMode] = useState("hazir"); // "hazir" | "kendi"
+  const [codeInfo, setCodeInfo] = useState(null);        // {kind:"error"|"empty", message?} — 0 sonuç kod hatasından mı yoksa gerçekten sinyal yokluğundan mı ayrıştırır
+  const codeRef = useRef("");                            // SistemimKoduPanel'deki son kod — OOS turu için
+  function switchStratMode(m) {
+    if (m === stratMode) return;
+    setStratMode(m);
+    setRes(null);
+    setCodeInfo(null);
+  }
+  async function handleCodeRunResult(out) {
+    if (!out.ok) {
+      setCodeInfo({ kind: "error", message: out.error });
+      setRes(null);
+      return;
+    }
+    const signals = Array.isArray(out.result) ? out.result : [];
+    const bars = getBars(symbol);
+    const { test } = trainTestSplit(bars, 0.7);
+    const testOut = await runUserCode(codeRef.current, test);
+    const testSignals = testOut.ok && Array.isArray(testOut.result) ? testOut.result : [];
+    const stats = buildCodeStats(bars, signals, test, testSignals);
+    setCodeInfo(stats.tradeCount === 0 ? { kind: "empty" } : { kind: "ok" });
+    setRes(stats);
+  }
+
+  // AK-072: WebSocket'ten gelen bar güncellemeleri — birden fazla tick aynı ~16ms çerçevesinde
+  // gelirse rAF ile tek state güncellemesinde toplanır (gereksiz re-render patlaması önlenir).
+  const [liveBars, setLiveBars] = useState(null); // null = canlı akış yok, REST barları kullanılır
+  const liveRafId = useRef(null);
+  const livePending = useRef(null);
+  function onLiveUpdate(bars) {
+    livePending.current = bars;
+    if (liveRafId.current == null) {
+      liveRafId.current = requestAnimationFrame(() => {
+        liveRafId.current = null;
+        setLiveBars(livePending.current);
+      });
+    }
+  }
+
   // AK-004b: kripto sembollerinde gerçek Binance verisini arka planda yükle
+  // AK-072: REST yüklemesi bitince (yalnız gerçek veride) WebSocket ile canlı akışa geçilir
   useEffect(() => {
     let on = true;
     setRes(null);
-    loadReal(symbol, tf).then((b) => { if (on) setDataV(v => v + 1); });
-    return () => { on = false; };
+    setCodeInfo(null);
+    setLiveBars(null); // yeni sembol/TF — önceki canlı veri artık geçersiz
+    let unsub = null;
+    loadReal(symbol, tf).then((b) => {
+      if (!on) return;
+      setDataV(v => v + 1);
+      if (isReal(symbol)) unsub = subscribeLive(symbol, tf, getBars(symbol), onLiveUpdate);
+    });
+    return () => {
+      on = false;
+      if (unsub) unsub();
+      if (liveRafId.current != null) { cancelAnimationFrame(liveRafId.current); liveRafId.current = null; }
+      livePending.current = null;
+    };
   }, [symbol, tf]);
   const dataOk = hasData(symbol); // ne gerçek ne tanımlı sentetik yoksa grafik/backtest kilitli (sahte veri YASAK)
   // AK-051: 24s Y/D/Hacim — yalnız gerçek veride; dataV gerçek veri gelince yeniden hesaplatır
@@ -227,6 +351,9 @@ export default function Lab() {
     const url = URL.createObjectURL(new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" }));
     const img = new Image();
     img.onload = () => {
+      // AK-062: canvas metni fillText anında hazır olmayan webfont'a düşüp bozuk görünmesin
+      // diye (Chakra Petch/JetBrains Mono geç yüklenebilir) önce fontların hazır olması beklenir.
+      Promise.resolve(document.fonts?.ready).then(() => {
       const canvas = document.createElement("canvas");
       canvas.width = rect.width * scale;
       canvas.height = (rect.height + capH) * scale;
@@ -236,7 +363,7 @@ export default function Lab() {
       ctx.drawImage(img, 0, 0, rect.width * scale, rect.height * scale);
       URL.revokeObjectURL(url);
 
-      // AK-062: alt bant — sembol, t-stat, OOS, edge rozeti, marka + slogan
+      // AK-062: alt bant — sembol, t-stat, OOS, edge rozeti, karşılaştırma sembolü, marka + slogan
       const bandY = rect.height * scale, padX = 18 * scale, midY = bandY + (capH * scale) / 2;
       ctx.fillStyle = "#16201F";
       ctx.fillRect(0, bandY, canvas.width, capH * scale);
@@ -253,9 +380,18 @@ export default function Lab() {
       ctx.font = `500 ${11.5 * scale}px "JetBrains Mono", monospace`;
       const edgeGood = res?.verdict?.good;
       ctx.fillStyle = res ? (edgeGood ? "#4FC9A6" : "#8DA39E") : "#8DA39E";
-      const stats = res
+      let stats = res
         ? `t=${res.tStat} · OOS ${res.oosTrades} işlem · ${edgeGood ? "EDGE ✓" : "edge yok"}`
         : "backtest çalıştırılmadı";
+      // AK-062: karşılaştırma modu açıksa ikinci sembolün son 24s/bar değişimi de eklenir
+      if (compareOn && compareSymbol && hasData(compareSymbol)) {
+        const cb = getBars(compareSymbol);
+        if (cb && cb.length >= 2) {
+          const cLast = cb[cb.length - 1].c, cPrev = cb[cb.length - 2].c;
+          const cChg = ((cLast - cPrev) / cPrev) * 100;
+          stats += ` · vs ${compareSymbol} ${cChg >= 0 ? "+" : ""}${cChg.toFixed(2)}%`;
+        }
+      }
       ctx.fillText(stats, padX, midY + 10 * scale);
 
       ctx.textAlign = "right";
@@ -271,6 +407,7 @@ export default function Lab() {
       a.download = `altinkulak_${symbol}_${Date.now()}.png`;
       a.href = canvas.toDataURL("image/png");
       a.click();
+      });
     };
     img.src = url;
   }
@@ -386,7 +523,7 @@ export default function Lab() {
             <b>{symbol}</b> için veri bekleniyor… Binance'te {symbol}USDT deneniyor; bulunamazsa burada açıkça söylenir — başka sembolün örnek verisi ASLA gösterilmez.
           </div>
         )}
-        {dataOk && <Chart ref={chartRef} bars={getBars(symbol)} concepts={concepts} maList={maList} trades={replay ? null : res?.trades} logScale={logS} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} onDrawsChange={setDrawCount} showRsi={showRsi} onSandboxAdd={handleSandboxAdd} />}
+        {dataOk && <Chart ref={chartRef} bars={replay ? getBars(symbol) : (liveBars || getBars(symbol))} concepts={concepts} maList={maList} trades={replay ? null : res?.trades} logScale={logS} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} onDrawsChange={setDrawCount} showRsi={showRsi} onSandboxAdd={handleSandboxAdd} />}
         {paperMsg && <p className="ak-paper-toast">{paperMsg}</p>}
         {replay && (
           <div className="ak-replay">

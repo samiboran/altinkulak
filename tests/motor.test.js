@@ -5,6 +5,7 @@ import { mean, std, tStat, trainTestSplit, verdict, bonferroniT, expectedFalsePo
 import { runBacktest } from "../src/lib/backtest.js";
 import { getBars, parseKlines, loadReal, isReal, pairFor, hasData, stats24h, getFreshness, freshnessStatus } from "../src/lib/data.js";
 import { detectModBSignals, DEFAULT_PARAMS } from "../src/lib/modB.js";
+import { applyTick, mergeGapFill } from "../src/lib/liveData.js";
 
 let pass = 0;
 function test(name, fn) {
@@ -385,6 +386,54 @@ test("freshnessStatus: eşikler doğru sınıflandırır", () => {
 });
 test("getFreshness: hiç Binance eşleşmesi olmayan sembolde null döner (sentetik)", () => {
   assert.equal(getFreshness("BILINMEYEN_SEMBOL_XYZ"), null);
+});
+
+console.log("canlı mum akışı (AK-072)");
+test("applyTick: aynı açılış zamanı (t) → son bar yerinde güncellenir, dizi uzamaz", () => {
+  const bars = [
+    { t: 0, time: 1000, o: 10, h: 12, l: 9, c: 11, v: 5 },
+    { t: 1, time: 2000, o: 11, h: 13, l: 10, c: 12, v: 6 },
+  ];
+  const k = { t: 2000, o: "11", h: "14", l: "10", c: "13.5", v: "9" }; // aynı bar, fiyat hareket etti
+  const next = applyTick(bars, k);
+  assert.equal(next.length, 2);
+  assert.equal(next[1].c, 13.5);
+  assert.equal(next[1].h, 14);
+  assert.equal(next[1].t, 1); // dizi indeksi korunur
+  assert.equal(bars[1].c, 12, "orijinal dizi mutasyona uğramamalı");
+});
+test("applyTick: farklı açılış zamanı → yeni bar eklenir, eskiler korunur", () => {
+  const bars = [
+    { t: 0, time: 1000, o: 10, h: 12, l: 9, c: 11, v: 5 },
+    { t: 1, time: 2000, o: 11, h: 13, l: 10, c: 12, v: 6 },
+  ];
+  const k = { t: 3000, o: "12", h: "12.5", l: "11.8", c: "12.2", v: "3" }; // kapanış — yeni mum açıldı
+  const next = applyTick(bars, k);
+  assert.equal(next.length, 3);
+  assert.equal(next[2].time, 3000);
+  assert.equal(next[2].t, 2);
+  assert.equal(next[1].c, 12, "önceki bar değişmemeli");
+});
+test("mergeGapFill: taze barlardan eski olanlar korunur, kesişen/daha yeni aralık taze veriyle değişir", () => {
+  const stale = [
+    { t: 0, time: 1000, o: 1, h: 1, l: 1, c: 1, v: 1 },
+    { t: 1, time: 2000, o: 1, h: 1, l: 1, c: 1, v: 1 },
+    { t: 2, time: 3000, o: 1, h: 1, l: 1, c: 1, v: 1 }, // kopukluk burada başladı — bayat
+  ];
+  const fresh = [
+    { time: 3000, o: 5, h: 6, l: 4, c: 5.5, v: 10 }, // aynı zaman ama REST'ten taze/otoriter
+    { time: 4000, o: 5.5, h: 6.2, l: 5.3, c: 6, v: 12 },
+  ];
+  const merged = mergeGapFill(stale, fresh);
+  assert.equal(merged.length, 4); // 1000,2000 (korunan) + 3000,4000 (taze)
+  assert.deepEqual(merged.map(b => b.time), [1000, 2000, 3000, 4000]);
+  assert.equal(merged[2].c, 5.5, "3000 zaman damgası taze veriyle değişmeli, bayat kalmamalı");
+  assert.deepEqual(merged.map(b => b.t), [0, 1, 2, 3], "t alanı baştan yeniden numaralanmalı");
+});
+test("mergeGapFill: taze bar yoksa orijinal dizi değişmeden döner", () => {
+  const bars = [{ t: 0, time: 1000, o: 1, h: 1, l: 1, c: 1, v: 1 }];
+  assert.equal(mergeGapFill(bars, []), bars);
+  assert.equal(mergeGapFill(bars, null), bars);
 });
 
 console.log("id benzersizliği (regresyon koruması)");
