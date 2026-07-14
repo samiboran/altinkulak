@@ -31,6 +31,7 @@ export default function Navbar() {
         <NavLink to="/topluluk">Topluluk</NavLink>
         <NavLink to="/haberler">Haberler</NavLink>
         <NavLink to="/fiyatlandirma">Fiyatlandırma</NavLink>
+        <NavLink to="/kod-editorum">Kod Editörüm <span className="ak-soon">deneysel</span></NavLink>
       </nav>
       <div className="ak-tools">
         <button className="ak-icon" aria-label="Ara"><Search size={18} /></button>

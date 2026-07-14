@@ -15,8 +15,9 @@ import Profil from "../src/pages/Profil.jsx";
 import Haberler from "../src/pages/Haberler.jsx";
 import Ogren from "../src/pages/Ogren.jsx";
 import Fiyatlandirma from "../src/pages/Fiyatlandirma.jsx";
+import KodEditoru from "../src/pages/KodEditoru.jsx";
 
-const PAGES = [["Home", Home], ["Lab", Lab], ["Izleme", Izleme], ["Tarama", Tarama], ["Ben", Ben], ["Topluluk", Topluluk], ["Giris", Giris], ["Profil", Profil], ["Haberler", Haberler], ["Ogren", Ogren], ["Fiyatlandirma", Fiyatlandirma]];
+const PAGES = [["Home", Home], ["Lab", Lab], ["Izleme", Izleme], ["Tarama", Tarama], ["Ben", Ben], ["Topluluk", Topluluk], ["Giris", Giris], ["Profil", Profil], ["Haberler", Haberler], ["Ogren", Ogren], ["Fiyatlandirma", Fiyatlandirma], ["KodEditoru", KodEditoru]];
 
 let fail = 0;
 console.log("sayfa render (SSR duman testi)");
