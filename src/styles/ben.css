@@ -92,6 +92,7 @@
 
 /* CSV import (AK-025) */
 .ak-csv-btn{display:inline-flex;align-items:center;gap:6px;margin-left:12px;background:transparent;border:1px solid var(--line);border-radius:8px;color:var(--teal-soft);padding:6px 11px;font-size:11.5px;cursor:pointer;}
+.ak-csv-btn:disabled{opacity:.4;cursor:default;}
 .ak-csv-btn:hover{border-color:var(--teal-deep);}
 .ak-modal.ak-imp{max-width:460px;text-align:left;}
 .ak-modal.ak-imp svg,.ak-modal.ak-imp h3{text-align:center;display:block;margin-left:auto;margin-right:auto;}

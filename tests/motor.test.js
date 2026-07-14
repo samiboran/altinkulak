@@ -249,7 +249,7 @@ test("contribRank eşikleri", () => {
 });
 
 console.log("csv import (AK-025)");
-const { parseTradesCSV, dedupeKey } = await import("../src/lib/csv.js");
+const { parseTradesCSV, dedupeKey, exportTradesCSV } = await import("../src/lib/csv.js");
 test("geçerli CSV çözülür (sütun sırası serbest, ; de olur)", () => {
   const { rows, errors } = parseTradesCSV("dir;sym;r;plan\nlong;btc;2;2\nSHORT;ETH;-1;3");
   assert.equal(errors.length, 0);
@@ -283,6 +283,30 @@ test("dedupeKey: aynı sembol+R+gün+yön aynı anahtar", () => {
   const c = { sym: "BTC", r: 2, d: "2026-07-02T10:00:00Z", dir: "Long" };
   assert.equal(dedupeKey(a), dedupeKey(b));
   assert.notEqual(dedupeKey(a), dedupeKey(c));
+});
+test("exportTradesCSV (AK-063): round-trip — indirilen CSV tekrar import edilince aynı veriyi üretir", () => {
+  const trades = [
+    { sym: "BTC", dir: "Long", plan: 2, r: 1.5, tag: "Plana uydu", setup: "FVG", d: "2026-07-01T10:00:00.000Z" },
+    { sym: "ETH", dir: "Short", plan: 3, r: -1, tag: "FOMO", setup: "BOS", d: "2026-07-02T08:15:00.000Z" },
+  ];
+  const csv = exportTradesCSV(trades);
+  assert.equal(csv.split("\n")[0], "sym,dir,plan,r,tag,setup,d");
+  const { rows, errors } = parseTradesCSV(csv);
+  assert.equal(errors.length, 0);
+  assert.equal(rows.length, 2);
+  for (let i = 0; i < trades.length; i++) {
+    assert.equal(rows[i].sym, trades[i].sym);
+    assert.equal(rows[i].dir, trades[i].dir);
+    assert.equal(rows[i].plan, trades[i].plan);
+    assert.equal(rows[i].r, trades[i].r);
+    assert.equal(rows[i].tag, trades[i].tag);
+    assert.equal(rows[i].setup, trades[i].setup);
+    assert.equal(rows[i].d, trades[i].d);
+  }
+});
+test("exportTradesCSV: boş sicil çökmez, yalnız başlık döner", () => {
+  const csv = exportTradesCSV([]);
+  assert.equal(csv, "sym,dir,plan,r,tag,setup,d");
 });
 
 console.log("stop genişliği (stopMult)");

@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useRef } from "react";
-import { Monitor, Smartphone, Target, Brain, Plus, ShieldAlert, BookLock, FlaskConical, Trash2, Upload } from "lucide-react";
+import { Monitor, Smartphone, Target, Brain, Plus, ShieldAlert, BookLock, FlaskConical, Trash2, Upload, Download } from "lucide-react";
 import { addTrade, listTrades, summary, TAGS, SETUPS } from "../lib/ledger.js";
 import { addSandbox, listSandbox, removeSandbox } from "../lib/sandbox.js";
 import { edgeRank } from "../lib/ranks.js";
-import { parseTradesCSV, dedupeKey } from "../lib/csv.js";
+import { parseTradesCSV, dedupeKey, exportTradesCSV } from "../lib/csv.js";
 import "../styles/ben.css";
 
 const TAGCOL = { "Plana uydu": "ok", "Erken çıkış": "warn", "FOMO": "bad", "İntikam": "bad" };
@@ -41,6 +41,20 @@ export default function Ben() {
       setImp({ rows: fresh, errors, skipped });
     };
     rd.readAsText(file);
+  }
+
+  // AK-063: sicili CSV olarak indir — parseTradesCSV ile round-trip uyumlu (do_not_touch: kolon formatı)
+  function downloadCSV() {
+    const csv = exportTradesCSV(trades);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `sicil-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   function doImport(target) {
@@ -127,6 +141,7 @@ export default function Ben() {
           {mode === "sicil" ? <><BookLock size={15} /> Sicile işle <em>kalıcı kayıt — silinemez, düzenlenemez</em></>
                             : <><FlaskConical size={15} /> Sandbox'a işle <em>pratik — istediğin gibi sil</em></>}
           <button className="ak-csv-btn" onClick={() => fileRef.current?.click()} title="CSV formatı: sym,dir,plan,r[,tag,setup,d]"><Upload size={13} /> CSV içe aktar</button>
+          <button className="ak-csv-btn" onClick={downloadCSV} disabled={!trades.length} title="Sicili CSV olarak indir"><Download size={13} /> CSV indir</button>
           <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={onCSV} />
         </div>
         <div className="ak-ben-formrow">

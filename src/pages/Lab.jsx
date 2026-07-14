@@ -206,17 +206,50 @@ export default function Lab() {
     if (!svgStr.includes("xmlns=")) svgStr = svgStr.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"');
     const rect = svg.getBoundingClientRect();
     const scale = 2;
+    const capH = 56; // AK-062: alt istatistik bandı yüksekliği (css px)
     const url = URL.createObjectURL(new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" }));
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement("canvas");
       canvas.width = rect.width * scale;
-      canvas.height = rect.height * scale;
+      canvas.height = (rect.height + capH) * scale;
       const ctx = canvas.getContext("2d");
       ctx.fillStyle = "#0E1416";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, rect.width * scale, rect.height * scale);
       URL.revokeObjectURL(url);
+
+      // AK-062: alt bant — sembol, t-stat, OOS, edge rozeti, marka + slogan
+      const bandY = rect.height * scale, padX = 18 * scale, midY = bandY + (capH * scale) / 2;
+      ctx.fillStyle = "#16201F";
+      ctx.fillRect(0, bandY, canvas.width, capH * scale);
+      ctx.strokeStyle = "#25322F";
+      ctx.lineWidth = scale;
+      ctx.beginPath(); ctx.moveTo(0, bandY); ctx.lineTo(canvas.width, bandY); ctx.stroke();
+
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#E8EEEC";
+      ctx.font = `600 ${15 * scale}px "Chakra Petch", sans-serif`;
+      ctx.fillText(symbol, padX, midY - 9 * scale);
+
+      ctx.font = `500 ${11.5 * scale}px "JetBrains Mono", monospace`;
+      const edgeGood = res?.verdict?.good;
+      ctx.fillStyle = res ? (edgeGood ? "#4FC9A6" : "#8DA39E") : "#8DA39E";
+      const stats = res
+        ? `t=${res.tStat} · OOS ${res.oosTrades} işlem · ${edgeGood ? "EDGE ✓" : "edge yok"}`
+        : "backtest çalıştırılmadı";
+      ctx.fillText(stats, padX, midY + 10 * scale);
+
+      ctx.textAlign = "right";
+      ctx.fillStyle = "#E6B450";
+      ctx.font = `600 ${12.5 * scale}px "JetBrains Mono", monospace`;
+      ctx.fillText("samiboran.github.io/altinkulak", canvas.width - padX, midY - 9 * scale);
+      ctx.fillStyle = "#8DA39E";
+      ctx.font = `400 ${10.5 * scale}px "Inter", sans-serif`;
+      ctx.fillText("Gürültüyü değil, sinyali duy", canvas.width - padX, midY + 10 * scale);
+      ctx.textAlign = "left";
+
       const a = document.createElement("a");
       a.download = `altinkulak_${symbol}_${Date.now()}.png`;
       a.href = canvas.toDataURL("image/png");

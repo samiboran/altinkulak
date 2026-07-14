@@ -47,3 +47,10 @@ export function dedupeKey(t) {
   const day = t.d ? t.d.slice(0, 10) : "?";
   return `${t.sym}|${t.r}|${day}|${t.dir}`;
 }
+
+// AK-063: sicili CSV'ye dök — parseTradesCSV ile round-trip uyumlu aynı kolon sırası (sym,dir,plan,r,tag,setup,d).
+export function exportTradesCSV(trades) {
+  const header = "sym,dir,plan,r,tag,setup,d";
+  const lines = trades.map(t => [t.sym, t.dir, t.plan, t.r, t.tag, t.setup, t.d].join(","));
+  return [header, ...lines].join("\n");
+}
