@@ -53,6 +53,26 @@ function findFVGs(bars, atrArr, maxGapATR = 0.5) {
   return gaps;
 }
 
+// AK-073: tek bir giriş/stop/hedef üçlüsünün sonucunu simüle eder — hem bu dosyanın kendi
+// simulate()'i HEM Lab.jsx'teki "Kendi Kodum" (kullanıcı kodu) yolu AYNI fonksiyonu kullanır,
+// mantık iki yerde tekrarlanmaz. LOOKAHEAD-BIAS ENGELİ: yalnız entryIdx'ten SONRAKİ barlarla hesaplanır.
+// R çarpanı rr parametresi almadan, verilen fiyatlardan çıkarılır: |target-entry|/|entry-stop|
+// (ATR×rr tabanlı simulate() çağrısı için bu, verilen rr ile matematiksel olarak birebir aynıdır).
+// Aynı barda hem stop hem hedefe değinirse muhafazakâr varsayım: stop önceliklidir.
+// Döner: { outcome: number|null (-1 kayıp, +R kazanç, null = lookahead içinde ne olur ne biter), exitIdx: number|null }
+export function simulateOutcome(bars, entryIdx, dir, entry, stop, target, lookahead = 40) {
+  const risk = Math.abs(entry - stop);
+  if (!risk) return { outcome: null, exitIdx: null };
+  const rr = Math.abs(target - entry) / risk;
+  for (let j = entryIdx + 1; j < Math.min(entryIdx + lookahead, bars.length); j++) {
+    const hitStop = dir === 1 ? bars[j].l <= stop : bars[j].h >= stop;
+    const hitTgt = dir === 1 ? bars[j].h >= target : bars[j].l <= target;
+    if (hitStop) return { outcome: -1, exitIdx: j };    // ayni bar: muhafazakar, stop oncelik
+    if (hitTgt) return { outcome: rr, exitIdx: j };
+  }
+  return { outcome: null, exitIdx: null };
+}
+
 // Bir FVG sonrasi: fiyat bosluga geri doner (retest), giris; stop/target R:R ile.
 // LOOKAHEAD-BIAS ENGELI: giris ve sonuc yalnizca i. bardan SONRAKI barlarla hesaplanir.
 // stopMult: stop genişliği çarpanı (×ATR). Geniş stop = az stoplanma ama hedef de uzar
@@ -72,14 +92,7 @@ function simulate(bars, atrArr, gaps, rr = 3, lookahead = 40, stopMult = 1) {
     const risk = a * stopMult; // 1R = stopMult × ATR
     const stop = g.dir === 1 ? entryPx - risk : entryPx + risk;
     const target = g.dir === 1 ? entryPx + risk * rr : entryPx - risk * rr;
-    let outcome = null;
-    for (let j = entryIdx + 1; j < Math.min(entryIdx + lookahead, bars.length); j++) {
-      const hitStop = g.dir === 1 ? bars[j].l <= stop : bars[j].h >= stop;
-      const hitTgt = g.dir === 1 ? bars[j].h >= target : bars[j].l <= target;
-      if (hitStop && hitTgt) { outcome = -1; break; }   // ayni bar: muhafazakar, stop oncelik
-      if (hitStop) { outcome = -1; break; }
-      if (hitTgt) { outcome = rr; break; }
-    }
+    const { outcome } = simulateOutcome(bars, entryIdx, g.dir, entryPx, stop, target, lookahead);
     if (outcome !== null) trades.push({ entryIdx, dir: g.dir, entry: entryPx, stop, target, outcome });
   }
   return trades;
@@ -123,7 +136,8 @@ function mulberry32(seed){return function(){seed|=0;seed=(seed+0x6D2B79F5)|0;let
 // Rastgele giris kontrol grubu: ayni R:R ve stop mantigiyla, rastgele bar/yonde
 // girisler uret, t-stat dagiliminin %95'ini dondur. Gercek strateji bunu asmali.
 // costR: islem basina maliyet (R) — kontrol da AYNI maliyeti oder (adil kiyas).
-function randomEntryControl(bars, atrArr, rr, tradeCount, lookahead, runs = 300, seed = 777, costR = 0, stopMult = 1) {
+// AK-073: Lab.jsx'in "Kendi Kodum" istatistik hesabı da (gözlemlenen ortalama R ile) bunu kullanır — export edildi.
+export function randomEntryControl(bars, atrArr, rr, tradeCount, lookahead, runs = 300, seed = 777, costR = 0, stopMult = 1) {
   if (tradeCount < 2) return { p95: 0, meanT: 0 };
   const rnd = mulberry32(seed);
   const valid = [];

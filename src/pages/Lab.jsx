@@ -571,6 +571,12 @@ export default function Lab() {
         <div className="ak-panel">
           <h2><FlaskConical size={17} /> Strateji</h2>
 
+          {/* AK-073: Hazır Strateji (ATR×RR tabanlı FVG motoru) / Kendi Kodum (sandboxed kullanıcı kodu) — ikisi de aynı grafiğe ve Sonuç paneline bağlanır */}
+          <div className="ak-kod-modes">
+            <button className={"ak-kod-tab" + (stratMode === "hazir" ? " on" : "")} onClick={() => switchStratMode("hazir")}><FlaskConical size={13} /> Hazır Strateji</button>
+            <button className={"ak-kod-tab" + (stratMode === "kendi" ? " on" : "")} onClick={() => switchStratMode("kendi")}><Code2 size={13} /> Kendi Kodum</button>
+          </div>
+
           <div className="ak-row"><label>Piyasa</label>
             <div className="ak-pill">{MARKET_GROUPS.map((g) =>
               <button key={g.key} className={group === g.key ? "on" : ""}
@@ -619,33 +625,50 @@ export default function Lab() {
           </div>
           <div className="ak-active-sym">Seçili: <b>{symbol}</b></div>
 
-          {/* Risk:Ödül serbest giriş */}
-          <div className="ak-row"><label>Risk : Ödül</label>
-            <div className="ak-rr">1 : <input type="number" min="1" step="0.5" value={rr} onChange={(e) => { setRr(e.target.value); setRes(null); }} /></div>
-          </div>
+          {stratMode === "hazir" ? (
+            <>
+              {/* Risk:Ödül serbest giriş */}
+              <div className="ak-row"><label>Risk : Ödül</label>
+                <div className="ak-rr">1 : <input type="number" min="1" step="0.5" value={rr} onChange={(e) => { setRr(e.target.value); setRes(null); }} /></div>
+              </div>
 
-          {/* Gelişmiş: kendi sistemini uzat */}
-          <button className="ak-adv-toggle" onClick={() => setPanel("adv", !lay.adv)}>
-            <SlidersHorizontal size={14} /> Kendi sistemin (gelişmiş) {lay.adv ? "▲" : "▼"}
-          </button>
-          {lay.adv && (
-            <div className="ak-adv">
-              <div className="ak-row"><label>FVG boşluk eşiği (×ATR)</label>
-                <div className="ak-rr"><input type="number" min="0.2" max="1.2" step="0.1" value={gap} onChange={(e) => { setGap(e.target.value); setRes(null); }} /></div>
-              </div>
-              <div className="ak-row"><label>Stop genişliği (×ATR)</label>
-                <div className="ak-rr"><input type="number" min="0.5" max="3" step="0.25" value={stopM} onChange={(e) => { setStopM(e.target.value); setRes(null); }} /></div>
-              </div>
-              <div className="ak-row"><label>İşlem maliyeti (R)</label>
-                <div className="ak-rr"><input type="number" min="0" max="0.5" step="0.01" value={cost} onChange={(e) => { setCost(e.target.value); setRes(null); }} /></div>
-              </div>
-              <p className="ak-note">Dar boşluk = daha seçici. Araştırmamız edge’in dar + trend yönlü boşlukta yaşadığını gösterdi. İşlem maliyeti (komisyon + slippage) her işlemden düşülür — rastgele kontrol grubu da aynı maliyeti öder; 0.05 = riskin %5'i. Maliyetsiz backtest kendini kandırmaktır.</p>
-            </div>
+              {/* Gelişmiş: kendi sistemini uzat */}
+              <button className="ak-adv-toggle" onClick={() => setPanel("adv", !lay.adv)}>
+                <SlidersHorizontal size={14} /> Kendi sistemin (gelişmiş) {lay.adv ? "▲" : "▼"}
+              </button>
+              {lay.adv && (
+                <div className="ak-adv">
+                  <div className="ak-row"><label>FVG boşluk eşiği (×ATR)</label>
+                    <div className="ak-rr"><input type="number" min="0.2" max="1.2" step="0.1" value={gap} onChange={(e) => { setGap(e.target.value); setRes(null); }} /></div>
+                  </div>
+                  <div className="ak-row"><label>Stop genişliği (×ATR)</label>
+                    <div className="ak-rr"><input type="number" min="0.5" max="3" step="0.25" value={stopM} onChange={(e) => { setStopM(e.target.value); setRes(null); }} /></div>
+                  </div>
+                  <div className="ak-row"><label>İşlem maliyeti (R)</label>
+                    <div className="ak-rr"><input type="number" min="0" max="0.5" step="0.01" value={cost} onChange={(e) => { setCost(e.target.value); setRes(null); }} /></div>
+                  </div>
+                  <p className="ak-note">Dar boşluk = daha seçici. Araştırmamız edge’in dar + trend yönlü boşlukta yaşadığını gösterdi. İşlem maliyeti (komisyon + slippage) her işlemden düşülür — rastgele kontrol grubu da aynı maliyeti öder; 0.05 = riskin %5'i. Maliyetsiz backtest kendini kandırmaktır.</p>
+                </div>
+              )}
+
+              <button className="ak-btn ak-btn-primary ak-run" onClick={run} disabled={busy}>
+                <Play size={16} /> {busy ? "Çalışıyor…" : "Backtest çalıştır"}
+              </button>
+            </>
+          ) : (
+            <>
+              <SistemimKoduPanel
+                symbol={symbol}
+                showSymbolPicker={false}
+                showResultsList={false}
+                onRunResult={handleCodeRunResult}
+                onCodeChange={(c) => { codeRef.current = c; }}
+              />
+              {codeInfo?.kind === "empty" && (
+                <p className="ak-note">Kod çalıştı ama hiç işlem tetiklenmedi — kod hatasız çalıştı, sinyal üretmedi ya da tetiklenen sinyaller 40 bar içinde ne stop ne hedefe değmedi.</p>
+              )}
+            </>
           )}
-
-          <button className="ak-btn ak-btn-primary ak-run" onClick={run} disabled={busy}>
-            <Play size={16} /> {busy ? "Çalışıyor…" : "Backtest çalıştır"}
-          </button>
 
           <button className="ak-adv-toggle" onClick={() => setPanel("risk", !lay.risk)}>
             <Calculator size={14} /> Pozisyon & risk hesaplayıcı {lay.risk ? "▲" : "▼"}
@@ -677,8 +700,9 @@ export default function Lab() {
         </div>
 
         <div className="ak-panel">
-          <h2><Activity size={17} /> Sonuç {res && <span className="ak-res-ctx">{symbol} · 1:{rr}</span>}</h2>
-          {!res && <p className="ak-hint">Sembolü ara, parametreni ayarla, “Backtest çalıştır”a bas. İpucu: <b>SOL</b> ile <b>RND</b>’yi karşılaştır.</p>}
+          <h2><Activity size={17} /> Sonuç {res && <span className="ak-res-ctx">{symbol} · {stratMode === "kendi" ? "Kendi Kodum" : `1:${rr}`}</span>}</h2>
+          {!res && stratMode === "hazir" && <p className="ak-hint">Sembolü ara, parametreni ayarla, “Backtest çalıştır”a bas. İpucu: <b>SOL</b> ile <b>RND</b>’yi karşılaştır.</p>}
+          {!res && stratMode === "kendi" && !codeInfo && <p className="ak-hint">"Kendi Kodum" sekmesinde kodunu yaz, “Çalıştır”a bas — sonuçlar burada ve grafikte görünür.</p>}
           {res && (
             <>
               <div className="ak-metrics">
