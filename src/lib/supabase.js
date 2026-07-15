@@ -33,3 +33,47 @@ export function onAuthStateChange(callback) {
   if (!supabase) return { data: { subscription: { unsubscribe() {} } } };
   return supabase.auth.onAuthStateChange(callback);
 }
+
+// ================= AK-077: profiles/strategies/follows sorguları (Profil.jsx "vitrin") =================
+// Supabase yapılandırılmamışsa ya da satır yoksa null/[]/false döner — çağıran taraf bunu
+// "henüz doğrulanmış strateji yok" gibi dürüst boş durumlara çevirir. Asla mock/fabrike veri
+// buradan sızmaz (D6).
+
+export async function fetchProfileByHandle(handle) {
+  if (!supabase || !handle) return null;
+  const { data, error } = await supabase.from("profiles").select("*").eq("handle", handle).maybeSingle();
+  if (error) return null;
+  return data;
+}
+
+export async function fetchProfileById(id) {
+  if (!supabase || !id) return null;
+  const { data, error } = await supabase.from("profiles").select("*").eq("id", id).maybeSingle();
+  if (error) return null;
+  return data;
+}
+
+export async function fetchStrategiesByUser(userId) {
+  if (!supabase || !userId) return [];
+  const { data, error } = await supabase.from("strategies").select("*").eq("user_id", userId).order("created_at", { ascending: false });
+  if (error) return [];
+  return data || [];
+}
+
+export async function fetchFollowState(followerId, followingId) {
+  if (!supabase || !followerId || !followingId) return false;
+  const { data } = await supabase.from("follows").select("follower_id").eq("follower_id", followerId).eq("following_id", followingId).maybeSingle();
+  return !!data;
+}
+
+export async function followUser(followerId, followingId) {
+  if (!supabase || !followerId || !followingId) return false;
+  const { error } = await supabase.from("follows").insert({ follower_id: followerId, following_id: followingId });
+  return !error;
+}
+
+export async function unfollowUser(followerId, followingId) {
+  if (!supabase || !followerId || !followingId) return false;
+  const { error } = await supabase.from("follows").delete().eq("follower_id", followerId).eq("following_id", followingId);
+  return !error;
+}

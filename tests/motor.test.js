@@ -582,4 +582,40 @@ test("fibLevel=0.618 (varsayılan) eski inOTE bandı ile birebir aynı davranır
   assert.equal(a, b);
 });
 
+console.log("Profil vitrini — Supabase sorguları (AK-077)");
+const {
+  fetchProfileByHandle, fetchProfileById, fetchStrategiesByUser,
+  fetchFollowState, followUser, unfollowUser,
+} = await import("../src/lib/supabase.js");
+// Bu test ortamında (.env boş) supabase client null'dur — motor.test.js'teki loadReal
+// testleriyle aynı ilke: async sonuçlar top-level await ile önce çözülür, sonra test()
+// içinde SENKRON doğrulanır (test() async hata yakalamaz).
+const profByHandle = await fetchProfileByHandle("elifquant");
+const profById = await fetchProfileById("some-uuid");
+const stratsByUser = await fetchStrategiesByUser("some-uuid");
+const followState = await fetchFollowState("a", "b");
+const followOk = await followUser("a", "b");
+const unfollowOk = await unfollowUser("a", "b");
+const profEmptyHandle = await fetchProfileByHandle("");
+const profNullId = await fetchProfileById(null);
+const stratsUndefined = await fetchStrategiesByUser(undefined);
+const followMissing = await fetchFollowState(null, "b");
+
+test("Supabase yapılandırılmamışken profil/strateji sorguları dürüst boş değer döner", () => {
+  assert.equal(profByHandle, null);
+  assert.equal(profById, null);
+  assert.deepEqual(stratsByUser, []);
+  assert.equal(followState, false);
+});
+test("Supabase yapılandırılmamışken takip et/bırak sessizce başarısız döner (çökmez)", () => {
+  assert.equal(followOk, false);
+  assert.equal(unfollowOk, false);
+});
+test("eksik id/handle ile çağrılınca ağa hiç çıkmadan boş değer döner", () => {
+  assert.equal(profEmptyHandle, null);
+  assert.equal(profNullId, null);
+  assert.deepEqual(stratsUndefined, []);
+  assert.equal(followMissing, false);
+});
+
 console.log(`\n${pass} test geçti${process.exitCode ? " (HATALAR VAR)" : " — motor sağlam."}`);
