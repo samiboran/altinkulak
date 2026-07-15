@@ -23,6 +23,26 @@
 .ak-paperbox-short{background:var(--bad);color:#1A0E0E;}
 .ak-paperbox-short:hover{filter:brightness(1.1);}
 @media(max-width:560px){ .ak-paperbox{top:8px;right:8px;} .ak-paperbox-row input{width:42px;} .ak-paperbox-long,.ak-paperbox-short{padding:5px 9px;font-size:11px;} }
+
+/* AK-068: gösterge legend'ı — sol üst, OHLC künyesinin altında. Satır alanı içerik kadar (fit-content)
+   ki chart'ın geri kalanında pan/crosshair engellenmesin (bkz. .ak-paperbox aynı desen). */
+.ak-legend{position:absolute;top:34px;left:10px;display:flex;flex-direction:column;gap:2px;pointer-events:none;max-width:78%;}
+.ak-legend-row{position:relative;display:inline-flex;align-items:center;gap:5px;width:fit-content;pointer-events:auto;padding:2px 4px;border-radius:5px;}
+.ak-legend-row:hover{background:rgba(14,20,22,.55);}
+.ak-legend-row.off .ak-legend-label{opacity:.45;}
+.ak-legend-dot{width:7px;height:7px;border-radius:50%;flex:none;}
+.ak-legend-label{font-family:'JetBrains Mono';font-size:10.5px;color:var(--txt);white-space:nowrap;}
+.ak-legend-icons{display:inline-flex;gap:3px;opacity:0;transition:opacity .12s;}
+.ak-legend-row:hover .ak-legend-icons{opacity:1;}
+.ak-legend-icons button{border:none;background:transparent;color:#8DA39E;cursor:pointer;padding:1px;display:grid;place-items:center;}
+.ak-legend-icons button:hover:not(:disabled){color:var(--txt);}
+.ak-legend-icons button:disabled{opacity:.3;cursor:not-allowed;}
+.ak-legend-gear{position:absolute;top:100%;left:0;z-index:5;margin-top:3px;display:flex;align-items:center;gap:6px;background:#121C1A;border:1px solid var(--line);border-radius:8px;padding:6px 8px;box-shadow:0 6px 18px rgba(0,0,0,.4);}
+.ak-legend-gear span{font-size:10px;color:var(--muted);font-family:'JetBrains Mono';white-space:nowrap;}
+.ak-legend-gear input{width:52px;background:#0E1816;border:1px solid var(--line);border-radius:6px;color:var(--txt);padding:3px 6px;font-size:11px;font-family:'JetBrains Mono';outline:none;}
+.ak-legend-gear button{border:none;background:var(--teal-deep);color:#0E1816;border-radius:6px;padding:3px 8px;font-size:10.5px;cursor:pointer;font-weight:600;}
+.ak-legend-undo{pointer-events:auto;align-self:flex-start;margin-top:2px;background:rgba(230,180,80,.12);border:1px solid #473c1c;color:var(--gold-2);border-radius:6px;padding:3px 8px;font-size:10.5px;font-family:'JetBrains Mono';cursor:pointer;}
+.ak-legend-undo:hover{background:rgba(230,180,80,.2);}
 .ak-c-grid{stroke:#1b2624;stroke-width:1;}
 .ak-c-axis{fill:#647974;font-size:9px;font-family:'JetBrains Mono';}
 .ak-c-fvg.up{fill:rgba(230,180,80,.16);stroke:rgba(230,180,80,.4);stroke-width:.6;}

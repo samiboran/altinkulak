@@ -1,5 +1,14 @@
 import { useMemo, useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
+import { Lock, Unlock, Copy, Trash2 } from "lucide-react";
 import { findFVG, findOrderBlocks, findBOS, ema, rsi, findMitigation, orderFlowArr, findFib } from "../lib/detectors.js";
+import ChartLegend from "./ChartLegend.jsx";
+
+// AK-069: çizimlere kalıcı id — sicil/sandbox'takiyle aynı desen (crypto.randomUUID, yoksa yedek)
+function uid() {
+  return (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(36).slice(2, 8);
+}
+const DRAW_COLORS = ["var(--gold)", "var(--teal)", "var(--good)", "var(--bad)"];
+const DRAW_WIDTHS = [1, 1.6, 2.4];
 
 // Heikin-Ashi dönüşümü: her mum bir önceki HA gövdesine bağlı, o yüzden tüm dizi baştan hesaplanır.
 function heikinAshi(bars) {
@@ -26,7 +35,7 @@ const EMPTY_MA_LIST = [];
 // props: bars, concepts(array), showEma(bool), maList([{period,color}]), maxView(son N bar)
 // AK-050: maList verilirse çoklu MA (her biri kendi periyot+rengiyle) çizilir; verilmezse
 // showEma(bool) eski tek-EMA20 davranışını birebir korur (geriye uyumluluk).
-const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = true, maList = null, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false, magnet = true, chartType = "candle", symbol = "", drawMode = null, compareBars = null, onDrawsChange = null, showRsi = false, onSandboxAdd = null }, ref) {
+const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = true, maList = null, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false, magnet = true, chartType = "candle", symbol = "", drawMode = null, compareBars = null, onDrawsChange = null, showRsi = false, onSandboxAdd = null, indicators = [], onIndicatorToggleShown = null, onIndicatorRemove = null, onIndicatorSetParam = null, lastRemovedIndicator = null, onUndoRemoveIndicator = null, onPushUndo = null }, ref) {
   const hasR = range && range.start != null;
   const FUT = 120; // sağda gelecek boşluğu (fib/projeksiyon) — pencere son barı bu kadar aşabilir
   const rawEnd = hasR ? range.end : bars.length - 1;
@@ -259,9 +268,10 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
   const [sel, setSel] = useState(null); // {a,b} view index (Shift seçimi)
   const dragRef = useRef(null);
   function onDown(e) {
-    if (e.button === 2) return; // AK-052: sağ-tık = çizim silme; sol-tık akışlarına (pan/çizim) karışmasın
+    if (e.button === 2) return; // AK-052/069: sağ-tık = context menu; sol-tık akışlarına (pan/çizim) karışmasın
     e.preventDefault(); // Shift+sürüklede tarayıcının metin seçimine girmesini engelle
-    if (selectedDraw != null) setSelectedDraw(null); // boş alana tıklanınca seçili çizim bırakılır (bir çizime tıklanmışsa click olayı hemen ardından yeniden seçer)
+    if (selectedDrawId != null) setSelectedDrawId(null); // boş alana tıklanınca seçili çizim bırakılır (bir çizime tıklanmışsa click olayı hemen ardından yeniden seçer)
+    if (ctxMenu) setCtxMenu(null);
     const r = e.currentTarget.getBoundingClientRect();
     const px = ((e.clientX - r.left) / r.width) * W;
     const py = ((e.clientY - r.top) / r.height) * H;
@@ -280,15 +290,15 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
       const i = Math.max(0, Math.min(slots - 1, Math.round(((px - pL) / (W - pL - pR)) * (slots - 1))));
       const price = priceAt(py);
       // AK-071: yatay çizgi/ışın — sürüklemeye gerek yok, tek tıkla anında eklenir
-      if (drawMode === "hline") { setDraws(ds => [...ds, { type: "hline", price }]); return; }
-      if (drawMode === "hray") { setDraws(ds => [...ds, { type: "hray", a: { i: off + i, price } }]); return; }
+      if (drawMode === "hline") { setDraws(ds => [...ds, { id: uid(), locked: false, type: "hline", price }]); return; }
+      if (drawMode === "hray") { setDraws(ds => [...ds, { id: uid(), locked: false, type: "hray", a: { i: off + i, price } }]); return; }
       // AK-070: pozisyon aracı — tek tıkla varsayılan giriş/TP/SL ile eklenir, hemen seçili olur
       // (R:R etiketi + Sandbox butonu görünsün diye); üç çizgi de sonradan ayrı ayrı sürüklenebilir.
       if (drawMode === "position") {
         const span = rg * 0.1;
-        const newIdx = draws.length;
-        setDraws(ds => [...ds, { type: "position", i: off + i, entry: price, tp: price + span * 2, sl: price - span }]);
-        setSelectedDraw(newIdx);
+        const newId = uid();
+        setDraws(ds => [...ds, { id: newId, locked: false, type: "position", i: off + i, entry: price, tp: price + span * 2, sl: price - span }]);
+        setSelectedDrawId(newId);
         return;
       }
       const a = { i: off + i, price };
@@ -411,36 +421,112 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
   }, [compareView, view]);
 
   // AK-044: serbest çizim araçları (trend çizgisi / dikdörtgen), sembol bazlı localStorage
+  // AK-069: her çizime kalıcı id + locked bayrağı; seçim id ile yapılır (index değil — sıralama/silme
+  // güvenli). Sağ-tık artık anında silmez, context menu açar (Kaldır/Klonla/Kilitle/Ayarlar).
   const [draws, setDraws] = useState([]);
   const [drawGhost, setDrawGhost] = useState(null);
-  const [selectedDraw, setSelectedDraw] = useState(null); // AK-052: mobil "tek dokunuşla seç" -> çöp kutusu ikonu
+  const [selectedDrawId, setSelectedDrawId] = useState(null);
+  const [ctxMenu, setCtxMenu] = useState(null); // {id, leftPct, topPct} — sağ-tık context menu
   useEffect(() => {
-    try { setDraws(JSON.parse(localStorage.getItem(`ak_draw_${symbol}`)) || []); } catch { setDraws([]); }
+    try {
+      const saved = JSON.parse(localStorage.getItem(`ak_draw_${symbol}`)) || [];
+      setDraws(saved.map(d => ({ locked: false, ...d, id: d.id || uid() }))); // eski kayıtlarda id/locked yoktu — göçür
+    } catch { setDraws([]); }
     setDrawGhost(null);
-    setSelectedDraw(null);
+    setSelectedDrawId(null);
+    setCtxMenu(null);
   }, [symbol]);
   useEffect(() => {
     try { localStorage.setItem(`ak_draw_${symbol}`, JSON.stringify(draws)); } catch { /* kotayı aşarsa sessiz geç */ }
     onDrawsChange && onDrawsChange(draws.length);
   }, [draws, symbol]);
-  function removeDraw(idx) { setDraws(ds => ds.filter((_, i) => i !== idx)); setSelectedDraw(null); }
-  function renderDelIcon(cx, cy, idx) {
-    return (
-      <g className="ak-c-draw-del" transform={`translate(${cx},${cy})`} onClick={(e) => { e.stopPropagation(); removeDraw(idx); }}>
-        <circle r="8" />
-        <line x1="-3.5" y1="-3.5" x2="3.5" y2="3.5" />
-        <line x1="3.5" y1="-3.5" x2="-3.5" y2="3.5" />
-      </g>
-    );
+
+  // AK-069: Delete/Backspace ile seçili çizimi sil (yazı alanı odaktaysa karışma)
+  useEffect(() => {
+    function isTypingTarget(el) {
+      if (!el) return false;
+      const tag = el.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+    }
+    function onKeyDown(e) {
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedDrawId != null && !isTypingTarget(document.activeElement)) {
+        e.preventDefault();
+        removeDraw(selectedDrawId);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedDrawId, draws]); // eslint-disable-line
+
+  // AK-069: context menu dışına tıklanınca kapansın
+  useEffect(() => {
+    if (!ctxMenu) return;
+    function onDoc(e) { if (!e.target.closest?.(".ak-draw-ctxmenu")) setCtxMenu(null); }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [ctxMenu]);
+
+  function removeDraw(id) {
+    const idx = draws.findIndex(d => d.id === id);
+    if (idx === -1) return;
+    const removed = draws[idx];
+    if (removed.locked) return; // kilitli silinemez
+    setDraws(ds => ds.filter(d => d.id !== id));
+    setSelectedDrawId(s => (s === id ? null : s));
+    onPushUndo?.({
+      label: "çizim silindi",
+      undo: () => setDraws(ds => { const next = ds.slice(); next.splice(Math.min(idx, next.length), 0, removed); return next; }),
+      redo: () => setDraws(ds => ds.filter(d => d.id !== id)),
+    });
   }
-  // AK-052: sağ-tık = sil (masaüstü); tek tık = seç -> küçük çöp kutusu ikonu belirir (mobil de bu yolla çalışır)
+  function cloneDraw(id) {
+    const d = draws.find(x => x.id === id);
+    if (!d) return;
+    const clone = { ...d, id: uid(), locked: false };
+    if (clone.a) clone.a = { ...clone.a, i: clone.a.i + 3 };
+    if (clone.b) clone.b = { ...clone.b, i: clone.b.i + 3 };
+    if (clone.type === "position") clone.i = clone.i + 3;
+    setDraws(ds => [...ds, clone]);
+    setSelectedDrawId(clone.id);
+  }
+  function toggleLock(id) { setDraws(ds => ds.map(d => d.id === id ? { ...d, locked: !d.locked } : d)); }
+  function updateDraw(id, patch) { setDraws(ds => ds.map(d => d.id === id ? { ...d, ...patch } : d)); }
+  function drawStyle(d) {
+    const s = { pointerEvents: "none" };
+    if (d.color) s.stroke = d.color;
+    if (d.width) s.strokeWidth = d.width;
+    return s;
+  }
+  function openCtxMenu(e, id) {
+    e.preventDefault(); e.stopPropagation();
+    const r = svgRef.current.getBoundingClientRect();
+    setSelectedDrawId(id);
+    setCtxMenu({ id, leftPct: ((e.clientX - r.left) / r.width) * 100, topPct: ((e.clientY - r.top) / r.height) * 100 });
+  }
+  // Uç nokta tutamacı — kilitliyse render edilmez (sürüklenemez), which: "a"|"b"|"price"
+  function renderHandle(cx, cy, id, which, locked) {
+    if (locked) return null;
+    return <circle cx={cx} cy={cy} r="5" className="ak-draw-handle" onMouseDown={(e) => { e.stopPropagation(); dragRef.current = { mode: "drawHandle", id, which }; }} />;
+  }
+  // Floating toolbar'ın (HTML overlay, .ak-c-outer içinde) hangi viewBox noktasının üstünde
+  // duracağını belirler — eski renderDelIcon konumlarıyla aynı mantık.
+  function getDrawAnchor(d) {
+    if (d.type === "hline") return { vx: W - pR - 60, vy: y(d.price) - 22 };
+    if (d.type === "hray") { const x0 = x(gi(d.a.i)), yy = y(d.a.price); return { vx: (x0 + (W - pR)) / 2 - 50, vy: yy - 34 }; }
+    if (d.type === "rect" || d.type === "trendline") {
+      const x0 = x(gi(d.a.i)), y0 = y(d.a.price), x1 = x(gi(d.b.i)), y1 = y(d.b.price);
+      return { vx: (x0 + x1) / 2 - 50, vy: Math.min(y0, y1) - 34 };
+    }
+    return null;
+  }
+  // AK-052: mobil "tek dokunuşla seç" korunur, artık id ile. AK-069: sağ-tık = context menu (anında silmez).
   // AK-071: "hline" (tam genişlik, tek fiyat) ve "hray" (bir bar konumundan sağ kenara ışın) — a/b nokta çifti gerektirmez.
-  function renderDraw(d, key, idx) {
-    const isGhost = idx == null;
-    const isSel = !isGhost && selectedDraw === idx;
+  function renderDraw(d, key) {
+    const isGhost = !d.id;
+    const isSel = !isGhost && selectedDrawId === d.id;
     const evts = isGhost ? {} : {
-      onContextMenu: (e) => { e.preventDefault(); e.stopPropagation(); removeDraw(idx); },
-      onClick: (e) => { e.stopPropagation(); setSelectedDraw(s => s === idx ? null : idx); },
+      onContextMenu: (e) => openCtxMenu(e, d.id),
+      onClick: (e) => { e.stopPropagation(); setCtxMenu(null); setSelectedDrawId(s => s === d.id ? null : d.id); },
     };
 
     if (d.type === "hline") {
@@ -448,8 +534,8 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
       return (
         <g key={key}>
           <line x1={pL} y1={yy} x2={W - pR} y2={yy} className="ak-c-draw-hit" {...evts} />
-          <line x1={pL} y1={yy} x2={W - pR} y2={yy} className={"ak-c-draw-hline" + (isSel ? " sel" : "")} style={{ pointerEvents: "none" }} />
-          {isSel && renderDelIcon(W - pR - 12, yy - 10, idx)}
+          <line x1={pL} y1={yy} x2={W - pR} y2={yy} className={"ak-c-draw-hline" + (isSel ? " sel" : "")} style={drawStyle(d)} />
+          {isSel && renderHandle(W - pR - 12, yy, d.id, "price", d.locked)}
         </g>
       );
     }
@@ -458,14 +544,15 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
       return (
         <g key={key}>
           <line x1={x0} y1={yy} x2={W - pR} y2={yy} className="ak-c-draw-hit" {...evts} />
-          <line x1={x0} y1={yy} x2={W - pR} y2={yy} className={"ak-c-draw-hray" + (isSel ? " sel" : "")} style={{ pointerEvents: "none" }} />
+          <line x1={x0} y1={yy} x2={W - pR} y2={yy} className={"ak-c-draw-hray" + (isSel ? " sel" : "")} style={drawStyle(d)} />
           <circle cx={x0} cy={yy} r="2.5" className={"ak-c-draw-hray-dot" + (isSel ? " sel" : "")} style={{ pointerEvents: "none" }} />
-          {isSel && renderDelIcon((x0 + (W - pR)) / 2, yy - 10, idx)}
+          {isSel && renderHandle(x0, yy, d.id, "a", d.locked)}
         </g>
       );
     }
     // AK-070: pozisyon aracı — giriş (orta), TP (yeşil kutu, üst/alt olabilir), SL (kırmızı kutu).
     // Üç çizgi de bağımsız sürüklenebilir (onMouseDown -> posdrag); R:R canlı, draws state'ten türetilir.
+    // AK-069: kendi bespoke seçili-durum arayüzü korunur (floating toolbar/context menu bu tipe uygulanmaz).
     if (d.type === "position") {
       const biX = gi(d.i);
       const boxBars = Math.max(4, Math.min(30, view.length - biX));
@@ -475,20 +562,29 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
       const dir = d.tp >= d.entry ? "Long" : "Short";
       const tpPct = (Math.abs(d.tp - d.entry) / d.entry) * 100;
       const slPct = (Math.abs(d.entry - d.sl) / d.entry) * 100;
-      const startHandle = (handle) => (e) => { e.stopPropagation(); dragRef.current = { mode: "posdrag", idx, handle }; };
+      const startHandle = (handle) => (e) => { if (d.locked) return; e.stopPropagation(); dragRef.current = { mode: "posdrag", id: d.id, handle }; };
       return (
         <g key={key}>
           <rect x={x0} y={Math.min(yE, yT)} width={x1 - x0} height={Math.max(2, Math.abs(yE - yT))} className={"ak-c-pos-tp" + (isSel ? " sel" : "")} {...evts} />
           <rect x={x0} y={Math.min(yE, yS)} width={x1 - x0} height={Math.max(2, Math.abs(yE - yS))} className={"ak-c-pos-sl" + (isSel ? " sel" : "")} {...evts} />
           <line x1={x0} y1={yE} x2={x1} y2={yE} className="ak-c-pos-entry" style={{ pointerEvents: "none" }} />
-          <line x1={x0} y1={yE - 6} x2={x1} y2={yE + 6} className="ak-c-draw-hit" onMouseDown={startHandle("entry")} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); removeDraw(idx); }} />
-          <line x1={x0} y1={yT - 6} x2={x1} y2={yT + 6} className="ak-c-draw-hit" onMouseDown={startHandle("tp")} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); removeDraw(idx); }} />
-          <line x1={x0} y1={yS - 6} x2={x1} y2={yS + 6} className="ak-c-draw-hit" onMouseDown={startHandle("sl")} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); removeDraw(idx); }} />
+          <line x1={x0} y1={yE - 6} x2={x1} y2={yE + 6} className="ak-c-draw-hit" onMouseDown={startHandle("entry")} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); removeDraw(d.id); }} />
+          <line x1={x0} y1={yT - 6} x2={x1} y2={yT + 6} className="ak-c-draw-hit" onMouseDown={startHandle("tp")} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); removeDraw(d.id); }} />
+          <line x1={x0} y1={yS - 6} x2={x1} y2={yS + 6} className="ak-c-draw-hit" onMouseDown={startHandle("sl")} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); removeDraw(d.id); }} />
           <text x={x0 + 3} y={yE - 4} className="ak-c-pos-lab entry">Giriş {fmtP(d.entry)}</text>
           <text x={x0 + 3} y={yT - 4} className="ak-c-pos-lab tp">TP {fmtP(d.tp)} (+{tpPct.toFixed(2)}%)</text>
           <text x={x0 + 3} y={yS + 11} className="ak-c-pos-lab sl">SL {fmtP(d.sl)} (-{slPct.toFixed(2)}%)</text>
           <text x={x0 + 3} y={Math.min(yT, yS) - 8} className="ak-c-pos-rr">{dir} · R:R 1:{rr.toFixed(2)}</text>
-          {isSel && renderDelIcon(x1 + 10, yE - 12, idx)}
+          {isSel && (() => {
+            const cx = x1 + 10, cy = yE - 12;
+            return (
+              <g className="ak-c-draw-del" transform={`translate(${cx},${cy})`} onClick={(e) => { e.stopPropagation(); removeDraw(d.id); }}>
+                <circle r="8" />
+                <line x1="-3.5" y1="-3.5" x2="3.5" y2="3.5" />
+                <line x1="3.5" y1="-3.5" x2="-3.5" y2="3.5" />
+              </g>
+            );
+          })()}
           {isSel && onSandboxAdd && (
             <g className="ak-c-pos-btn" transform={`translate(${x1 + 10},${yE + 10})`} onClick={(e) => { e.stopPropagation(); onSandboxAdd(symbol, dir, Math.round(rr * 10) / 10); }}>
               <rect x="0" y="-11" width="122" height="22" rx="5" />
@@ -500,20 +596,22 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
     }
 
     const x0 = x(gi(d.a.i)), y0 = y(d.a.price), x1 = x(gi(d.b.i)), y1 = y(d.b.price);
-    const delCx = (x0 + x1) / 2, delCy = Math.min(y0, y1) - 10;
     return (
       <g key={key}>
         {d.type === "rect"
-          ? <rect x={Math.min(x0, x1)} y={Math.min(y0, y1)} width={Math.abs(x1 - x0)} height={Math.abs(y1 - y0)} className={"ak-c-draw-rect" + (isSel ? " sel" : "")} {...evts} />
+          ? <rect x={Math.min(x0, x1)} y={Math.min(y0, y1)} width={Math.abs(x1 - x0)} height={Math.abs(y1 - y0)} className={"ak-c-draw-rect" + (isSel ? " sel" : "")} style={d.color ? { stroke: d.color } : undefined} {...evts} />
           : <>
               {/* görünmez geniş isabet şeridi — ince çizgiye sağ-tık/dokunuş zor olmasın diye */}
               <line x1={x0} y1={y0} x2={x1} y2={y1} className="ak-c-draw-hit" {...evts} />
-              <line x1={x0} y1={y0} x2={x1} y2={y1} className={"ak-c-draw-line" + (isSel ? " sel" : "")} style={{ pointerEvents: "none" }} />
+              <line x1={x0} y1={y0} x2={x1} y2={y1} className={"ak-c-draw-line" + (isSel ? " sel" : "")} style={drawStyle(d)} />
             </>}
-        {isSel && renderDelIcon(delCx, delCy, idx)}
+        {isSel && renderHandle(x0, y0, d.id, "a", d.locked)}
+        {isSel && renderHandle(x1, y1, d.id, "b", d.locked)}
       </g>
     );
   }
+  const selectedDrawObj = draws.find(d => d.id === selectedDrawId) || null;
+  const selectedAnchor = selectedDrawObj && ["trendline", "rect", "hline", "hray"].includes(selectedDrawObj.type) ? getDrawAnchor(selectedDrawObj) : null;
 
   if (!view || view.length < 2) return <svg className="ak-chart" viewBox={`0 0 1000 480`} />;
 
@@ -699,6 +797,15 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
         </g>
       )}
     </svg>
+    {/* AK-068: TradingView tarzı gösterge legend'ı — sol üst, OHLC künyesinin altında */}
+    <ChartLegend
+      indicators={indicators}
+      onToggleShown={onIndicatorToggleShown}
+      onRemove={onIndicatorRemove}
+      onSetParam={onIndicatorSetParam}
+      lastRemoved={lastRemovedIndicator}
+      onUndoRemove={onUndoRemoveIndicator}
+    />
     {/* AK-058: kağıt-işlem kutusu — Binance Long/Short kutusunun eğitim amaçlı, kaldıraçsız hali. Sandbox'a bağlı. */}
     <div className="ak-paperbox">
       <span className="ak-paperbox-note">Kağıt işlem — gerçek para değil</span>

@@ -24,6 +24,18 @@ const CONCEPTS = [["fvg","FVG"],["ob","Order Block"],["bos","BOS"],["mit","Mitig
 // 20 mevcut .ak-c-ema turkuazında kalır (varsayılan görünüm eskisiyle birebir aynı olsun diye).
 const MA_COLORS = { 20: "var(--teal)", 50: "var(--ma-purple)", 200: "var(--teal-soft)" };
 
+// AK-068: concepts/showEma/maList/showRsi dağınık state'i tek indicators=[{id,type,label,enabled,shown,params}]
+// listesine birleştirildi. enabled = eski checkbox durumu (Göstergeler menüsü hâlâ bunu okur/yazar — geriye
+// uyumlu). shown = legend'daki göz ikonuyla geçici gizleme; yalnız grafiği etkiler, backtest'i etkilemez.
+const DEFAULT_INDICATORS = [
+  ...CONCEPTS.map(([id, label]) => ({ id, type: "concept", label, enabled: id === "fvg", shown: true, params: {} })),
+  { id: "ma20", type: "ma", label: "MA 20", enabled: true, shown: true, params: { period: 20, color: MA_COLORS[20] } },
+  { id: "ma50", type: "ma", label: "MA 50", enabled: false, shown: true, params: { period: 50, color: MA_COLORS[50] } },
+  { id: "ma200", type: "ma", label: "MA 200", enabled: false, shown: true, params: { period: 200, color: MA_COLORS[200] } },
+  { id: "maCustom", type: "ma", label: "Özel MA", enabled: false, shown: true, params: { period: null, color: "var(--sage)" }, showPeriodInLabel: true },
+  { id: "rsi", type: "rsi", label: "RSI (14)", enabled: false, shown: true, params: { period: 14 } },
+];
+
 // AK-051: 24s Y/D/Hacim şeridi için kompakt biçimlendiriciler (Chart.jsx'teki fmtP ile tutarlı)
 function fmtP(p) {
   if (!Number.isFinite(p)) return "";
@@ -136,18 +148,36 @@ export default function Lab() {
   const [indOpen, setIndOpen] = useState(false);   // AK-026: göstergeler menüsü (çipler açıkta değil)
   function setPanel(k, v) { setLay(L => { const n = { ...L, [k]: v }; saveLayout(n); return n; }); }
   function resetBasic() { setLay({ ...BASIC }); saveLayout({ ...BASIC }); setViewOpen(false); }
-  const [concepts, setConcepts] = useState(["fvg"]);
-  // AK-050: çoklu MA — yalnız 20 varsayılan açık (eski showEma davranışıyla birebir aynı görünüm)
-  const [maOn, setMaOn] = useState({ 20: true, 50: false, 200: false });
-  const [maCustomOn, setMaCustomOn] = useState(false);
-  const [maCustomPeriod, setMaCustomPeriod] = useState("");
-  const [showRsi, setShowRsi] = useState(false); // AK-055: ayrı RSI paneli — varsayılan kapalı
-  const maList = useMemo(() => {
-    const out = [20, 50, 200].filter(p => maOn[p]).map(p => ({ period: p, color: MA_COLORS[p] }));
-    const cp = parseInt(maCustomPeriod, 10);
-    if (maCustomOn && Number.isInteger(cp) && cp > 1) out.push({ period: cp, color: "var(--sage)" });
-    return out;
-  }, [maOn, maCustomOn, maCustomPeriod]);
+  // AK-068: bkz. DEFAULT_INDICATORS yorumu — tek liste, iki türetilmiş görünüm (concepts=backtest, chartConcepts=grafik)
+  const [indicators, setIndicators] = useState(DEFAULT_INDICATORS);
+  const indById = useMemo(() => Object.fromEntries(indicators.map(x => [x.id, x])), [indicators]);
+  function setIndEnabled(id, val) {
+    setIndicators(arr => arr.map(x => x.id === id ? { ...x, enabled: val, shown: val ? true : x.shown } : x));
+  }
+  function toggleIndEnabled(id) { setIndEnabled(id, !indById[id]?.enabled); }
+  function toggleIndShown(id) { setIndicators(arr => arr.map(x => x.id === id ? { ...x, shown: !x.shown } : x)); }
+  function setIndParam(id, patch) { setIndicators(arr => arr.map(x => x.id === id ? { ...x, params: { ...x.params, ...patch } } : x)); }
+  const [lastRemovedInd, setLastRemovedInd] = useState(null); // {id,label} — AK-068 basit tek-adım geri al
+  function removeIndicator(id) {
+    const cur = indById[id];
+    if (!cur) return;
+    setIndEnabled(id, false);
+    setLastRemovedInd({ id, label: cur.label });
+    setTimeout(() => setLastRemovedInd(lr => (lr && lr.id === id ? null : lr)), 4000);
+  }
+  function undoRemoveIndicator() {
+    if (!lastRemovedInd) return;
+    setIndEnabled(lastRemovedInd.id, true);
+    setLastRemovedInd(null);
+  }
+  // run() / runBacktest SADECE enabled'a bakar (concepts) — legend'daki göz (shown) yalnız grafiği etkiler (chartConcepts)
+  const concepts = useMemo(() => indicators.filter(x => x.type === "concept" && x.enabled).map(x => x.id), [indicators]);
+  const chartConcepts = useMemo(() => indicators.filter(x => x.type === "concept" && x.enabled && x.shown).map(x => x.id), [indicators]);
+  const maList = useMemo(() => indicators
+    .filter(x => x.type === "ma" && x.enabled && x.shown && Number.isFinite(x.params.period) && x.params.period > 1)
+    .map(x => ({ period: x.params.period, color: x.params.color })), [indicators]);
+  const showRsi = !!(indById.rsi?.enabled && indById.rsi?.shown);
+  const legendIndicators = useMemo(() => indicators.filter(x => x.enabled), [indicators]);
   const [win, setWin] = useState({ s: 0.84, e: 1 });
   const [lanes, setLanes] = useState(["liq"]);
   const [lanesOn, setLanesOn] = useState(true);
@@ -436,27 +466,27 @@ export default function Lab() {
             {indOpen && (
               <div className="ak-view-menu">
                 {CONCEPTS.map(([k, l]) => (
-                  <label key={k}><input type="checkbox" checked={concepts.includes(k)} onChange={() => setConcepts(c => c.includes(k) ? c.filter(z => z !== k) : [...c, k])} /> {l}</label>
+                  <label key={k}><input type="checkbox" checked={!!indById[k]?.enabled} onChange={() => toggleIndEnabled(k)} /> {l}</label>
                 ))}
                 <span className="ak-ma-title">HAREKETLİ ORTALAMA</span>
                 {[20, 50, 200].map(p => (
                   <label key={p}>
-                    <input type="checkbox" checked={!!maOn[p]} onChange={() => setMaOn(m => ({ ...m, [p]: !m[p] }))} />
+                    <input type="checkbox" checked={!!indById["ma" + p]?.enabled} onChange={() => toggleIndEnabled("ma" + p)} />
                     <i className="ak-ma-dot" style={{ background: MA_COLORS[p] }} /> MA {p}
                   </label>
                 ))}
                 <label>
-                  <input type="checkbox" checked={maCustomOn} onChange={() => setMaCustomOn(v => !v)} />
+                  <input type="checkbox" checked={!!indById.maCustom?.enabled} onChange={() => toggleIndEnabled("maCustom")} />
                   <i className="ak-ma-dot" style={{ background: "var(--sage)" }} /> Özel
                   <input
                     type="number" className="ak-ma-custom" placeholder="periyot" min="2" max="500"
-                    value={maCustomPeriod} onClick={e => e.stopPropagation()}
-                    onChange={e => setMaCustomPeriod(e.target.value)}
+                    value={indById.maCustom?.params.period ?? ""} onClick={e => e.stopPropagation()}
+                    onChange={e => setIndParam("maCustom", { period: parseInt(e.target.value, 10) || null })}
                   />
                 </label>
                 <label><input type="checkbox" checked={lanesOn} onChange={() => setLanesOn(v => !v)} /> Zaman şeridi katmanları</label>
                 <span className="ak-ma-title">GÖSTERGE PANELİ</span>
-                <label><input type="checkbox" checked={showRsi} onChange={() => setShowRsi(v => !v)} /> RSI (14)</label>
+                <label><input type="checkbox" checked={!!indById.rsi?.enabled} onChange={() => toggleIndEnabled("rsi")} /> RSI (14)</label>
               </div>
             )}
           </div>
@@ -526,7 +556,9 @@ export default function Lab() {
             <b>{symbol}</b> için veri bekleniyor… Binance'te {symbol}USDT deneniyor; bulunamazsa burada açıkça söylenir — başka sembolün örnek verisi ASLA gösterilmez.
           </div>
         )}
-        {dataOk && <Chart ref={chartRef} bars={replay ? getBars(symbol) : (liveBars || getBars(symbol))} concepts={concepts} maList={maList} trades={replay ? null : res?.trades} logScale={logS} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} onDrawsChange={setDrawCount} showRsi={showRsi} onSandboxAdd={handleSandboxAdd} />}
+        {dataOk && <Chart ref={chartRef} bars={replay ? getBars(symbol) : (liveBars || getBars(symbol))} concepts={chartConcepts} maList={maList} trades={replay ? null : res?.trades} logScale={logS} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} onDrawsChange={setDrawCount} showRsi={showRsi} onSandboxAdd={handleSandboxAdd}
+          indicators={legendIndicators} onIndicatorToggleShown={toggleIndShown} onIndicatorRemove={removeIndicator} onIndicatorSetParam={setIndParam}
+          lastRemovedIndicator={lastRemovedInd} onUndoRemoveIndicator={undoRemoveIndicator} />}
         {paperMsg && <p className="ak-paper-toast">{paperMsg}</p>}
         {replay && (
           <div className="ak-replay">
