@@ -278,7 +278,20 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
     }
     if (drawMode) {
       const i = Math.max(0, Math.min(slots - 1, Math.round(((px - pL) / (W - pL - pR)) * (slots - 1))));
-      const a = { i: off + i, price: priceAt(py) };
+      const price = priceAt(py);
+      // AK-071: yatay çizgi/ışın — sürüklemeye gerek yok, tek tıkla anında eklenir
+      if (drawMode === "hline") { setDraws(ds => [...ds, { type: "hline", price }]); return; }
+      if (drawMode === "hray") { setDraws(ds => [...ds, { type: "hray", a: { i: off + i, price } }]); return; }
+      // AK-070: pozisyon aracı — tek tıkla varsayılan giriş/TP/SL ile eklenir, hemen seçili olur
+      // (R:R etiketi + Sandbox butonu görünsün diye); üç çizgi de sonradan ayrı ayrı sürüklenebilir.
+      if (drawMode === "position") {
+        const span = rg * 0.1;
+        const newIdx = draws.length;
+        setDraws(ds => [...ds, { type: "position", i: off + i, entry: price, tp: price + span * 2, sl: price - span }]);
+        setSelectedDraw(newIdx);
+        return;
+      }
+      const a = { i: off + i, price };
       const ghost = { type: drawMode, a, b: a };
       dragRef.current = { mode: "draw", ghost };
       setDrawGhost(ghost);
@@ -322,6 +335,12 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
       const py = ((e.clientY - r.top) / r.height) * H;
       const i = Math.max(0, Math.min(slots - 1, Math.round(((px - pL) / (W - pL - pR)) * (slots - 1))));
       setBookmark({ barIndex: off + i, price: priceAt(py) });
+    } else if (d.mode === "posdrag") {
+      // AK-070: pozisyon giriş/TP/SL çizgilerinden biri sürükleniyor — canlı fiyat güncellenir (R:R otomatik yeniden hesaplanır)
+      const r = e.currentTarget.getBoundingClientRect();
+      const py = ((e.clientY - r.top) / r.height) * H;
+      const price = priceAt(py);
+      setDraws(ds => ds.map((dr, i) => i === d.idx ? { ...dr, [d.handle]: price } : dr));
     } else if (d.mode === "pan" && onRangeSelect) {
       const db = Math.round((d.x0 - e.clientX) / Math.max(0.5, d.pxPerBar));
       const maxEnd = bars.length - 1 + 120;
@@ -405,15 +424,82 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
     onDrawsChange && onDrawsChange(draws.length);
   }, [draws, symbol]);
   function removeDraw(idx) { setDraws(ds => ds.filter((_, i) => i !== idx)); setSelectedDraw(null); }
+  function renderDelIcon(cx, cy, idx) {
+    return (
+      <g className="ak-c-draw-del" transform={`translate(${cx},${cy})`} onClick={(e) => { e.stopPropagation(); removeDraw(idx); }}>
+        <circle r="8" />
+        <line x1="-3.5" y1="-3.5" x2="3.5" y2="3.5" />
+        <line x1="3.5" y1="-3.5" x2="-3.5" y2="3.5" />
+      </g>
+    );
+  }
   // AK-052: sağ-tık = sil (masaüstü); tek tık = seç -> küçük çöp kutusu ikonu belirir (mobil de bu yolla çalışır)
+  // AK-071: "hline" (tam genişlik, tek fiyat) ve "hray" (bir bar konumundan sağ kenara ışın) — a/b nokta çifti gerektirmez.
   function renderDraw(d, key, idx) {
-    const x0 = x(gi(d.a.i)), y0 = y(d.a.price), x1 = x(gi(d.b.i)), y1 = y(d.b.price);
     const isGhost = idx == null;
     const isSel = !isGhost && selectedDraw === idx;
     const evts = isGhost ? {} : {
       onContextMenu: (e) => { e.preventDefault(); e.stopPropagation(); removeDraw(idx); },
       onClick: (e) => { e.stopPropagation(); setSelectedDraw(s => s === idx ? null : idx); },
     };
+
+    if (d.type === "hline") {
+      const yy = y(d.price);
+      return (
+        <g key={key}>
+          <line x1={pL} y1={yy} x2={W - pR} y2={yy} className="ak-c-draw-hit" {...evts} />
+          <line x1={pL} y1={yy} x2={W - pR} y2={yy} className={"ak-c-draw-hline" + (isSel ? " sel" : "")} style={{ pointerEvents: "none" }} />
+          {isSel && renderDelIcon(W - pR - 12, yy - 10, idx)}
+        </g>
+      );
+    }
+    if (d.type === "hray") {
+      const x0 = x(gi(d.a.i)), yy = y(d.a.price);
+      return (
+        <g key={key}>
+          <line x1={x0} y1={yy} x2={W - pR} y2={yy} className="ak-c-draw-hit" {...evts} />
+          <line x1={x0} y1={yy} x2={W - pR} y2={yy} className={"ak-c-draw-hray" + (isSel ? " sel" : "")} style={{ pointerEvents: "none" }} />
+          <circle cx={x0} cy={yy} r="2.5" className={"ak-c-draw-hray-dot" + (isSel ? " sel" : "")} style={{ pointerEvents: "none" }} />
+          {isSel && renderDelIcon((x0 + (W - pR)) / 2, yy - 10, idx)}
+        </g>
+      );
+    }
+    // AK-070: pozisyon aracı — giriş (orta), TP (yeşil kutu, üst/alt olabilir), SL (kırmızı kutu).
+    // Üç çizgi de bağımsız sürüklenebilir (onMouseDown -> posdrag); R:R canlı, draws state'ten türetilir.
+    if (d.type === "position") {
+      const biX = gi(d.i);
+      const boxBars = Math.max(4, Math.min(30, view.length - biX));
+      const x0 = x(biX), x1 = x(biX + boxBars);
+      const yE = y(d.entry), yT = y(d.tp), yS = y(d.sl);
+      const rr = Math.abs(d.tp - d.entry) / Math.max(1e-9, Math.abs(d.entry - d.sl));
+      const dir = d.tp >= d.entry ? "Long" : "Short";
+      const tpPct = (Math.abs(d.tp - d.entry) / d.entry) * 100;
+      const slPct = (Math.abs(d.entry - d.sl) / d.entry) * 100;
+      const startHandle = (handle) => (e) => { e.stopPropagation(); dragRef.current = { mode: "posdrag", idx, handle }; };
+      return (
+        <g key={key}>
+          <rect x={x0} y={Math.min(yE, yT)} width={x1 - x0} height={Math.max(2, Math.abs(yE - yT))} className={"ak-c-pos-tp" + (isSel ? " sel" : "")} {...evts} />
+          <rect x={x0} y={Math.min(yE, yS)} width={x1 - x0} height={Math.max(2, Math.abs(yE - yS))} className={"ak-c-pos-sl" + (isSel ? " sel" : "")} {...evts} />
+          <line x1={x0} y1={yE} x2={x1} y2={yE} className="ak-c-pos-entry" style={{ pointerEvents: "none" }} />
+          <line x1={x0} y1={yE - 6} x2={x1} y2={yE + 6} className="ak-c-draw-hit" onMouseDown={startHandle("entry")} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); removeDraw(idx); }} />
+          <line x1={x0} y1={yT - 6} x2={x1} y2={yT + 6} className="ak-c-draw-hit" onMouseDown={startHandle("tp")} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); removeDraw(idx); }} />
+          <line x1={x0} y1={yS - 6} x2={x1} y2={yS + 6} className="ak-c-draw-hit" onMouseDown={startHandle("sl")} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); removeDraw(idx); }} />
+          <text x={x0 + 3} y={yE - 4} className="ak-c-pos-lab entry">Giriş {fmtP(d.entry)}</text>
+          <text x={x0 + 3} y={yT - 4} className="ak-c-pos-lab tp">TP {fmtP(d.tp)} (+{tpPct.toFixed(2)}%)</text>
+          <text x={x0 + 3} y={yS + 11} className="ak-c-pos-lab sl">SL {fmtP(d.sl)} (-{slPct.toFixed(2)}%)</text>
+          <text x={x0 + 3} y={Math.min(yT, yS) - 8} className="ak-c-pos-rr">{dir} · R:R 1:{rr.toFixed(2)}</text>
+          {isSel && renderDelIcon(x1 + 10, yE - 12, idx)}
+          {isSel && onSandboxAdd && (
+            <g className="ak-c-pos-btn" transform={`translate(${x1 + 10},${yE + 10})`} onClick={(e) => { e.stopPropagation(); onSandboxAdd(symbol, dir, Math.round(rr * 10) / 10); }}>
+              <rect x="0" y="-11" width="122" height="22" rx="5" />
+              <text x="61" y="4" textAnchor="middle">Sandbox'a emir oluştur</text>
+            </g>
+          )}
+        </g>
+      );
+    }
+
+    const x0 = x(gi(d.a.i)), y0 = y(d.a.price), x1 = x(gi(d.b.i)), y1 = y(d.b.price);
     const delCx = (x0 + x1) / 2, delCy = Math.min(y0, y1) - 10;
     return (
       <g key={key}>
@@ -424,13 +510,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
               <line x1={x0} y1={y0} x2={x1} y2={y1} className="ak-c-draw-hit" {...evts} />
               <line x1={x0} y1={y0} x2={x1} y2={y1} className={"ak-c-draw-line" + (isSel ? " sel" : "")} style={{ pointerEvents: "none" }} />
             </>}
-        {isSel && (
-          <g className="ak-c-draw-del" transform={`translate(${delCx},${delCy})`} onClick={(e) => { e.stopPropagation(); removeDraw(idx); }}>
-            <circle r="8" />
-            <line x1="-3.5" y1="-3.5" x2="3.5" y2="3.5" />
-            <line x1="3.5" y1="-3.5" x2="-3.5" y2="3.5" />
-          </g>
-        )}
+        {isSel && renderDelIcon(delCx, delCy, idx)}
       </g>
     );
   }

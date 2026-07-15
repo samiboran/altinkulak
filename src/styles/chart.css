@@ -83,10 +83,33 @@
 .ak-c-draw-line.sel{stroke:var(--gold-2);stroke-width:2.4;}
 .ak-c-draw-rect{fill:rgba(230,180,80,.08);stroke:var(--gold);stroke-width:1;stroke-dasharray:3 3;cursor:pointer;}
 .ak-c-draw-rect.sel{stroke:var(--gold-2);stroke-width:1.6;fill:rgba(230,180,80,.14);}
+/* AK-071: yatay çizgi (tam genişlik) / yatay ışın (bir bardan sağ kenara) — tek tıkla eklenir */
+.ak-c-draw-hline{stroke:var(--gold);stroke-width:1.4;stroke-dasharray:5 3;}
+.ak-c-draw-hline.sel{stroke:var(--gold-2);stroke-width:2;}
+.ak-c-draw-hray{stroke:var(--gold);stroke-width:1.4;}
+.ak-c-draw-hray.sel{stroke:var(--gold-2);stroke-width:2;}
+.ak-c-draw-hray-dot{fill:var(--gold);}
+.ak-c-draw-hray-dot.sel{fill:var(--gold-2);}
 /* AK-052: seçili çizim üzerindeki küçük çöp kutusu (sil) ikonu — sağ-tık alternatifine mobil erişim */
 .ak-c-draw-del{cursor:pointer;}
 .ak-c-draw-del circle{fill:#2A1714;stroke:var(--bad);stroke-width:1;}
 .ak-c-draw-del line{stroke:var(--bad);stroke-width:1.4;stroke-linecap:round;}
+
+/* AK-070: pozisyon aracı — sürüklenebilir giriş/TP/SL kutuları + canlı R:R */
+.ak-c-pos-tp{fill:rgba(79,201,166,.14);stroke:var(--good);stroke-width:1;cursor:pointer;}
+.ak-c-pos-tp.sel{stroke-width:1.6;fill:rgba(79,201,166,.22);}
+.ak-c-pos-sl{fill:rgba(224,138,122,.14);stroke:var(--bad);stroke-width:1;cursor:pointer;}
+.ak-c-pos-sl.sel{stroke-width:1.6;fill:rgba(224,138,122,.22);}
+.ak-c-pos-entry{stroke:var(--gold);stroke-width:1.4;stroke-dasharray:4 3;}
+.ak-c-pos-lab{font-family:'JetBrains Mono';font-size:8.5px;}
+.ak-c-pos-lab.entry{fill:var(--gold-2);}
+.ak-c-pos-lab.tp{fill:var(--good);}
+.ak-c-pos-lab.sl{fill:var(--bad);}
+.ak-c-pos-rr{font-family:'JetBrains Mono';font-size:9px;font-weight:600;fill:var(--txt);}
+.ak-c-pos-btn{cursor:pointer;}
+.ak-c-pos-btn rect{fill:var(--panel2);stroke:var(--gold);stroke-width:1;}
+.ak-c-pos-btn text{fill:var(--gold-2);font-family:'JetBrains Mono';font-size:9.5px;}
+.ak-c-pos-btn:hover rect{fill:#241E10;}
 
 /* trade replay */
 .ak-replay{display:flex;align-items:center;gap:8px;margin-top:10px;padding:8px 10px;background:var(--panel);border:1px solid var(--line);border-radius:11px;}

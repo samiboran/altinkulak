@@ -468,6 +468,9 @@ export default function Lab() {
           </div>
           <button className={"ak-cchip" + (drawMode === "trendline" ? " on" : "")} onClick={() => setDrawMode(m => m === "trendline" ? null : "trendline")}>Trend Çizgisi</button>
           <button className={"ak-cchip" + (drawMode === "rect" ? " on" : "")} onClick={() => setDrawMode(m => m === "rect" ? null : "rect")}>Dikdörtgen</button>
+          <button className={"ak-cchip" + (drawMode === "hline" ? " on" : "")} onClick={() => setDrawMode(m => m === "hline" ? null : "hline")} title="Tek tıkla tam genişlik yatay çizgi">Yatay Çizgi</button>
+          <button className={"ak-cchip" + (drawMode === "hray" ? " on" : "")} onClick={() => setDrawMode(m => m === "hray" ? null : "hray")} title="Tek tıkla, tıklanan bardan sağa uzanan ışın">Yatay Işın</button>
+          <button className={"ak-cchip" + (drawMode === "position" ? " on" : "")} onClick={() => setDrawMode(m => m === "position" ? null : "position")} title="Tek tıkla giriş/TP/SL kutuları eklenir, üçü de sürüklenebilir"><Target size={12} /> Pozisyon</button>
           {drawCount > 0 && <button className="ak-cchip" onClick={() => chartRef.current?.clearDraws()}>Tümünü Temizle</button>}
           <div className="ak-view">
             <button className={"ak-cchip teal" + (compareOn && compareSymbol ? " on" : "")} onClick={() => setCmpOpen(v => !v)}>Karşılaştır{compareOn && compareSymbol ? ` (${compareSymbol})` : ""}</button>
