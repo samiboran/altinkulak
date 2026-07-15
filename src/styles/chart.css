@@ -115,6 +115,28 @@
 .ak-c-draw-del circle{fill:#2A1714;stroke:var(--bad);stroke-width:1;}
 .ak-c-draw-del line{stroke:var(--bad);stroke-width:1.4;stroke-linecap:round;}
 
+/* AK-069: seçili çizim uç nokta tutamacı (trend çizgisi/dikdörtgen/hline/hray) */
+.ak-draw-handle{fill:var(--gold-2);stroke:#0E1416;stroke-width:1.5;cursor:grab;}
+.ak-draw-handle:active{cursor:grabbing;}
+
+/* AK-069: sağ-tık context menu (Kaldır/Klonla/Kilitle/Ayarlar) */
+.ak-draw-ctxmenu{position:absolute;z-index:20;display:flex;flex-direction:column;background:#121C1A;border:1px solid var(--line);border-radius:9px;padding:5px;box-shadow:0 8px 24px rgba(0,0,0,.45);min-width:120px;}
+.ak-draw-ctxmenu button{border:none;background:transparent;color:var(--txt);text-align:left;padding:7px 10px;font-size:12.5px;border-radius:6px;cursor:pointer;font-family:'Inter';}
+.ak-draw-ctxmenu button:hover:not(:disabled){background:var(--panel2);}
+.ak-draw-ctxmenu button:disabled{opacity:.4;cursor:not-allowed;}
+
+/* AK-069: seçili çizimin üstünde floating toolbar — renk, kalınlık, kilit, klon, çöp */
+.ak-draw-toolbar{position:absolute;z-index:20;display:flex;align-items:center;gap:4px;background:#121C1A;border:1px solid var(--line);border-radius:9px;padding:5px 6px;box-shadow:0 8px 24px rgba(0,0,0,.45);}
+.ak-draw-toolbar-sep{width:1px;align-self:stretch;background:var(--line);margin:0 2px;}
+.ak-draw-swatch{width:15px;height:15px;border-radius:50%;border:1px solid rgba(255,255,255,.25);cursor:pointer;padding:0;}
+.ak-draw-wbtn{width:22px;height:20px;border:none;background:transparent;border-radius:5px;cursor:pointer;display:grid;place-items:center;}
+.ak-draw-wbtn i{width:14px;background:var(--txt);border-radius:2px;display:block;}
+.ak-draw-wbtn.on{background:var(--panel2);}
+.ak-draw-lockbtn,.ak-draw-toolbar button{border:none;background:transparent;color:#8DA39E;cursor:pointer;padding:3px;display:grid;place-items:center;border-radius:5px;}
+.ak-draw-lockbtn:hover,.ak-draw-toolbar button:hover:not(:disabled){color:var(--txt);background:var(--panel2);}
+.ak-draw-lockbtn.on{color:var(--gold-2);}
+.ak-draw-toolbar button:disabled{opacity:.35;cursor:not-allowed;}
+
 /* AK-070: pozisyon aracı — sürüklenebilir giriş/TP/SL kutuları + canlı R:R */
 .ak-c-pos-tp{fill:rgba(79,201,166,.14);stroke:var(--good);stroke-width:1;cursor:pointer;}
 .ak-c-pos-tp.sel{stroke-width:1.6;fill:rgba(79,201,166,.22);}

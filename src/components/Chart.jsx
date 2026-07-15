@@ -261,7 +261,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
       onRangeSelect(gs, gs + width - 1);
     }
   }
-  useImperativeHandle(ref, () => ({ goToBookmark, clearDraws: () => { setDraws([]); setSelectedDraw(null); } }));
+  useImperativeHandle(ref, () => ({ goToBookmark, clearDraws: () => { setDraws([]); setSelectedDrawId(null); setCtxMenu(null); } }));
 
   // AK-030: sürükleme modları — varsayılan PAN (TV standardı), Shift+sürükle = alan seç,
   // sağ eksen üzerinde sürükle = dikey ölçek (fiyatı aç/kapa). Çift tık: grafikte tümü, eksende oto-sığdır.
@@ -350,7 +350,21 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
       const r = e.currentTarget.getBoundingClientRect();
       const py = ((e.clientY - r.top) / r.height) * H;
       const price = priceAt(py);
-      setDraws(ds => ds.map((dr, i) => i === d.idx ? { ...dr, [d.handle]: price } : dr));
+      setDraws(ds => ds.map((dr) => dr.id === d.id ? { ...dr, [d.handle]: price } : dr));
+    } else if (d.mode === "drawHandle") {
+      // AK-069: trend çizgisi/dikdörtgen/hline/hray uç nokta tutamacı sürükleniyor
+      const r = e.currentTarget.getBoundingClientRect();
+      const px = ((e.clientX - r.left) / r.width) * W;
+      const py = ((e.clientY - r.top) / r.height) * H;
+      const i = Math.max(0, Math.min(slots - 1, Math.round(((px - pL) / (W - pL - pR)) * (slots - 1))));
+      const price = priceAt(py);
+      setDraws(ds => ds.map((dr) => {
+        if (dr.id !== d.id) return dr;
+        if (d.which === "price") return { ...dr, price };
+        if (d.which === "a") return { ...dr, a: { i: off + i, price } };
+        if (d.which === "b") return { ...dr, b: { i: off + i, price } };
+        return dr;
+      }));
     } else if (d.mode === "pan" && onRangeSelect) {
       const db = Math.round((d.x0 - e.clientX) / Math.max(0.5, d.pxPerBar));
       const maxEnd = bars.length - 1 + 120;
@@ -364,7 +378,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
     setHandDragging(false);
     if (d?.mode === "draw") {
       const g = d.ghost;
-      if (g && (g.a.i !== g.b.i || g.a.price !== g.b.price)) setDraws(ds => [...ds, g]);
+      if (g && (g.a.i !== g.b.i || g.a.price !== g.b.price)) setDraws(ds => [...ds, { ...g, id: uid(), locked: false }]);
       setDrawGhost(null);
       return;
     }
@@ -727,7 +741,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
       {cmpLine && <polyline className="ak-c-cmp" points={cmpLine.map(p => `${x(p.i)},${y(p.price)}`).join(" ")} />}
 
       {/* Serbest çizimler (trend çizgisi / dikdörtgen) */}
-      {draws.map((d, k) => renderDraw(d, k, k))}
+      {draws.map((d) => renderDraw(d, d.id))}
       {drawGhost && renderDraw(drawGhost, "ghost")}
 
       {/* Mitigation işaretleri */}
@@ -819,6 +833,39 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
         <button className="ak-paperbox-short" onClick={() => paperTrade("Short")}>Short</button>
       </div>
     </div>
+    {/* AK-069: çizim sağ-tık context menu — Kaldır/Klonla/Kilitle/Ayarlar */}
+    {ctxMenu && (() => {
+      const cd = draws.find(x => x.id === ctxMenu.id);
+      if (!cd) return null;
+      return (
+        <div className="ak-draw-ctxmenu" style={{ left: ctxMenu.leftPct + "%", top: ctxMenu.topPct + "%" }} onClick={(e) => e.stopPropagation()}>
+          <button onClick={() => { removeDraw(ctxMenu.id); setCtxMenu(null); }} disabled={cd.locked}>Kaldır</button>
+          <button onClick={() => { cloneDraw(ctxMenu.id); setCtxMenu(null); }}>Klonla</button>
+          <button onClick={() => { toggleLock(ctxMenu.id); setCtxMenu(null); }}>{cd.locked ? "Kilidi Aç" : "Kilitle"}</button>
+          <button onClick={() => setCtxMenu(null)}>Ayarlar</button>
+        </div>
+      );
+    })()}
+    {/* AK-069: seçili çizim üstünde floating toolbar — renk, kalınlık, kilit, klon, çöp */}
+    {selectedDrawObj && selectedAnchor && (
+      <div className="ak-draw-toolbar" style={{ left: (selectedAnchor.vx / W) * 100 + "%", top: (selectedAnchor.vy / svgH) * 100 + "%" }} onClick={(e) => e.stopPropagation()}>
+        {DRAW_COLORS.map((c) => (
+          <button key={c} className="ak-draw-swatch" style={{ background: c }} title="Renk" onClick={() => updateDraw(selectedDrawObj.id, { color: c })} />
+        ))}
+        <span className="ak-draw-toolbar-sep" />
+        {DRAW_WIDTHS.map((w) => (
+          <button key={w} className={"ak-draw-wbtn" + ((selectedDrawObj.width || 1.6) === w ? " on" : "")} title={w === 1 ? "İnce" : w === 1.6 ? "Normal" : "Kalın"} onClick={() => updateDraw(selectedDrawObj.id, { width: w })}>
+            <i style={{ height: Math.max(1, w) }} />
+          </button>
+        ))}
+        <span className="ak-draw-toolbar-sep" />
+        <button className={"ak-draw-lockbtn" + (selectedDrawObj.locked ? " on" : "")} title={selectedDrawObj.locked ? "Kilidi aç" : "Kilitle"} onClick={() => toggleLock(selectedDrawObj.id)}>
+          {selectedDrawObj.locked ? <Lock size={12} /> : <Unlock size={12} />}
+        </button>
+        <button title="Klonla" onClick={() => cloneDraw(selectedDrawObj.id)}><Copy size={12} /></button>
+        <button title="Kaldır" disabled={selectedDrawObj.locked} onClick={() => removeDraw(selectedDrawObj.id)}><Trash2 size={12} /></button>
+      </div>
+    )}
     </div>
   );
 });

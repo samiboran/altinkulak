@@ -10,6 +10,7 @@ import { runBacktest, simulateOutcome, randomEntryControl, monteCarlo } from "..
 import { tStat, verdict, sharpeLike, trainTestSplit } from "../lib/stats.js";
 import { runUserCode } from "../lib/sandboxRunner.js";
 import { addSandbox } from "../lib/sandbox.js";
+import { createUndoStack, bindUndoHotkeys } from "../lib/undoStack.js";
 import { PANELS, BASIC, loadLayout, saveLayout } from "../lib/layout.js";
 import "../styles/lab.css";
 import "../styles/chart.css";
@@ -142,6 +143,7 @@ export default function Lab() {
   const [cost, setCost] = useState(0.05); // gelişmiş: işlem maliyeti (R) — komisyon+slippage
   const [stopM, setStopM] = useState(1);   // gelişmiş: stop genişliği (×ATR)
   const [logS, setLogS] = useState(false); // grafik: log ölçek
+  const [magnetOn, setMagnetOn] = useState(true); // AK-069: rapor şikayeti — mıknatıs artık kapatılabilir (varsayılan açık)
   const [tf, setTf] = useState("4h");       // zaman dilimi (yalnız gerçek-veri sembolleri)
   const [lay, setLay] = useState(loadLayout);   // AK-022: panel görünürlüğü (kalıcı)
   const [viewOpen, setViewOpen] = useState(false);
@@ -157,13 +159,19 @@ export default function Lab() {
   function toggleIndEnabled(id) { setIndEnabled(id, !indById[id]?.enabled); }
   function toggleIndShown(id) { setIndicators(arr => arr.map(x => x.id === id ? { ...x, shown: !x.shown } : x)); }
   function setIndParam(id, patch) { setIndicators(arr => arr.map(x => x.id === id ? { ...x, params: { ...x.params, ...patch } } : x)); }
-  const [lastRemovedInd, setLastRemovedInd] = useState(null); // {id,label} — AK-068 basit tek-adım geri al
+  const [lastRemovedInd, setLastRemovedInd] = useState(null); // {id,label} — AK-068 basit tek-adım geri al (toast)
+  // AK-069: genel undo/redo yığını — hem çizim silme (Chart.jsx) hem gösterge kaldırma (burada) aynı
+  // örneği paylaşır; Ctrl+Z/Ctrl+Y tek bir zaman çizelgesinde geri/ileri alır (max 30 adım).
+  const undoStackRef = useRef(null);
+  if (!undoStackRef.current) undoStackRef.current = createUndoStack(30);
+  useEffect(() => bindUndoHotkeys(undoStackRef), []);
   function removeIndicator(id) {
     const cur = indById[id];
     if (!cur) return;
     setIndEnabled(id, false);
     setLastRemovedInd({ id, label: cur.label });
     setTimeout(() => setLastRemovedInd(lr => (lr && lr.id === id ? null : lr)), 4000);
+    undoStackRef.current.push({ label: "gösterge kaldırıldı", undo: () => setIndEnabled(id, true), redo: () => setIndEnabled(id, false) });
   }
   function undoRemoveIndicator() {
     if (!lastRemovedInd) return;
@@ -556,9 +564,9 @@ export default function Lab() {
             <b>{symbol}</b> için veri bekleniyor… Binance'te {symbol}USDT deneniyor; bulunamazsa burada açıkça söylenir — başka sembolün örnek verisi ASLA gösterilmez.
           </div>
         )}
-        {dataOk && <Chart ref={chartRef} bars={replay ? getBars(symbol) : (liveBars || getBars(symbol))} concepts={chartConcepts} maList={maList} trades={replay ? null : res?.trades} logScale={logS} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} onDrawsChange={setDrawCount} showRsi={showRsi} onSandboxAdd={handleSandboxAdd}
+        {dataOk && <Chart ref={chartRef} bars={replay ? getBars(symbol) : (liveBars || getBars(symbol))} concepts={chartConcepts} maList={maList} trades={replay ? null : res?.trades} logScale={logS} magnet={magnetOn} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} onDrawsChange={setDrawCount} showRsi={showRsi} onSandboxAdd={handleSandboxAdd}
           indicators={legendIndicators} onIndicatorToggleShown={toggleIndShown} onIndicatorRemove={removeIndicator} onIndicatorSetParam={setIndParam}
-          lastRemovedIndicator={lastRemovedInd} onUndoRemoveIndicator={undoRemoveIndicator} />}
+          lastRemovedIndicator={lastRemovedInd} onUndoRemoveIndicator={undoRemoveIndicator} onPushUndo={(action) => undoStackRef.current.push(action)} />}
         {paperMsg && <p className="ak-paper-toast">{paperMsg}</p>}
         {replay && (
           <div className="ak-replay">
@@ -587,6 +595,7 @@ export default function Lab() {
         )}
         <div className="ak-ranges">
           <button className={logS ? "on" : ""} title="Logaritmik fiyat ölçeği" onClick={() => setLogS(v => !v)}>Log</button>
+          <button className={magnetOn ? "on" : ""} title="Mıknatıs — imleci en yakın O/Y/D/K'ya yasla" onClick={() => setMagnetOn(v => !v)}>Mıknatıs</button>
           <span className="ak-ranges-sep" />
           <button title="Uzaklaş (daha çok bar)" onClick={() => setWin(w => { const sp = Math.min(1, (w.e - w.s) * 1.5); return { s: Math.max(0, w.e - sp), e: w.e }; })}>−</button>
           <button title="Yakınlaş (daha az bar)" onClick={() => setWin(w => { const sp = Math.max(0.04, (w.e - w.s) / 1.5); return { s: Math.max(0, w.e - sp), e: w.e }; })}>+</button>
