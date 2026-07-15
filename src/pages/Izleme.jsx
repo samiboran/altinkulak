@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { Eye, Plus, Trash2, ShieldCheck, Bell, BellRing, Settings, Star } from "lucide-react";
-import { getBars, ALL_SYMBOLS, loadReal, isReal, hasData, stats24h, getFreshness } from "../lib/data.js";
+import { getBars, loadReal, isReal, hasData, stats24h, getFreshness, getSearchSymbols, loadTop500Symbols } from "../lib/data.js";
 import { runBacktest } from "../lib/backtest.js";
 import { detectModBSignals, DEFAULT_PARAMS } from "../lib/modB.js";
 import { requestNotifyPermission, notify, isSeen, markSeen } from "../lib/notify.js";
+import { addAlarmTrade, checkOpenAlarmTrades, listAlarmTrades } from "../lib/alarmTrades.js";
 import "../styles/izleme.css";
 
 const WKEY = "ak_watch_v1";
@@ -37,6 +38,17 @@ function timeAgo(ms) {
   return `${Math.floor(hr / 24)} gün önce`;
 }
 
+// AK-076: alarm işlemi ne kadar sürede kapandı — bildirim metninde "X sa Y dk sürdü" için
+function durationLabel(startMs, endMs) {
+  if (!startMs || !endMs || endMs < startMs || startMs < 1e12) return null;
+  const diff = endMs - startMs;
+  const min = Math.floor(diff / 60000);
+  if (min < 60) return `${min} dk`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} sa ${min % 60} dk`;
+  return `${Math.floor(hr / 24)} gün ${hr % 24} sa`;
+}
+
 // AK-064: "Binance'e bağlı · X sn/dk gecikme" rozeti için okunabilir süre
 function fmtDelay(ageSec) {
   if (ageSec < 60) return `${ageSec} sn`;
@@ -68,6 +80,7 @@ export default function Izleme() {
   const [showSettings, setShowSettings] = useState(false);
   const [sortMode, setSortMode] = useState("varsayilan"); // AK-057: varsayilan | az | chg24h
   const [favorites, setFavorites] = useState(loadFavorites); // AK-061: favori semboller, listenin en üstüne sabitlenir
+  const [alarmHistory, setAlarmHistory] = useState(listAlarmTrades); // AK-076: sinyal geldiğinde otomatik açılan hayali işlemler
   useEffect(() => { try { localStorage.setItem(WKEY, JSON.stringify(list)); } catch {} }, [list]);
   useEffect(() => { try { localStorage.setItem(FAV_KEY, JSON.stringify([...favorites])); } catch {} }, [favorites]);
   useEffect(() => { try { localStorage.setItem(SKEY, JSON.stringify(system)); } catch {} }, [system]);
@@ -78,6 +91,11 @@ export default function Izleme() {
     const id = setInterval(() => setTick(t => t + 1), 60000);
     return () => clearInterval(id);
   }, []);
+
+  // AK-074: piyasa değerine göre ilk 500 kripto — yalnız sembol-ekle arama kutusuna
+  const [, setTop500V] = useState(0);
+  useEffect(() => { let on = true; loadTop500Symbols().then(() => on && setTop500V(v => v + 1)); return () => { on = false; }; }, []);
+  const searchSymbols = getSearchSymbols();
 
   // AK-004b: listedeki gerçek-kaynaklı semboller arka planda yüklenir
   useEffect(() => {
@@ -97,14 +115,18 @@ export default function Izleme() {
   };
 
   // AK-049: kullanıcının kendi ayarladığı "Sistemim" ile canlı sinyal taraması — sekme açıkken 5dk'da bir, yalnız bu tarayıcıda bildirim.
+  // AK-076: her yeni sinyal için arkada bir "alarm işlemi" açılır; her poll'da açık işlemler kontrol edilip
+  // kapananlar (kazandı/kaybetti) ikinci bir bildirimle haber verilir.
   useEffect(() => {
     let on = true;
     function scan() {
       const all = [];
+      const barsBySym = {};
       for (const sym of list) {
         if (!hasData(sym)) continue;
         const b = getBars(sym);
         if (!b || b.length < 60) continue;
+        barsBySym[sym] = b;
         all.push(...detectModBSignals(b, sym, system));
       }
       all.sort((a, b) => (b.time || 0) - (a.time || 0));
@@ -119,12 +141,28 @@ export default function Izleme() {
       for (const s of top) {
         if (!isSeen(s.id)) {
           markSeen(s.id);
+          addAlarmTrade(s); // AK-076: sinyal ilk kez görüldü — arkada hayali işlem açılır
           notify(
             `${system.name || "Sistemim"}: ${s.sym} ${s.dir === 1 ? "LONG" : "SHORT"}`,
-            `Giriş ${fmtP(s.entry)} · Stop ${fmtP(s.stop)} · Hedef1 ${fmtP(s.hedef1)}`
+            `Giriş ${fmtP(s.entry)} · Stop ${fmtP(s.stop)} · Hedef1 ${fmtP(s.hedef1)} · Hedef2 ${fmtP(s.hedef2)}`
           );
         }
       }
+      // AK-076: açık alarm işlemlerini güncel barlarla kontrol et — kapananlar için sonuç bildirimi
+      let closedAny = false;
+      for (const sym of Object.keys(barsBySym)) {
+        const closed = checkOpenAlarmTrades(sym, barsBySym[sym]);
+        for (const t of closed) {
+          closedAny = true;
+          const won = t.status === "won";
+          const dur = durationLabel(t.openedAt, t.closedAt);
+          notify(
+            `${t.sym} ${t.dir === 1 ? "LONG" : "SHORT"}: ${won ? "Hedef1'e ulaştı ✅" : "Stop'a takıldı ❌"}`,
+            `Giriş ${fmtP(t.entry)}${dur ? ` · ${dur} sürdü` : ""}`
+          );
+        }
+      }
+      if (closedAny || top.length) setAlarmHistory(listAlarmTrades());
     }
     scan();
     const id = setInterval(scan, POLL_MS);
@@ -145,7 +183,7 @@ export default function Izleme() {
     if (!b || b.length < 60) return { sym, bad: true };
     const last = b[b.length - 1].c, prev = b[b.length - 2].c, chg = ((last - prev) / prev) * 100;
     const r = runBacktest(b, { rr: 2, maxGapATR: 0.6, concepts: ["fvg"], costR: 0.05 });
-    const meta = ALL_SYMBOLS.find(x => x.sym === sym);
+    const meta = searchSymbols.find(x => x.sym === sym);
     const real = isReal(sym);
     // AK-057: 24s değişim yalnız gerçek veride anlamlı — sentetikte null (sıralama dışı kalır)
     const chg24h = real ? stats24h(b)?.chgPct ?? null : null;
@@ -234,7 +272,7 @@ export default function Izleme() {
 
       <div className="ak-izle-add">
         <input list="ak-wsyms" placeholder="Sembol ekle (SOL, NVDA, GARAN…)" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === "Enter" && add()} />
-        <datalist id="ak-wsyms">{ALL_SYMBOLS.map(s => <option key={s.sym} value={s.sym}>{s.name}</option>)}</datalist>
+        <datalist id="ak-wsyms">{searchSymbols.map(s => <option key={s.sym} value={s.sym}>{s.name}</option>)}</datalist>
         <button className="ak-btn ak-btn-primary" onClick={add}><Plus size={15} /> Ekle</button>
       </div>
 
@@ -287,6 +325,26 @@ export default function Izleme() {
             ))}
           </div>
           <p className="ak-izle-note">Bu simülasyon/eğitim amaçlıdır; yatırım tavsiyesi değildir, kendi ayarladığınız kişisel kuralın çıktısıdır. Hedef1'de plan %50 kısmi çıkış öngörür.</p>
+        </div>
+      )}
+
+      {alarmHistory.length > 0 && (
+        <div className="ak-signals">
+          <h2>Alarm Geçmişi <span className="ak-soon">{alarmHistory.length} kayıt</span></h2>
+          <div className="ak-signal-list">
+            {alarmHistory.slice(0, 15).map((t) => (
+              <div className={"ak-signal-row " + (t.dir === 1 ? "long" : "short")} key={t.id}>
+                <span className={"ak-alarm-status " + t.status}>{t.status === "open" ? "Açık" : t.status === "won" ? "Kazandı ✅" : "Kayıp ❌"}</span>
+                <span className="sy">{t.sym}</span>
+                <span className="dir">{t.dir === 1 ? "LONG" : "SHORT"}</span>
+                <span className="lv">Giriş <b>{fmtP(t.entry)}</b></span>
+                {t.status !== "open"
+                  ? durationLabel(t.openedAt, t.closedAt) && <span className="ago">{durationLabel(t.openedAt, t.closedAt)} sürdü</span>
+                  : timeAgo(t.openedAt) && <span className="ago">{timeAgo(t.openedAt)}</span>}
+              </div>
+            ))}
+          </div>
+          <p className="ak-izle-note">Sinyal geldiğinde otomatik açılan hayali işlemler — gerçek para değildir, yalnız bu tarayıcıda saklanır.</p>
         </div>
       )}
     </div>

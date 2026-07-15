@@ -1,3 +1,5 @@
+import { fetchTop500 } from "./top500.js";
+
 // Veri katmani — FAZ 1: deterministik ornek OHLC (statik), piyasa gruplu.
 // FAZ ileri (AK-004b): her grup kendi gercek kaynagina baglanir
 //   - Kripto: CCXT / borsa API (kullanici-basina ucretsiz, kolay)
@@ -98,6 +100,36 @@ const NAMES = {
 export const ALL_SYMBOLS = MARKET_GROUPS.flatMap((g) =>
   g.symbols.map((s) => ({ sym: s, name: NAMES[s] || s, group: g.label }))
 );
+
+// ================= AK-074: piyasa değerine göre ilk 500 kripto (yalnız arama) =================
+// BİLEREK ALL_SYMBOLS'a KARIŞTIRILMAZ: Tarama.jsx tam-evren tarar ve N=ALL_SYMBOLS.length'i
+// Bonferroni eşiğinde kullanır — 500 sentetik-profilsiz sembolü sessizce SOL'a düşürüp taramak
+// hem yanlış istatistik hem AK-031 dürüstlük ihlali olurdu. Bunun yerine ayrı bir "arama listesi":
+// yalnız Izleme.jsx'in sembol-ekle kutusu bunu kullanır; seçilen sembol yine pairFor/hasData'nın
+// mevcut "bilinmeyen kripto → SEMBOL+USDT dene" mantığından geçer (dürüstlük korunur).
+let top500Extra = []; // {sym,name,group:"Kripto"}[]
+let top500Loaded = false;
+export function getSearchSymbols() {
+  if (!top500Extra.length) return ALL_SYMBOLS;
+  const known = new Set(ALL_SYMBOLS.map((x) => x.sym));
+  return [...ALL_SYMBOLS, ...top500Extra.filter((x) => !known.has(x.sym))];
+}
+export async function loadTop500Symbols() {
+  if (top500Loaded) return;
+  top500Loaded = true; // eşzamanlı çağrılar tekrar fetch atmasın
+  try {
+    const list = await fetchTop500();
+    // CoinGecko'da aynı ticker'ı paylaşan farklı zincir/köprü tokenları olabilir (ör. çoklu DAI/USDF) —
+    // piyasa değerine göre sıralı geldiği için İLK görülen (en yüksek piyasa değerli) tutulur.
+    const seen = new Set();
+    top500Extra = [];
+    for (const c of list) {
+      if (seen.has(c.sym)) continue;
+      seen.add(c.sym);
+      top500Extra.push({ sym: c.sym, name: c.name, group: "Kripto" });
+    }
+  } catch { top500Loaded = false; /* başarısızsa bir sonraki çağrıda tekrar denensin */ }
+}
 
 // ================= AK-004b FAZ 1: GERÇEK KRİPTO VERİSİ =================
 // Binance halka açık kline API — key GEREKTİRMEZ, CORS açık, proxy gerekmez.

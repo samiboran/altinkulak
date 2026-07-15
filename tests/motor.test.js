@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 import { mean, std, tStat, trainTestSplit, verdict, bonferroniT, expectedFalsePositives } from "../src/lib/stats.js";
 import { runBacktest } from "../src/lib/backtest.js";
-import { getBars, parseKlines, loadReal, isReal, pairFor, hasData, stats24h, getFreshness, freshnessStatus } from "../src/lib/data.js";
+import { getBars, parseKlines, loadReal, isReal, pairFor, hasData, stats24h, getFreshness, freshnessStatus, getSearchSymbols, ALL_SYMBOLS } from "../src/lib/data.js";
+import { normalizeTop500 } from "../src/lib/top500.js";
 import { detectModBSignals, DEFAULT_PARAMS } from "../src/lib/modB.js";
 import { applyTick, mergeGapFill } from "../src/lib/liveData.js";
 
@@ -148,6 +149,25 @@ test("loadReal: kripto-olmayan sembol → null (sentetik kalır)", () => {
 test("isReal: yüklenmemişken false, getBars sentetiğe düşer", () => {
   assert.equal(isReal("BTC"), false);
   assert.ok(getBars("BTC").length >= 60);
+});
+
+console.log("top 500 kripto arama listesi (AK-074)");
+test("normalizeTop500: CoinGecko satırını {sym,name} çevirir, büyük harfe çıkarır", () => {
+  const raw = [
+    { symbol: "pepe", name: "Pepe" },
+    { symbol: "btc", name: "Bitcoin" },
+    { symbol: "", name: "İsimsiz" }, // sembolsüz satır atlanır
+    null,
+  ];
+  const out = normalizeTop500(raw);
+  assert.deepEqual(out, [{ sym: "PEPE", name: "Pepe" }, { sym: "BTC", name: "Bitcoin" }]);
+});
+test("normalizeTop500: dizi olmayan girdi çökmez, boş dizi döner", () => {
+  assert.deepEqual(normalizeTop500(null), []);
+  assert.deepEqual(normalizeTop500(undefined), []);
+});
+test("getSearchSymbols: top500 yüklenmeden ALL_SYMBOLS ile birebir aynı (dürüstlük — sahte genişleme yok)", () => {
+  assert.deepEqual(getSearchSymbols(), ALL_SYMBOLS);
 });
 
 console.log("sicil (AK-020)");

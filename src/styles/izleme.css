@@ -64,3 +64,9 @@
 .ak-signal-row.short .dir{color:var(--bad);background:#2A1714;border:1px solid #4a2a24;}
 .ak-signal-row .lv b{font-family:'JetBrains Mono';color:var(--txt);font-weight:600;}
 .ak-signal-row .ago{margin-left:auto;font-size:11px;color:#647974;font-family:'JetBrains Mono';white-space:nowrap;}
+
+/* AK-076: alarm işlemi durum rozeti (açık/kazandı/kayıp) */
+.ak-alarm-status{font-family:'JetBrains Mono';font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:6px;white-space:nowrap;}
+.ak-alarm-status.open{color:var(--muted);background:#101A18;border:1px solid var(--line);}
+.ak-alarm-status.won{color:var(--good);background:#10241F;border:1px solid #1f5249;}
+.ak-alarm-status.lost{color:var(--bad);background:#2A1714;border:1px solid #4a2a24;}
