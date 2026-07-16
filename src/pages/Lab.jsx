@@ -10,6 +10,7 @@ import { runBacktest, simulateOutcome, randomEntryControl, monteCarlo } from "..
 import { tStat, verdict, sharpeLike, trainTestSplit } from "../lib/stats.js";
 import { runUserCode } from "../lib/sandboxRunner.js";
 import { addSandbox } from "../lib/sandbox.js";
+import { useAuthGate } from "../lib/AuthGate.jsx";
 import { createUndoStack, bindUndoHotkeys } from "../lib/undoStack.js";
 import { PANELS, BASIC, loadLayout, saveLayout } from "../lib/layout.js";
 import "../styles/lab.css";
@@ -132,6 +133,7 @@ function Equity({ curve }) {
 }
 
 export default function Lab() {
+  const { requireAuth } = useAuthGate();
   const [group, setGroup] = useState("kripto");
   const [query, setQuery] = useState("SOL");
   const [debounced, setDebounced] = useState("SOL");
@@ -209,6 +211,8 @@ export default function Lab() {
 
   // AK-058: Chart.jsx'teki kağıt-işlem kutusu (Long/Short) buraya bağlanır — grafik sandbox.js'e dokunmaz.
   function handleSandboxAdd(sym, dir, plan) {
+    // AK-080 C1/C2: grafik/çizim araçları hiç kısıtlanmaz — yalnız Sandbox'a KAYDETMEK (persistence) login ister.
+    if (!requireAuth("Sandbox'a kaydetmek için giriş yap.")) return;
     const e = addSandbox({ sym, dir, plan, r: 0, tag: "Plana uydu" });
     if (!e) return;
     setPaperMsg(`${sym} ${dir} · 1:${Number(plan).toFixed(1)} — Sandbox'a eklendi`);

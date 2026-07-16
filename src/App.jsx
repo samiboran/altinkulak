@@ -5,6 +5,7 @@ import Footer from "./components/Footer.jsx";
 import TickerStrip from "./components/TickerStrip.jsx";
 import Home from "./pages/Home.jsx";
 import { AuthProvider } from "./lib/AuthProvider.jsx";
+import { AuthGateProvider } from "./lib/AuthGate.jsx";
 
 // AK-022: route lazy-load — ilk boyama hızı için yalnız Home + kabuk peşin yüklenir.
 // Hedef: girişsiz kullanıcı fiyatı <1sn görsün (TradingView hızlı-bakış trafiği).
@@ -30,14 +31,16 @@ function Layout() {
   const { pathname } = useLocation();
   return (
     <AuthProvider>
-      <Navbar />
-      {TICKER_PATHS.includes(pathname) && <TickerStrip />}
-      <main>
-        <Suspense fallback={<div className="ak-pageload" aria-busy="true" />}>
-          <Outlet />
-        </Suspense>
-      </main>
-      <Footer />
+      <AuthGateProvider>
+        <Navbar />
+        {TICKER_PATHS.includes(pathname) && <TickerStrip />}
+        <main>
+          <Suspense fallback={<div className="ak-pageload" aria-busy="true" />}>
+            <Outlet />
+          </Suspense>
+        </main>
+        <Footer />
+      </AuthGateProvider>
     </AuthProvider>
   );
 }

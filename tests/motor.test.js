@@ -772,4 +772,33 @@ test("getUSStockPriceTimestamp (D16): kayıt yokken null, fetch sonrası CACHE'�
   }
 });
 
+console.log("guest senkron nudge (AK-080 C3)");
+const { shouldShowNudge, nextNudgeState } = await import("../src/lib/nudge.js");
+test("shouldShowNudge: hiç kapatılmadıysa (state=null) göster", () => {
+  assert.equal(shouldShowNudge(null), true);
+});
+test("nextNudgeState: ilk kapatmada permanent=false, count=1", () => {
+  const s = nextNudgeState(null, 1000);
+  assert.equal(s.count, 1);
+  assert.equal(s.permanent, false);
+  assert.equal(s.ts, 1000);
+});
+test("shouldShowNudge: ilk kapatmadan hemen sonra gösterme", () => {
+  const s = nextNudgeState(null, 1000);
+  assert.equal(shouldShowNudge(s, 1000 + 60000), false); // 1 dk sonra — henüz 7 gün olmadı
+});
+test("shouldShowNudge: ilk kapatmadan 7 gün sonra bir kez daha göster", () => {
+  const s = nextNudgeState(null, 1000);
+  const sevenDays = 7 * 24 * 60 * 60 * 1000;
+  assert.equal(shouldShowNudge(s, 1000 + sevenDays - 1), false); // tam eşiğin altı — henüz değil
+  assert.equal(shouldShowNudge(s, 1000 + sevenDays), true); // eşik/üstü — bir kez daha göster
+});
+test("nextNudgeState: ikinci kapatmada permanent=true, bir daha asla gösterilmez", () => {
+  const s1 = nextNudgeState(null, 1000);
+  const s2 = nextNudgeState(s1, 2000);
+  assert.equal(s2.count, 2);
+  assert.equal(s2.permanent, true);
+  assert.equal(shouldShowNudge(s2, Number.MAX_SAFE_INTEGER), false); // hiçbir zaman diliminde göstermez
+});
+
 console.log(`\n${pass} test geçti${process.exitCode ? " (HATALAR VAR)" : " — motor sağlam."}`);

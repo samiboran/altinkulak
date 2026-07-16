@@ -1,10 +1,14 @@
 import { useState, useEffect } from "react";
-import { Eye, Plus, Trash2, ShieldCheck, Bell, BellRing, Settings, Star } from "lucide-react";
+import { Eye, Plus, Trash2, ShieldCheck, Bell, BellRing, Settings, Star, Wallet, X } from "lucide-react";
 import { getBars, loadReal, isReal, hasData, stats24h, getFreshness, getSearchSymbols, loadTop500Symbols } from "../lib/data.js";
 import { runBacktest } from "../lib/backtest.js";
 import { detectModBSignals, DEFAULT_PARAMS } from "../lib/modB.js";
 import { requestNotifyPermission, notify, isSeen, markSeen } from "../lib/notify.js";
 import { addAlarmTrade, checkOpenAlarmTrades, listAlarmTrades } from "../lib/alarmTrades.js";
+import { useAuth } from "../lib/AuthProvider.jsx";
+import { useAuthGate } from "../lib/AuthGate.jsx";
+import PortfolioPanel from "../components/PortfolioPanel.jsx";
+import { shouldShowNudge, nextNudgeState, loadNudgeState, saveNudgeState } from "../lib/nudge.js";
 import "../styles/izleme.css";
 
 const WKEY = "ak_watch_v1";
@@ -71,6 +75,18 @@ function Spark({ sym }) {
 }
 
 export default function Izleme() {
+  const { user } = useAuth();
+  const { requireAuth } = useAuthGate();
+  // AK-080 C3: İzleme Listesi <-> Portföy sekmesi — PortfolioPanel.jsx AK-078'den değişmeden
+  // yeniden kullanılır, guest için de localStorage üzerinden TAM çalışır.
+  const [section, setSection] = useState("izleme"); // izleme | portfoy
+  const [nudgeState, setNudgeState] = useState(loadNudgeState);
+  const showNudge = !user && shouldShowNudge(nudgeState);
+  function dismissNudge() {
+    const next = nextNudgeState(nudgeState);
+    saveNudgeState(next);
+    setNudgeState(next);
+  }
   const [list, setList] = useState(load);
   const [q, setQ] = useState("");
   const [, setDataV] = useState(0);
@@ -218,9 +234,26 @@ export default function Izleme() {
 
   return (
     <div className="ak-izle">
+      {showNudge && (
+        <div className="ak-nudge">
+          <span>Cihazlar arası senkron için giriş yap — liste şu an yalnız bu cihazda saklanıyor.</span>
+          <div className="ak-nudge-btns">
+            <button className="ak-btn ak-btn-primary sm" onClick={() => requireAuth("Cihazlar arası senkron için giriş yap.")}>Giriş yap</button>
+            <button className="ak-nudge-x" onClick={dismissNudge} aria-label="Kapat"><X size={15} /></button>
+          </div>
+        </div>
+      )}
+
       <span className="ak-eyebrow">İZLEME LİSTESİ</span>
       <h1>Takibindekiler</h1>
       <p className="ak-izle-lead">Semboller, son fiyat, mini grafik ve "şu an FVG edge'i var mı" rozeti. Liste bu cihazda saklanır.</p>
+
+      <div className="ak-seg" style={{ marginBottom: 16 }}>
+        <button className={section === "izleme" ? "on" : ""} onClick={() => setSection("izleme")}><Eye size={13} /> İzleme Listesi</button>
+        <button className={section === "portfoy" ? "on" : ""} onClick={() => setSection("portfoy")}><Wallet size={13} /> Portföy</button>
+      </div>
+
+      {section === "portfoy" ? <PortfolioPanel /> : (<>
 
       {(topGainer || topLoser) && (
         <div className="ak-movers">
@@ -347,6 +380,7 @@ export default function Izleme() {
           <p className="ak-izle-note">Sinyal geldiğinde otomatik açılan hayali işlemler — gerçek para değildir, yalnız bu tarayıcıda saklanır.</p>
         </div>
       )}
+      </>)}
     </div>
   );
 }

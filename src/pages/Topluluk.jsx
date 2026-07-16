@@ -2,11 +2,22 @@ import { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Trophy, GitFork, ShieldCheck, AlertTriangle, Info, X, Award, Briefcase, Hash } from "lucide-react";
 import { STRATEGIES, edgeScore, MEMBERS, focusLabel } from "../lib/communityData.js";
+import { useAuth } from "../lib/AuthProvider.jsx";
+import { useAuthGate } from "../lib/AuthGate.jsx";
 import "../styles/topluluk.css";
 
 export default function Topluluk() {
+  const { user } = useAuth();
+  const { requireAuth } = useAuthGate();
   const [sortBy, setSortBy] = useState("edge"); // "edge" | "win"
   const [member, setMember] = useState(null);    // üye kartı modalı (handle)
+
+  // AK-080 C4: rütbe/t-stat tabloda herkese açık kalır — yalnız DETAYA inmek (üye kartı ->
+  // profil) login gerektirir. Merak kancası: liste açık, tıklama login modalını tetikler.
+  function openMember(u) {
+    if (!user) { requireAuth("Profilleri görmek için giriş yap."); return; }
+    setMember(u);
+  }
 
   const rows = useMemo(() => {
     const withScore = STRATEGIES.map(s => ({ ...s, score: edgeScore(s) }));
@@ -46,7 +57,7 @@ export default function Topluluk() {
           return (
             <div className={"ak-board-r" + (s.trap ? " is-trap" : "")} key={s.user}>
               <span className="rk">{i + 1}</span>
-              <button className="tr aslink" onClick={() => setMember(s.user)}>@{s.user}</button>
+              <button className="tr aslink" onClick={() => openMember(s.user)}>@{s.user}</button>
               <span className="sy">{s.sym} · {s.setup} · 1:{s.rr}</span>
               <span className="wn">{s.win}%</span>
               <span className="oo">{s.oos}</span>

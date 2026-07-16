@@ -1,0 +1,7 @@
+/* AK-080 C6: merkezi login duvarı modalı — ak-modal-veil/ak-modal (ben.css) tabanını genişletir */
+.ak-modal.ak-authgate{max-width:380px;}
+.ak-authgate-in{display:flex;align-items:center;gap:8px;background:#0E1816;border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-top:10px;}
+.ak-authgate-in svg{color:var(--muted);flex:none;}
+.ak-authgate-in input{flex:1;background:none;border:none;outline:none;color:var(--txt);font-size:13.5px;}
+.ak-authgate-err{color:var(--bad);font-size:12.5px;margin:8px 0 0;}
+.ak-authgate-done{display:flex;align-items:center;justify-content:center;gap:7px;color:var(--teal-soft);font-size:13.5px;margin-top:10px;}

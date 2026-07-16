@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { useParams } from "react-router-dom";
-import { ShieldCheck, TrendingUp, Wallet, Award, UserX, UserPlus, UserCheck, Settings } from "lucide-react";
+import { ShieldCheck, TrendingUp, Wallet, Award, UserX, UserPlus, UserCheck, Settings, Lock } from "lucide-react";
 import { useAuth } from "../lib/AuthProvider.jsx";
+import { useAuthGate } from "../lib/AuthGate.jsx";
 import { fetchProfileByHandle, fetchProfileById, fetchStrategiesByUser, fetchFollowState, followUser, unfollowUser } from "../lib/supabase.js";
 import { listTrades } from "../lib/ledger.js";
 import { edgeRank, contribRank } from "../lib/ranks.js";
@@ -18,6 +19,7 @@ export default function Profil() {
   const { handle: routeHandle } = useParams();
   const handle = routeHandle || "elifquant"; // SSR duman testi/route'suz render için düşme değeri
   const { user } = useAuth();
+  const { requireAuth } = useAuthGate();
 
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -58,7 +60,8 @@ export default function Profil() {
   }, [user, profile, isOwner]);
 
   async function toggleFollow() {
-    if (!user || !profile || isOwner || followBusy) return;
+    if (!user) { requireAuth(`@${handle}'ı takip etmek için giriş yap.`); return; }
+    if (!profile || isOwner || followBusy) return;
     setFollowBusy(true);
     const next = !following;
     setFollowing(next); // D5: optimistic UI
@@ -91,6 +94,25 @@ export default function Profil() {
     );
   }
 
+  // AK-080 C2/C4: profil detay sayfası login duvarının arkasında — liderlik tablosundaki rütbe/
+  // t-stat özetleri (Topluluk.jsx) zaten girişsiz görünür kalır, buradaki DETAY (strateji listesi,
+  // takip et) merak kancası olarak login'e bağlanır. Sayfa yönlendirmesi yok, inline nudge.
+  if (!user) {
+    return (
+      <div className="ak-prof">
+        <div className="ak-prof-locked">
+          <div className="ak-prof-av">{handle[0].toUpperCase()}</div>
+          <Lock size={20} />
+          <h2>@{handle} profilini görmek için giriş yap</h2>
+          <p>Doğrulanmış stratejiler, t-stat detayları ve takip özelliği girişli kullanıcılara açık.</p>
+          <button className="ak-btn ak-btn-primary" onClick={() => requireAuth(`@${handle} profilini görmek için giriş yap.`)}>
+            Giriş yap
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // C2 (2): doğrulanmış istatistik bloğu — yalnız Supabase'teki public strategies'ten (n = toplam strateji sayısı)
   const bestT = strategies.length ? Math.max(...strategies.map(s => Number(s.oos_t) || 0)) : 0;
   const verifiedCount = strategies.filter(s => Number(s.oos_t) >= 2).length;
@@ -115,8 +137,7 @@ export default function Profil() {
           <button
             className="ak-btn ak-btn-secondary"
             onClick={toggleFollow}
-            disabled={!user || followBusy}
-            title={!user ? "Takip etmek için giriş yapmalısın" : undefined}
+            disabled={followBusy}
           >
             {following ? <><UserCheck size={14} /> Takip ediliyor</> : <><UserPlus size={14} /> Takip et</>}
           </button>

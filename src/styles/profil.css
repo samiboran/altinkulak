@@ -40,6 +40,11 @@
 .ak-prof-missing{display:flex;flex-direction:column;align-items:center;gap:10px;padding:64px 20px;color:var(--muted);text-align:center;border:1px dashed #2f4742;border-radius:13px;}
 .ak-prof-missing svg{color:var(--bad);}
 .ak-prof-missing p{font-size:14.5px;margin:0;}
+/* AK-080 C2/C4: guest için profil detay kilidi */
+.ak-prof-locked{display:flex;flex-direction:column;align-items:center;gap:10px;padding:56px 20px;text-align:center;border:1px dashed #2f4742;border-radius:13px;}
+.ak-prof-locked svg{color:var(--gold);}
+.ak-prof-locked h2{font-family:'Chakra Petch';font-size:19px;color:var(--txt);margin:2px 0 2px;}
+.ak-prof-locked p{font-size:13.5px;color:var(--muted);max-width:400px;line-height:1.55;margin:0 0 8px;}
 .ak-port-note{font-size:11.5px;color:#647974;margin-top:14px;font-family:'JetBrains Mono';line-height:1.5;}
 .ak-prof-strats{display:flex;flex-direction:column;gap:9px;}
 .ak-pstrat{display:flex;align-items:center;gap:11px;padding:14px 16px;background:linear-gradient(180deg,#17211F,#141E1C);border:1px solid var(--line);border-radius:12px;}

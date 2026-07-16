@@ -5,12 +5,14 @@ import { addTrade, listTrades, summary, TAGS, SETUPS } from "../lib/ledger.js";
 import { addSandbox, listSandbox, removeSandbox } from "../lib/sandbox.js";
 import { edgeRank } from "../lib/ranks.js";
 import { parseTradesCSV, dedupeKey, exportTradesCSV } from "../lib/csv.js";
+import { useAuthGate } from "../lib/AuthGate.jsx";
 import "../styles/ben.css";
 
 const TAGCOL = { "Plana uydu": "ok", "Erken çıkış": "warn", "FOMO": "bad", "İntikam": "bad" };
 const fmtD = (iso) => new Date(iso).toLocaleDateString("tr-TR", { day: "numeric", month: "short" });
 
 export default function Ben() {
+  const { requireAuth } = useAuthGate();
   const [trades, setTrades] = useState(listTrades);
   const [sand, setSand] = useState(listSandbox);
   const [mode, setMode] = useState("sicil"); // sicil = kalıcı · sandbox = serbest pratik
@@ -21,6 +23,12 @@ export default function Ben() {
   // CSV import (AK-025): önizleme -> hedef seçimi -> yaz
   const fileRef = useRef(null);
   const [imp, setImp] = useState(null); // { rows, errors, skipped }
+
+  // AK-080 C2: CSV içe aktarma sicile/sandbox'a kalıcı yazım demek — dosya seçiciyi açmadan önce duvar.
+  function onCSVClick() {
+    if (!requireAuth("Sicile veya Sandbox'a aktarmak için giriş yap.")) return;
+    fileRef.current?.click();
+  }
 
   function onCSV(e) {
     const file = e.target.files?.[0];
@@ -78,6 +86,7 @@ export default function Ben() {
 
   function tryAdd() {
     setErr("");
+    if (!requireAuth(mode === "sicil" ? "Sicile işlemek için giriş yap." : "Sandbox'a kayıt için giriş yap.")) return;
     if (!f.sym.trim() || f.r === "" || !Number(f.plan)) { setErr("Sembol, plan R:R ve sonuç R zorunlu."); return; }
     if (mode === "sandbox") { // pratik alanı: onay gerekmez
       const e = addSandbox(f);
@@ -140,7 +149,7 @@ export default function Ben() {
         <div className="ak-ben-formhead">
           {mode === "sicil" ? <><BookLock size={15} /> Sicile işle <em>kalıcı kayıt — silinemez, düzenlenemez</em></>
                             : <><FlaskConical size={15} /> Sandbox'a işle <em>pratik — istediğin gibi sil</em></>}
-          <button className="ak-csv-btn" onClick={() => fileRef.current?.click()} title="CSV formatı: sym,dir,plan,r[,tag,setup,d]"><Upload size={13} /> CSV içe aktar</button>
+          <button className="ak-csv-btn" onClick={onCSVClick} title="CSV formatı: sym,dir,plan,r[,tag,setup,d]"><Upload size={13} /> CSV içe aktar</button>
           <button className="ak-csv-btn" onClick={downloadCSV} disabled={!trades.length} title="Sicili CSV olarak indir"><Download size={13} /> CSV indir</button>
           <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={onCSV} />
         </div>
