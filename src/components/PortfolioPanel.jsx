@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Wallet, Plus, X, ArrowLeftRight, Eye, EyeOff, ArrowUpRight, ArrowDownRight, History, Lock } from "lucide-react";
+import { Wallet, Plus, X, ArrowLeftRight, Eye, EyeOff, ArrowUpRight, ArrowDownRight, History, Lock, Bitcoin, Building2, Landmark, LayoutGrid, Calculator } from "lucide-react";
 import { getBars, hasData, loadReal, ALL_SYMBOLS, getSearchSymbols, pairFor } from "../lib/data.js";
 import { addTransaction, getItems, listEvents, itemKey } from "../lib/portfolio.js";
 import { getUSStockPrice, getCachedUSStockPrice, getUSStockPriceTimestamp, isUSStockPriceConfigured } from "../lib/usStockPrices.js";
@@ -45,6 +45,21 @@ function periodChangePct(bars, lookbackBars) {
   if (!past) return null;
   return ((now - past) / past) * 100;
 }
+const WEEK_BARS = 42; // ~7 gün × 24s / 4s mum
+
+// AK-079: TradingView mobil referansı — sembol satırı/başlığında varlık tipine göre ikon.
+const ASSET_ICON = { crypto: Bitcoin, us: Building2, bist: Landmark };
+
+// AK-079: detay ekranı zaman aralığı seçici — yalnız GERÇEKTEN eldeki bar aralığına (900 bar ×
+// 4s ≈ 150 gün) sığan seçenekler sunulur; YTD/1Y/5Y gibi kapsamayanlar dürüstlük ilkesi (AK-031)
+// gereği eklenmez — TradingView'daki fikir korunur, kapsam gerçek veriyle sınırlanır.
+const DETAIL_PERIODS = [
+  { key: "1G", label: "1G", bars: 6 },
+  { key: "1H", label: "1H", bars: WEEK_BARS },
+  { key: "1A", label: "1A", bars: 180 },
+  { key: "3A", label: "3A", bars: 540 },
+  { key: "TUM", label: "Tümü", bars: Infinity },
+];
 
 // D16: ABD/BIST (kripto DIŞI) fiyatların yanında HER ZAMAN "son güncelleme: X" gösterilir — kaynak
 // cache'in KENDİ ts'i (kullanıcının sayfayı açtığı an değil). Kripto gerçek zamanlı ticker olduğu
@@ -79,7 +94,7 @@ export default function PortfolioPanel() {
   const [hideValues, setHideValues] = useState(() => loadBool(PRIV_KEY, false));
   const [currency, setCurrency] = useState(() => loadStr(CUR_KEY, "USD"));
   const [modalOpen, setModalOpen] = useState(false);
-  const [historyKey, setHistoryKey] = useState(null);
+  const [detailKey, setDetailKey] = useState(null); // AK-079: satıra tıklayınca açılan zenginleştirilmiş detay ekranı
   const [, setTick] = useState(0); // canlı fiyat gelince yeniden çizim
 
   useEffect(() => { try { localStorage.setItem(PRIV_KEY, JSON.stringify(hideValues)); } catch {} }, [hideValues]);
@@ -114,12 +129,13 @@ export default function PortfolioPanel() {
     const costValue = it.avg_cost_usd * it.qty;
     const pnl = value - costValue;
     const pnlPct = costValue ? (pnl / costValue) * 100 : 0;
-    let dayChangePct = null;
+    let dayChangePct = null, weekChangePct = null;
     if (it.asset_type === "crypto" && hasData(it.symbol)) {
       const b = getBars(it.symbol);
       if (b.length >= 2) dayChangePct = ((b[b.length - 1].c - b[b.length - 2].c) / b[b.length - 2].c) * 100;
+      weekChangePct = periodChangePct(b, WEEK_BARS); // AK-079: detay ekranında "haftalık değişim" satırı için
     }
-    return { ...it, price, value, costValue, pnl, pnlPct, dayChangePct };
+    return { ...it, price, value, costValue, pnl, pnlPct, dayChangePct, weekChangePct };
   }), [items]);
 
   const filteredRows = filterTab === "all" ? rows : rows.filter((r) => r.asset_type === filterTab);
@@ -200,26 +216,32 @@ export default function PortfolioPanel() {
       ) : (
         <div className="ak-pf-table">
           <div className="ak-pf-h"><span>Sembol</span><span>Adet</span><span>Ort. maliyet</span><span>Canlı fiyat</span><span>Değer</span><span>K/Z</span></div>
-          {filteredRows.map((r) => (
-            <div className="ak-pf-r" key={r.key} onClick={() => setHistoryKey(r.key)}>
-              <span className="sy">{r.symbol}<i className="tu">{r.asset_type === "crypto" ? "Kripto" : r.asset_type === "us" ? "ABD" : "BIST"}</i></span>
-              <span className="mono">{r.qty}</span>
-              <span className="mono">{fmtDisplay(r.avg_cost_usd, currency, hideValues)}</span>
-              <span className="mono ak-pf-pricecell">
-                <span>
-                  {fmtDisplay(r.price, currency, hideValues)}
-                  {r.dayChangePct != null && (r.dayChangePct >= 0 ? <ArrowUpRight size={12} className="arr up" /> : <ArrowDownRight size={12} className="arr dn" />)}
+          {filteredRows.map((r) => {
+            const Icon = ASSET_ICON[r.asset_type] || Bitcoin;
+            return (
+              <div className="ak-pf-r" key={r.key} onClick={() => setDetailKey(r.key)}>
+                <span className="sy"><Icon size={14} className="ak-pf-icon" /><span className="sy-txt">{r.symbol}<i className="tu">{r.asset_type === "crypto" ? "Kripto" : r.asset_type === "us" ? "ABD" : "BIST"}</i></span></span>
+                <span className="mono">{r.qty}</span>
+                <span className="mono">{fmtDisplay(r.avg_cost_usd, currency, hideValues)}</span>
+                {/* AK-079: tipografi hiyerarşisi — büyük fiyat üstte, renkli % değişim altta (TradingView mobil referansı) */}
+                <span className="mono ak-pf-pricecell">
+                  <span className="ak-pf-price">{fmtDisplay(r.price, currency, hideValues)}</span>
+                  {r.dayChangePct != null ? (
+                    <span className={"ak-pf-daychg " + (r.dayChangePct >= 0 ? "pos" : "neg")}>
+                      {r.dayChangePct >= 0 ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}
+                      {fmtPct(r.dayChangePct)}
+                    </span>
+                  ) : r.asset_type !== "crypto" ? (
+                    <i className="ak-pf-age" title="Fiyatın kaynak zamanı — sayfayı ne zaman açtığın değil">
+                      son güncelleme: {agoLabel(getUSStockPriceTimestamp(r.symbol)) || "—"}
+                    </i>
+                  ) : null}
                 </span>
-                {r.asset_type !== "crypto" && (
-                  <i className="ak-pf-age" title="Fiyatın kaynak zamanı — sayfayı ne zaman açtığın değil">
-                    son güncelleme: {agoLabel(getUSStockPriceTimestamp(r.symbol)) || "—"}
-                  </i>
-                )}
-              </span>
-              <span className="mono">{fmtDisplay(r.value, currency, hideValues)}</span>
-              <span className={"mono " + (r.pnl >= 0 ? "pos" : "neg")}>{fmtDisplay(r.pnl, currency, hideValues)} ({fmtPct(r.pnlPct)})</span>
-            </div>
-          ))}
+                <span className="mono">{fmtDisplay(r.value, currency, hideValues)}</span>
+                <span className={"mono " + (r.pnl >= 0 ? "pos" : "neg")}>{fmtDisplay(r.pnl, currency, hideValues)} ({fmtPct(r.pnlPct)})</span>
+              </div>
+            );
+          })}
         </div>
       )}
       <p className="ak-port-note">
@@ -230,9 +252,19 @@ export default function PortfolioPanel() {
       {modalOpen && (
         <AddTransactionModal onClose={() => setModalOpen(false)} onSubmit={handleAdd} watchlist={loadWatchlist()} />
       )}
-      {historyKey && (
-        <HistoryDrawer itemKey={historyKey} events={events.filter((e) => e.item_key === historyKey)} currency={currency} hideValues={hideValues} onClose={() => setHistoryKey(null)} />
-      )}
+      {detailKey && (() => {
+        const row = rows.find((r) => r.key === detailKey);
+        if (!row) return null;
+        return (
+          <AssetDetailModal
+            row={row}
+            events={events.filter((e) => e.item_key === detailKey)}
+            currency={currency}
+            hideValues={hideValues}
+            onClose={() => setDetailKey(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -400,27 +432,86 @@ function eventTypeLabel(t) {
   return "Maliyet güncelleme";
 }
 
-function HistoryDrawer({ itemKey, events, currency, hideValues, onClose }) {
-  const sym = events[0]?.symbol || itemKey.split(":")[1];
+// AK-079: TradingView mobil "detay ekranı" referansı — ikon+sembol+durum rozeti, büyük fiyat,
+// bugünkü+haftalık değişim satırları, zaman aralığı seçici, sekmeler (Genel Bakış/Geçmiş/Maliyet & K-Z).
+// Alarm, karşılaştırma, "önemli veri noktaları" ve "Teknikler" sinyali BİLİNÇLİ OLARAK dışarıda
+// bırakıldı (kapsam taşması + istatistiksel dürüstlük ilkesiyle çelişme riski — AK-079 kararı).
+function AssetDetailModal({ row, events, currency, hideValues, onClose }) {
+  const [tab, setTab] = useState("genel"); // genel | gecmis | maliyet
+  const [period, setPeriod] = useState("1G");
+  const Icon = ASSET_ICON[row.asset_type] || Bitcoin;
+  const assetLabel = row.asset_type === "crypto" ? "Kripto" : row.asset_type === "us" ? "ABD" : "BIST";
+
+  const periodDef = DETAIL_PERIODS.find((p) => p.key === period) || DETAIL_PERIODS[0];
+  const periodChg = row.asset_type === "crypto" && hasData(row.symbol)
+    ? periodChangePct(getBars(row.symbol), periodDef.bars)
+    : null;
+
   return (
     <div className="ak-pf-modal-ov" onClick={onClose}>
-      <div className="ak-pf-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="ak-pf-modal ak-pf-detail" onClick={(e) => e.stopPropagation()}>
         <div className="ak-pf-modal-head">
-          <h3><History size={16} /> {sym} — işlem geçmişi</h3>
+          <h3><Icon size={16} /> {row.symbol} <i className="ak-pf-detail-type">{assetLabel}</i></h3>
           <button className="ak-icon" onClick={onClose}><X size={18} /></button>
         </div>
-        {events.length === 0 ? (
-          <p className="ak-hint">Kayıt yok.</p>
-        ) : (
-          <div className="ak-pf-hist-list">
-            {events.map((e) => (
-              <div className={"ak-pf-hist-row " + e.type} key={e.id}>
-                <span className="tp">{eventTypeLabel(e.type)}</span>
-                <span className="mono">{e.qty ? `${e.qty} adet` : "—"}</span>
-                <span className="mono">{fmtDisplay(e.cost_usd, currency, hideValues)}{e.currency_entered !== "USD" && ` (${e.fx_rate_at_entry}× girişte)`}</span>
-                <span className="dt">{new Date(e.ts).toLocaleString("tr-TR")}</span>
-              </div>
-            ))}
+
+        <div className="ak-pf-detail-price">
+          <b>{fmtDisplay(row.price, currency, hideValues)}</b>
+          <div className="ak-pf-detail-chglines">
+            <span className={row.dayChangePct == null ? "" : row.dayChangePct >= 0 ? "pos" : "neg"}>Bugün {row.dayChangePct == null ? "— veri yok" : fmtPct(row.dayChangePct)}</span>
+            <span className={row.weekChangePct == null ? "" : row.weekChangePct >= 0 ? "pos" : "neg"}>Bu hafta {row.weekChangePct == null ? "— veri yok" : fmtPct(row.weekChangePct)}</span>
+          </div>
+          {row.asset_type !== "crypto" && (
+            <i className="ak-pf-age" title="Fiyatın kaynak zamanı — sayfayı ne zaman açtığın değil">
+              son güncelleme: {agoLabel(getUSStockPriceTimestamp(row.symbol)) || "—"}
+            </i>
+          )}
+        </div>
+
+        <div className="ak-pf-detail-periods">
+          {DETAIL_PERIODS.map((p) => (
+            <button key={p.key} className={period === p.key ? "on" : ""} onClick={() => setPeriod(p.key)}>{p.label}</button>
+          ))}
+        </div>
+        <p className={"ak-pf-detail-periodchg " + (periodChg == null ? "" : periodChg >= 0 ? "pos" : "neg")}>
+          {periodDef.label} değişim: {periodChg == null ? "veri yok (yalnız kripto için hesaplanır)" : fmtPct(periodChg)}
+        </p>
+
+        <div className="ak-pf-detail-tabs">
+          <button className={tab === "genel" ? "on" : ""} onClick={() => setTab("genel")}><LayoutGrid size={13} /> Genel Bakış</button>
+          <button className={tab === "gecmis" ? "on" : ""} onClick={() => setTab("gecmis")}><History size={13} /> Geçmiş</button>
+          <button className={tab === "maliyet" ? "on" : ""} onClick={() => setTab("maliyet")}><Calculator size={13} /> Maliyet & K/Z</button>
+        </div>
+
+        {tab === "genel" && (
+          <div className="ak-pf-detail-grid">
+            <div><span className="k">Adet</span><b className="mono">{row.qty}</b></div>
+            <div><span className="k">Değer</span><b className="mono">{fmtDisplay(row.value, currency, hideValues)}</b></div>
+            <div><span className="k">Varlık tipi</span><b>{assetLabel}</b></div>
+          </div>
+        )}
+
+        {tab === "gecmis" && (
+          events.length === 0 ? <p className="ak-hint">Kayıt yok.</p> : (
+            <div className="ak-pf-hist-list">
+              {events.map((e) => (
+                <div className={"ak-pf-hist-row " + e.type} key={e.id}>
+                  <span className="tp">{eventTypeLabel(e.type)}</span>
+                  <span className="mono">{e.qty ? `${e.qty} adet` : "—"}</span>
+                  <span className="mono">{fmtDisplay(e.cost_usd, currency, hideValues)}{e.currency_entered !== "USD" && ` (${e.fx_rate_at_entry}× girişte)`}</span>
+                  <span className="dt">{new Date(e.ts).toLocaleString("tr-TR")}</span>
+                </div>
+              ))}
+            </div>
+          )
+        )}
+
+        {tab === "maliyet" && (
+          <div className="ak-pf-detail-grid">
+            <div><span className="k">Ort. maliyet</span><b className="mono">{fmtDisplay(row.avg_cost_usd, currency, hideValues)}</b></div>
+            <div><span className="k">Toplam maliyet</span><b className="mono">{fmtDisplay(row.costValue, currency, hideValues)}</b></div>
+            <div><span className="k">Güncel değer</span><b className="mono">{fmtDisplay(row.value, currency, hideValues)}</b></div>
+            <div><span className="k">K/Z</span><b className={"mono " + (row.pnl >= 0 ? "pos" : "neg")}>{fmtDisplay(row.pnl, currency, hideValues)} ({fmtPct(row.pnlPct)})</b></div>
           </div>
         )}
       </div>

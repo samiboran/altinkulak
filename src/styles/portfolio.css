@@ -31,13 +31,18 @@
 .ak-pf-h{background:#101A18;color:var(--muted);font-family:'JetBrains Mono';font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;}
 .ak-pf-r{border-top:1px solid var(--line);font-size:13.5px;cursor:pointer;transition:.12s;}
 .ak-pf-r:hover{background:var(--panel);}
-.ak-pf-r .sy{font-family:'Chakra Petch';font-weight:600;color:var(--txt);display:flex;flex-direction:column;gap:1px;}
+.ak-pf-r .sy{display:flex;align-items:center;gap:7px;}
+.ak-pf-r .sy .sy-txt{font-family:'Chakra Petch';font-weight:600;color:var(--txt);display:flex;flex-direction:column;gap:1px;}
 .ak-pf-r .sy .tu{font-style:normal;font-size:10px;color:var(--muted);font-family:'JetBrains Mono';font-weight:400;}
+.ak-pf-icon{color:var(--muted);flex:none;}
 .ak-pf-r .mono{font-family:'JetBrains Mono';display:flex;align-items:center;gap:3px;}
 .ak-pf-r .mono.pos{color:var(--good);} .ak-pf-r .mono.neg{color:var(--bad);}
 .ak-pf-r .arr.up{color:var(--good);} .ak-pf-r .arr.dn{color:var(--bad);}
-/* D16: ABD/BIST fiyatlarının yanında her zaman "son güncelleme: X" — canlı ticker olmadığı açıkça belli olsun */
-.ak-pf-pricecell{flex-direction:column;align-items:flex-start !important;gap:1px;}
+/* AK-079: tipografi hiyerarşisi — büyük/kalın fiyat üstte, küçük renkli değişim (veya D16 "son güncelleme") altta */
+.ak-pf-pricecell{flex-direction:column;align-items:flex-start !important;gap:2px;}
+.ak-pf-price{font-size:15px;font-weight:700;color:var(--txt);}
+.ak-pf-daychg{display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:600;}
+.ak-pf-daychg.pos{color:var(--good);} .ak-pf-daychg.neg{color:var(--bad);}
 .ak-pf-age{font-style:normal;font-size:9.5px;color:#647974;font-weight:400;white-space:nowrap;}
 @media(max-width:720px){
   .ak-pf-h,.ak-pf-r{grid-template-columns:1.2fr .6fr 1fr 1fr;}
@@ -93,3 +98,31 @@
 .ak-pf-hist-row.update_cost .tp{color:var(--gold-2);}
 .ak-pf-hist-row .mono{font-family:'JetBrains Mono';}
 .ak-pf-hist-row .dt{color:var(--muted);font-size:11px;font-family:'JetBrains Mono';text-align:right;}
+
+/* AK-079: detay ekranı (TradingView mobil referansı — ikon+sembol, büyük fiyat, gün/hafta değişimi,
+   zaman aralığı seçici, Genel Bakış/Geçmiş/Maliyet & K-Z sekmeleri) */
+.ak-pf-detail{max-width:480px;}
+.ak-pf-detail .ak-pf-modal-head h3{gap:8px;}
+.ak-pf-detail-type{font-style:normal;font-size:11px;color:var(--muted);font-family:'JetBrains Mono';font-weight:400;margin-left:2px;}
+.ak-pf-detail-price{padding:4px 0 14px;border-bottom:1px solid var(--line);margin-bottom:14px;}
+.ak-pf-detail-price > b{display:block;font-family:'JetBrains Mono';font-size:28px;font-weight:700;color:var(--txt);}
+.ak-pf-detail-chglines{display:flex;gap:16px;margin-top:4px;font-family:'JetBrains Mono';font-size:13px;color:var(--muted);}
+.ak-pf-detail-chglines .pos{color:var(--good);} .ak-pf-detail-chglines .neg{color:var(--bad);}
+.ak-pf-detail-price .ak-pf-age{display:block;margin-top:6px;}
+
+.ak-pf-detail-periods{display:flex;gap:4px;margin-bottom:8px;}
+.ak-pf-detail-periods button{flex:1;border:1px solid var(--line);background:#101A18;color:var(--muted);border-radius:8px;padding:7px 4px;font-family:'JetBrains Mono';font-size:11.5px;cursor:pointer;transition:.13s;}
+.ak-pf-detail-periods button.on{background:var(--panel2);color:var(--teal-soft);border-color:var(--teal-deep);}
+.ak-pf-detail-periods button:hover:not(.on){color:var(--txt);}
+.ak-pf-detail-periodchg{font-family:'JetBrains Mono';font-size:12px;color:var(--muted);margin:0 0 16px;}
+.ak-pf-detail-periodchg.pos{color:var(--good);} .ak-pf-detail-periodchg.neg{color:var(--bad);}
+
+.ak-pf-detail-tabs{display:flex;gap:6px;background:#0E1816;border:1px solid var(--line);border-radius:10px;padding:3px;margin-bottom:14px;}
+.ak-pf-detail-tabs button{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;border:none;background:transparent;color:var(--muted);padding:8px 6px;border-radius:7px;font-weight:600;font-size:12px;cursor:pointer;}
+.ak-pf-detail-tabs button.on{background:var(--panel2);color:var(--teal-soft);}
+
+.ak-pf-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.ak-pf-detail-grid > div{background:#101A18;border:1px solid var(--line);border-radius:10px;padding:11px 13px;}
+.ak-pf-detail-grid .k{display:block;font-size:11px;color:var(--muted);margin-bottom:3px;}
+.ak-pf-detail-grid b{font-family:'JetBrains Mono';font-size:14.5px;color:var(--txt);}
+.ak-pf-detail-grid b.pos{color:var(--good);} .ak-pf-detail-grid b.neg{color:var(--bad);}
