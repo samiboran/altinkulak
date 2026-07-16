@@ -618,4 +618,158 @@ test("eksik id/handle ile çağrılınca ağa hiç çıkmadan boş değer döner
   assert.equal(followMissing, false);
 });
 
+console.log("kişisel portföy (AK-078)");
+const { normalizeToUSD, deriveItems, itemKey } = await import("../src/lib/portfolio.js");
+const { fmtDisplay } = await import("../src/lib/portfolioFormat.js");
+const { getUSStockPrice, getUSStockPriceTimestamp, _setApiKeyForTests, _resetCacheForTests, setUpdateInterval } = await import("../src/lib/usStockPrices.js");
+
+test("normalizeToUSD: USD girişte kur her zaman 1 (çevrim gereksiz)", () => {
+  const r = normalizeToUSD(100, "USD", 34);
+  assert.equal(r.amountUsd, 100);
+  assert.equal(r.fxRateUsed, 1);
+});
+test("normalizeToUSD: TRY girişte fx_rate (1 USD=?TRY) ile USD'ye BÖLÜNEREK çevrilir (D8)", () => {
+  const r = normalizeToUSD(3400, "TRY", 34); // 3400 TRY, kur 1USD=34TRY -> 100 USD
+  assert.equal(r.amountUsd, 100);
+  assert.equal(r.fxRateUsed, 34);
+});
+test("normalizeToUSD: geçersiz/sıfır kur 1'e düşer (bölme hatası olmaz)", () => {
+  const r = normalizeToUSD(100, "TRY", 0);
+  assert.equal(r.amountUsd, 100);
+  assert.equal(r.fxRateUsed, 1);
+});
+
+test("deriveItems: ağırlıklı ortalama maliyet — iki farklı fiyattan alım", () => {
+  const key = itemKey("BTC", "crypto");
+  const events = [
+    { item_key: key, symbol: "BTC", asset_type: "crypto", type: "add", qty: 1, cost_usd: 100, fee_usd: 0, ts: 1000 },
+    { item_key: key, symbol: "BTC", asset_type: "crypto", type: "add", qty: 1, cost_usd: 200, fee_usd: 0, ts: 2000 },
+  ];
+  const items = deriveItems(events);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].qty, 2);
+  assert.equal(items[0].avg_cost_usd, 150); // (1*100 + 1*200) / 2
+});
+test("deriveItems: fee maliyete dahil edilir (U3)", () => {
+  const key = itemKey("ETH", "crypto");
+  const events = [{ item_key: key, symbol: "ETH", asset_type: "crypto", type: "add", qty: 2, cost_usd: 100, fee_usd: 10, ts: 1000 }];
+  const items = deriveItems(events);
+  assert.equal(items[0].avg_cost_usd, 105); // (2*100 + 10) / 2
+});
+test("deriveItems: satış (remove) ort. maliyeti DEĞİŞTİRMEZ, yalnız adet düşer", () => {
+  const key = itemKey("SOL", "crypto");
+  const events = [
+    { item_key: key, symbol: "SOL", asset_type: "crypto", type: "add", qty: 10, cost_usd: 50, fee_usd: 0, ts: 1000 },
+    { item_key: key, symbol: "SOL", asset_type: "crypto", type: "remove", qty: 4, cost_usd: 0, fee_usd: 0, ts: 2000 },
+  ];
+  const items = deriveItems(events);
+  assert.equal(items[0].qty, 6);
+  assert.equal(items[0].avg_cost_usd, 50);
+});
+test("deriveItems: tamamen satılan kalem listeden düşer (event log'da kalır, mevcut durumda yok)", () => {
+  const key = itemKey("AVAX", "crypto");
+  const events = [
+    { item_key: key, symbol: "AVAX", asset_type: "crypto", type: "add", qty: 5, cost_usd: 20, fee_usd: 0, ts: 1000 },
+    { item_key: key, symbol: "AVAX", asset_type: "crypto", type: "remove", qty: 5, cost_usd: 0, fee_usd: 0, ts: 2000 },
+  ];
+  assert.deepEqual(deriveItems(events), []);
+});
+test("deriveItems: update_cost ort. maliyeti doğrudan değiştirir (manuel düzeltme)", () => {
+  const key = itemKey("BTC", "crypto");
+  const events = [
+    { item_key: key, symbol: "BTC", asset_type: "crypto", type: "add", qty: 1, cost_usd: 100, fee_usd: 0, ts: 1000 },
+    { item_key: key, symbol: "BTC", asset_type: "crypto", type: "update_cost", qty: 0, cost_usd: 77, fee_usd: 0, ts: 2000 },
+  ];
+  const items = deriveItems(events);
+  assert.equal(items[0].avg_cost_usd, 77);
+  assert.equal(items[0].qty, 1); // update_cost adedi etkilemez
+});
+test("D9: mevcut durum event log'dan türetilir — sıra karışık verilse bile ts'e göre doğru sonuç (event sourcing)", () => {
+  const key = itemKey("BTC", "crypto");
+  const inOrder = [
+    { item_key: key, symbol: "BTC", asset_type: "crypto", type: "add", qty: 1, cost_usd: 100, fee_usd: 0, ts: 1000 },
+    { item_key: key, symbol: "BTC", asset_type: "crypto", type: "add", qty: 3, cost_usd: 200, fee_usd: 0, ts: 2000 },
+    { item_key: key, symbol: "BTC", asset_type: "crypto", type: "remove", qty: 1, cost_usd: 0, fee_usd: 0, ts: 3000 },
+  ];
+  const shuffled = [inOrder[2], inOrder[0], inOrder[1]]; // depolama sırası garanti değil — türetme ts'e göre olmalı
+  assert.deepEqual(deriveItems(inOrder), deriveItems(shuffled));
+});
+test("deriveItems: farklı asset_type aynı sembolü karıştırmaz (item_key ayrımı)", () => {
+  const events = [
+    { item_key: itemKey("AAPL", "us"), symbol: "AAPL", asset_type: "us", type: "add", qty: 1, cost_usd: 200, fee_usd: 0, ts: 1000 },
+  ];
+  const items = deriveItems(events);
+  assert.equal(items[0].asset_type, "us");
+});
+
+test("gizlilik maskesi (D13): hide=true iken tutar HER ZAMAN •••• — gerçek değer sızmaz", () => {
+  assert.equal(fmtDisplay(123456, "USD", true), "••••");
+  assert.equal(fmtDisplay(0, "USD", true), "••••");
+  assert.equal(fmtDisplay(-500, "TRY", true), "••••");
+});
+test("gizlilik maskesi: hide=false iken gerçek tutar görünür", () => {
+  assert.ok(fmtDisplay(1000, "USD", false).includes("1.000") || fmtDisplay(1000, "USD", false).includes("1,000"));
+  assert.ok(fmtDisplay(1000, "USD", false) !== "••••");
+});
+
+console.log("ABD hisse fiyatı — merkezi cache (AK-078 D11)");
+test("getUSStockPrice: anahtar yokken ağa hiç çıkmadan null döner (fabrike veri yok)", async () => {
+  _setApiKeyForTests("");
+  _resetCacheForTests();
+  const price = await getUSStockPrice("AAPL");
+  assert.equal(price, null);
+});
+test("getUSStockPrice: aynı sembole eşzamanlı çağrılar TEK ağ isteğine düşer (merkezi cache/dedup)", async () => {
+  _resetCacheForTests();
+  let fetchCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    fetchCalls++;
+    await new Promise((r) => setTimeout(r, 10)); // gerçekçi ağ gecikmesi simülasyonu — dedup penceresi açık kalsın
+    return { ok: true, json: async () => ({ c: 189.5 }) };
+  };
+  _setApiKeyForTests("test-key");
+  try {
+    const [p1, p2, p3] = await Promise.all([getUSStockPrice("AAPL"), getUSStockPrice("aapl"), getUSStockPrice("AAPL")]);
+    assert.equal(fetchCalls, 1, `tek istek beklenirdi, ${fetchCalls} geldi`);
+    assert.equal(p1, 189.5); assert.equal(p2, 189.5); assert.equal(p3, 189.5);
+  } finally {
+    globalThis.fetch = originalFetch;
+    _setApiKeyForTests("");
+  }
+});
+test("getUSStockPrice: TTL içinde tekrar çağrı ağa çıkmaz (cache)", async () => {
+  _resetCacheForTests();
+  let fetchCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { fetchCalls++; return { ok: true, json: async () => ({ c: 50 }) }; };
+  _setApiKeyForTests("test-key");
+  setUpdateInterval(5 * 60 * 1000);
+  try {
+    await getUSStockPrice("MSFT");
+    await getUSStockPrice("MSFT"); // TTL içinde — cache'ten dönmeli
+    assert.equal(fetchCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    _setApiKeyForTests("");
+  }
+});
+test("getUSStockPriceTimestamp (D16): kayıt yokken null, fetch sonrası CACHE'İN KENDİ anı döner", async () => {
+  _resetCacheForTests();
+  assert.equal(getUSStockPriceTimestamp("GOOG"), null);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ c: 140 }) });
+  _setApiKeyForTests("test-key");
+  try {
+    const before = Date.now();
+    await getUSStockPrice("GOOG");
+    const after = Date.now();
+    const ts = getUSStockPriceTimestamp("GOOG");
+    assert.ok(ts >= before && ts <= after, "timestamp fetch penceresi dışında");
+  } finally {
+    globalThis.fetch = originalFetch;
+    _setApiKeyForTests("");
+  }
+});
+
 console.log(`\n${pass} test geçti${process.exitCode ? " (HATALAR VAR)" : " — motor sağlam."}`);

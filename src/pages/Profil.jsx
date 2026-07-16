@@ -1,35 +1,18 @@
 import { useState, useEffect, useMemo } from "react";
 import { useParams } from "react-router-dom";
-import { ShieldCheck, Plus, Trash2, TrendingUp, Wallet, Award, UserX, UserPlus, UserCheck, Settings } from "lucide-react";
-import { getBars, ALL_SYMBOLS, loadReal } from "../lib/data.js";
+import { ShieldCheck, TrendingUp, Wallet, Award, UserX, UserPlus, UserCheck, Settings } from "lucide-react";
 import { useAuth } from "../lib/AuthProvider.jsx";
 import { fetchProfileByHandle, fetchProfileById, fetchStrategiesByUser, fetchFollowState, followUser, unfollowUser } from "../lib/supabase.js";
 import { listTrades } from "../lib/ledger.js";
 import { edgeRank, contribRank } from "../lib/ranks.js";
+import PortfolioPanel from "../components/PortfolioPanel.jsx";
 import "../styles/profil.css";
 
 // AK-077: Ben.jsx = mutfak (sandbox/sicil/parametreler, düzenlenebilir), Profil.jsx = vitrin (public,
 // salt-okunur sonuç). Veri kaynağı artık communityData.js mock'u DEĞİL, Supabase profiles/strategies/
 // follows — Supabase boşsa ya da yapılandırılmamışsa dürüst boş durum gösterilir, asla fabrike veri (D6).
-
-const PKEY = "ak_portfolio_v1";
-function loadP() { try { return JSON.parse(localStorage.getItem(PKEY)) || []; } catch { return []; } }
-function saveP(p) { try { localStorage.setItem(PKEY, JSON.stringify(p)); } catch {} }
-
-// sembol veri setinde var mı?
-function inDataset(sym) {
-  return ALL_SYMBOLS.some(x => x.sym === sym.toUpperCase());
-}
-
-// güncel fiyat önceliği: manuel giriş > veri seti > maliyet
-function priceOf(h) {
-  if (h.manual != null && h.manual > 0) return h.manual;
-  if (inDataset(h.sym)) {
-    const b = getBars(h.sym.toUpperCase());
-    return b[b.length - 1].c;
-  }
-  return h.cost;
-}
+// AK-078: Portföy sekmesi artık PortfolioPanel.jsx'e taşındı (event sourcing, ağırlıklı ort. maliyet,
+// USD normalize, gizlilik modu, ₺/$ — bkz. src/lib/portfolio.js).
 
 export default function Profil() {
   const { handle: routeHandle } = useParams();
@@ -92,32 +75,6 @@ export default function Profil() {
   const contrib = contribRank(0);
 
   const [tab, setTab] = useState("strat");
-  const [port, setPort] = useState(loadP);
-  const [f, setF] = useState({ sym: "", tur: "Kripto", adet: "", cost: "", manual: "" });
-
-  const [, setDataV] = useState(0);
-  useEffect(() => saveP(port), [port]);
-
-  // AK-004b: portföydeki gerçek-kaynaklı sembollerin güncel fiyatı Binance'ten
-  useEffect(() => {
-    let on = true;
-    Promise.all(port.map((h) => loadReal(h.sym).catch(() => null)))
-      .then((r) => { if (on && r.some(Boolean)) setDataV(v => v + 1); });
-    return () => { on = false; };
-  }, [port]);
-
-  function add() {
-    const sym = f.sym.trim().toUpperCase(), adet = Number(f.adet), cost = Number(f.cost);
-    const manual = Number(f.manual) > 0 ? Number(f.manual) : null;
-    if (!sym || !adet || !cost) return;
-    setPort(p => [...p, { id: Date.now(), sym, tur: f.tur, adet, cost, manual }]);
-    setF({ sym: "", tur: f.tur, adet: "", cost: "", manual: "" });
-  }
-  function del(id) { setPort(p => p.filter(x => x.id !== id)); }
-  function setManual(id, v) {
-    const n = Number(v);
-    setPort(p => p.map(x => x.id === id ? { ...x, manual: n > 0 ? n : null } : x));
-  }
 
   if (profileLoading) {
     return <div className="ak-prof"><p className="ak-prof-meta">Yükleniyor…</p></div>;
@@ -137,15 +94,6 @@ export default function Profil() {
   // C2 (2): doğrulanmış istatistik bloğu — yalnız Supabase'teki public strategies'ten (n = toplam strateji sayısı)
   const bestT = strategies.length ? Math.max(...strategies.map(s => Number(s.oos_t) || 0)) : 0;
   const verifiedCount = strategies.filter(s => Number(s.oos_t) >= 2).length;
-
-  const rows = port.map(h => {
-    const cur = priceOf(h);
-    const val = cur * h.adet, costVal = h.cost * h.adet, pnl = val - costVal, pnlPct = costVal ? (pnl / costVal) * 100 : 0;
-    return { ...h, cur, val, pnl, pnlPct };
-  });
-  const total = rows.reduce((a, r) => a + r.val, 0);
-  const totalCost = rows.reduce((a, r) => a + r.cost * r.adet, 0);
-  const totalPnl = total - totalCost, totalPct = totalCost ? (totalPnl / totalCost) * 100 : 0;
 
   return (
     <div className="ak-prof">
@@ -210,50 +158,7 @@ export default function Profil() {
         </div>
       )}
 
-      {isOwner && tab === "portfoy" && (
-        <div className="ak-port">
-          <div className="ak-port-sum">
-            <div><span className="k">Toplam değer</span><b>${total.toLocaleString(undefined, { maximumFractionDigits: 0 })}</b></div>
-            <div><span className="k">Toplam K/Z</span><b className={totalPnl >= 0 ? "pos" : "neg"}>{totalPnl >= 0 ? "+" : ""}${totalPnl.toLocaleString(undefined, { maximumFractionDigits: 0 })} ({totalPct >= 0 ? "+" : ""}{totalPct.toFixed(1)}%)</b></div>
-            <div><span className="k">Pozisyon</span><b>{rows.length}</b></div>
-          </div>
-
-          <div className="ak-port-add">
-            <input list="ak-syms" placeholder="Sembol (SOL, BTC, ASELS…)" value={f.sym} onChange={e => setF({ ...f, sym: e.target.value })} />
-            <datalist id="ak-syms">{ALL_SYMBOLS.map(s => <option key={s.sym} value={s.sym}>{s.name}</option>)}</datalist>
-            <select value={f.tur} onChange={e => setF({ ...f, tur: e.target.value })}><option>Kripto</option><option>Hisse</option></select>
-            <input type="number" placeholder="Adet" value={f.adet} onChange={e => setF({ ...f, adet: e.target.value })} />
-            <input type="number" placeholder="Ort. maliyet" value={f.cost} onChange={e => setF({ ...f, cost: e.target.value })} />
-            <input type="number" placeholder="Güncel fiyat (ops.)" value={f.manual} onChange={e => setF({ ...f, manual: e.target.value })} />
-            <button className="ak-btn ak-btn-primary" onClick={add}><Plus size={15} /> Ekle</button>
-          </div>
-
-          {rows.length === 0 ? (
-            <div className="ak-port-empty"><Wallet size={26} /><p>Portföyün boş. Sembol ekle — değer ve K/Z otomatik hesaplanır. Veriler bu cihazda saklanır.</p></div>
-          ) : (
-            <div className="ak-port-table">
-              <div className="ak-port-h"><span>Sembol</span><span>Tür</span><span>Adet</span><span>Maliyet</span><span>Güncel</span><span>Değer</span><span>K/Z</span><span></span></div>
-              {rows.map(r => (
-                <div className="ak-port-r" key={r.id}>
-                  <span className="sy">{r.sym}</span>
-                  <span className="tu">{r.tur}</span>
-                  <span className="mono">{r.adet}</span>
-                  <span className="mono">{r.cost.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                  {(r.manual != null || !inDataset(r.sym)) ? (
-                    <span className="mono"><input className="curin" type="number" value={r.manual ?? ""} placeholder="fiyat gir" onChange={e => setManual(r.id, e.target.value)} /></span>
-                  ) : (
-                    <span className="mono">{r.cur.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                  )}
-                  <span className="mono">${r.val.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                  <span className={"mono " + (r.pnl >= 0 ? "pos" : "neg")}>{r.pnl >= 0 ? "+" : ""}{r.pnlPct.toFixed(1)}%</span>
-                  <button className="ak-del" onClick={() => del(r.id)}><Trash2 size={14} /></button>
-                </div>
-              ))}
-            </div>
-          )}
-          <p className="ak-port-note">Listedeki semboller örnek veri setinden fiyatlanır; canlı feed bağlanınca (AK-004b) gerçek olacak. Listede olmayan semboller ve manuel girilen fiyatlar tablodaki "Güncel" alanından güncellenir. Bu bir portföy takip aracıdır, yatırım tavsiyesi değildir.</p>
-        </div>
-      )}
+      {isOwner && tab === "portfoy" && <PortfolioPanel />}
     </div>
   );
 }

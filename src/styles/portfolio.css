@@ -1,0 +1,95 @@
+/* AK-078: kişisel portföy modülü */
+.ak-pf-tabs{display:flex;gap:6px;margin-bottom:16px;border-bottom:1px solid var(--line);}
+.ak-pf-tabs button{display:inline-flex;align-items:center;gap:6px;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);font-family:'Chakra Petch';font-size:14px;padding:9px 4px 11px;margin-bottom:-1px;cursor:pointer;transition:.13s;}
+.ak-pf-tabs button:hover:not(:disabled){color:var(--txt);}
+.ak-pf-tabs button.on{color:var(--txt);border-bottom-color:var(--gold);}
+.ak-pf-tabs button:disabled{cursor:default;opacity:.55;}
+.ak-pf-tabs .ak-soon{margin-left:4px;display:inline-flex;align-items:center;gap:3px;}
+
+.ak-pf-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:6px;}
+.ak-pf-sum{display:grid;grid-template-columns:repeat(3,auto);gap:24px;}
+.ak-pf-sum > div{display:flex;flex-direction:column;gap:3px;}
+.ak-pf-sum .k{font-size:11.5px;color:var(--muted);}
+.ak-pf-sum b{font-family:'JetBrains Mono';font-size:19px;color:var(--txt);}
+.ak-pf-sum b.pos{color:var(--good);} .ak-pf-sum b.neg{color:var(--bad);}
+.ak-pf-ctl{display:flex;align-items:center;gap:8px;}
+.ak-pf-toggle{border:1px solid var(--line);background:#101A18;color:var(--muted);border-radius:8px;padding:8px 11px;font-family:'JetBrains Mono';font-size:12px;cursor:pointer;display:grid;place-items:center;}
+.ak-pf-toggle:hover{color:var(--txt);border-color:var(--teal-deep);}
+.ak-btn.sm{height:34px;padding:0 12px;font-size:12.5px;}
+.ak-pf-fxnote{font-size:11px;color:#647974;font-family:'JetBrains Mono';margin:0 0 14px;}
+
+.ak-pf-perf{background:linear-gradient(180deg,#17211F,#141E1C);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:16px;}
+.ak-pf-perf{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.ak-pf-perf-cell{display:flex;flex-direction:column;gap:3px;}
+.ak-pf-perf-cell .lb{font-size:11px;color:var(--muted);font-family:'JetBrains Mono';}
+.ak-pf-perf-cell b{font-family:'JetBrains Mono';font-size:16px;color:var(--txt);}
+.ak-pf-perf-cell b.pos{color:var(--good);} .ak-pf-perf-cell b.neg{color:var(--bad);}
+.ak-pf-perf-note{grid-column:1/-1;font-size:10.5px;color:#647974;line-height:1.5;margin:6px 0 0;font-family:'JetBrains Mono';}
+
+.ak-pf-table{border:1px solid var(--line);border-radius:13px;overflow:hidden;margin-bottom:8px;}
+.ak-pf-h,.ak-pf-r{display:grid;grid-template-columns:1.3fr .7fr 1fr 1fr 1fr 1.1fr;align-items:center;gap:10px;padding:12px 14px;}
+.ak-pf-h{background:#101A18;color:var(--muted);font-family:'JetBrains Mono';font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;}
+.ak-pf-r{border-top:1px solid var(--line);font-size:13.5px;cursor:pointer;transition:.12s;}
+.ak-pf-r:hover{background:var(--panel);}
+.ak-pf-r .sy{font-family:'Chakra Petch';font-weight:600;color:var(--txt);display:flex;flex-direction:column;gap:1px;}
+.ak-pf-r .sy .tu{font-style:normal;font-size:10px;color:var(--muted);font-family:'JetBrains Mono';font-weight:400;}
+.ak-pf-r .mono{font-family:'JetBrains Mono';display:flex;align-items:center;gap:3px;}
+.ak-pf-r .mono.pos{color:var(--good);} .ak-pf-r .mono.neg{color:var(--bad);}
+.ak-pf-r .arr.up{color:var(--good);} .ak-pf-r .arr.dn{color:var(--bad);}
+/* D16: ABD/BIST fiyatlarının yanında her zaman "son güncelleme: X" — canlı ticker olmadığı açıkça belli olsun */
+.ak-pf-pricecell{flex-direction:column;align-items:flex-start !important;gap:1px;}
+.ak-pf-age{font-style:normal;font-size:9.5px;color:#647974;font-weight:400;white-space:nowrap;}
+@media(max-width:720px){
+  .ak-pf-h,.ak-pf-r{grid-template-columns:1.2fr .6fr 1fr 1fr;}
+  .ak-pf-h span:nth-child(3),.ak-pf-r .mono:nth-child(3){display:none;}
+  .ak-pf-perf{grid-template-columns:1fr;}
+}
+
+/* Modal (Ekle / Geçmiş) */
+.ak-pf-modal-ov{position:fixed;inset:0;background:rgba(8,12,11,.7);display:grid;place-items:center;z-index:50;padding:20px;}
+.ak-pf-modal{background:#121C1A;border:1px solid var(--line);border-radius:15px;padding:20px;width:100%;max-width:440px;max-height:88vh;overflow-y:auto;box-shadow:0 20px 50px rgba(0,0,0,.5);}
+.ak-pf-modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+.ak-pf-modal-head h3{display:flex;align-items:center;gap:7px;font-family:'Chakra Petch';font-size:16px;color:var(--txt);margin:0;}
+
+.ak-pf-side{display:flex;background:#0E1816;border:1px solid var(--line);border-radius:10px;padding:3px;margin-bottom:14px;}
+.ak-pf-side button{flex:1;border:none;background:transparent;color:var(--muted);padding:9px;border-radius:7px;font-weight:600;font-size:13px;cursor:pointer;}
+.ak-pf-side button.on.buy{background:#10241F;color:var(--good);}
+.ak-pf-side button.on.sell{background:#2A1714;color:var(--bad);}
+
+.ak-pf-field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;position:relative;}
+.ak-pf-field.sm{margin-bottom:0;}
+.ak-pf-field span{font-size:11.5px;color:var(--muted);font-family:'JetBrains Mono';}
+.ak-pf-field input,.ak-pf-field select{background:#0E1816;border:1px solid var(--line);border-radius:9px;color:var(--txt);padding:9px 11px;font-size:13.5px;font-family:'Inter';outline:none;}
+.ak-pf-field input[type=number],.ak-pf-field input[type=datetime-local]{font-family:'JetBrains Mono';}
+.ak-pf-field input:focus,.ak-pf-field select:focus{border-color:var(--teal-deep);}
+.ak-pf-warn{font-size:11px;color:var(--gold-2);}
+
+.ak-pf-sym-sug{position:absolute;top:100%;left:0;right:0;margin-top:4px;background:#101A18;border:1px solid var(--line);border-radius:10px;overflow:hidden;z-index:5;max-height:220px;overflow-y:auto;box-shadow:0 12px 26px -10px rgba(0,0,0,.7);}
+.ak-pf-sym-sug button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 12px;background:none;border:none;border-bottom:1px solid var(--line);cursor:pointer;}
+.ak-pf-sym-sug button:last-child{border-bottom:none;}
+.ak-pf-sym-sug button:hover{background:var(--panel2);}
+.ak-pf-sym-sug b{font-family:'JetBrains Mono';font-size:12.5px;color:var(--teal-soft);}
+.ak-pf-sym-sug em{font-style:normal;font-size:10.5px;color:var(--muted);margin-left:auto;}
+
+.ak-pf-swap{display:flex;align-items:flex-end;gap:8px;margin-bottom:12px;}
+.ak-pf-swap .ak-pf-field{flex:1;margin-bottom:0;}
+.ak-pf-swapbtn{border:1px solid var(--line);background:#101A18;color:var(--teal-soft);border-radius:8px;width:36px;height:36px;display:grid;place-items:center;cursor:pointer;flex:none;}
+.ak-pf-swapbtn:hover{border-color:var(--teal-deep);}
+.ak-pf-computed{font-family:'JetBrains Mono';font-size:11.5px;color:var(--muted);white-space:nowrap;padding-bottom:9px;}
+
+.ak-pf-chips{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;}
+.ak-pf-chips .ak-pf-field{flex:1;min-width:110px;}
+
+.ak-pf-feetoggle{background:none;border:none;color:var(--teal-soft);font-size:12.5px;cursor:pointer;margin-bottom:12px;padding:0;}
+.ak-pf-feetoggle:hover{text-decoration:underline;}
+
+.ak-pf-err{color:var(--bad);font-size:12.5px;margin:0 0 10px;}
+
+.ak-pf-hist-list{display:flex;flex-direction:column;gap:6px;}
+.ak-pf-hist-row{display:grid;grid-template-columns:.8fr .8fr 1fr 1.2fr;gap:8px;align-items:center;padding:9px 12px;background:#101A18;border:1px solid var(--line);border-radius:9px;font-size:12.5px;}
+.ak-pf-hist-row .tp{font-weight:600;}
+.ak-pf-hist-row.add .tp{color:var(--good);}
+.ak-pf-hist-row.remove .tp{color:var(--bad);}
+.ak-pf-hist-row.update_cost .tp{color:var(--gold-2);}
+.ak-pf-hist-row .mono{font-family:'JetBrains Mono';}
+.ak-pf-hist-row .dt{color:var(--muted);font-size:11px;font-family:'JetBrains Mono';text-align:right;}
