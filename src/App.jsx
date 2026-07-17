@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Routes, Route, Outlet, useLocation } from "react-router-dom";
 import Navbar from "./components/Navbar.jsx";
 import Footer from "./components/Footer.jsx";
+import MobileTabBar from "./components/MobileTabBar.jsx";
 import TickerStrip from "./components/TickerStrip.jsx";
 import Home from "./pages/Home.jsx";
 import { AuthProvider } from "./lib/AuthProvider.jsx";
@@ -41,6 +42,7 @@ function Layout() {
           </Suspense>
         </main>
         <Footer />
+      <MobileTabBar />
       </AuthGateProvider>
     </AuthProvider>
   );

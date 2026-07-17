@@ -108,3 +108,52 @@ main{min-height:60vh;}
 
 @media(max-width:860px){ .ak-nav{display:none;} }
 @media(prefers-reduced-motion:reduce){ .ak-btn-primary:hover{transform:none;} }
+
+/* ================= AK-081/C2: Mobil alt tab bar ================= */
+/* Yalnız dar ekranda görünür; masaüstünde mevcut navbar geçerli.  */
+.ak-tabbar{display:none;}
+@media(max-width:860px){
+  .ak-tabbar{
+    display:flex;position:fixed;bottom:0;left:0;right:0;z-index:30;
+    background:rgba(14,20,22,.94);backdrop-filter:blur(10px);
+    border-top:1px solid var(--line);
+    padding:6px 4px calc(6px + env(safe-area-inset-bottom));
+  }
+  .ak-tab{
+    flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+    padding:5px 0 3px;color:var(--muted);text-decoration:none;
+    font-size:10.5px;font-family:'JetBrains Mono';letter-spacing:.02em;
+    border-radius:10px;transition:color .15s;
+  }
+  .ak-tab.on{color:var(--gold-2, #d4a94e);}
+  .ak-tab:active{opacity:.75;}
+  /* İçerik tab bar altında kalmasın */
+  main{padding-bottom:76px;}
+  /* Footer tab barın hemen üstünde bitsin, çakışmasın */
+  .ak-foot{padding-bottom:84px;}
+}
+
+/* ================= AK-081/C3: Mobil hamburger + çekmece ================= */
+.ak-burger{display:none;}
+@media(max-width:860px){
+  .ak-burger{display:inline-flex;}
+  .ak-drawer-wrap{
+    position:fixed;inset:0;z-index:40;
+    background:rgba(0,0,0,.45);backdrop-filter:blur(2px);
+  }
+  .ak-drawer{
+    position:absolute;top:0;left:0;bottom:0;width:min(78vw,300px);
+    background:var(--panel,#131a1d);border-right:1px solid var(--line);
+    padding:70px 14px 20px;display:flex;flex-direction:column;gap:4px;
+    animation:ak-drawer-in .18s ease-out;
+  }
+  @keyframes ak-drawer-in{from{transform:translateX(-14px);opacity:0;}to{transform:none;opacity:1;}}
+  .ak-drawer-item{
+    display:flex;align-items:center;gap:11px;
+    padding:13px 12px;border-radius:11px;
+    color:var(--txt);text-decoration:none;font-size:15px;
+  }
+  .ak-drawer-item.on{background:rgba(212,169,78,.08);color:var(--gold-2,#d4a94e);}
+  .ak-drawer-item:active{opacity:.75;}
+}
+@media(prefers-reduced-motion:reduce){ .ak-drawer{animation:none;} }

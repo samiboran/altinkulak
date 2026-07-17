@@ -95,6 +95,20 @@ export default function Izleme() {
   const [system, setSystem] = useState(loadSystem);
   const [showSettings, setShowSettings] = useState(false);
   const [sortMode, setSortMode] = useState("varsayilan"); // AK-057: varsayilan | az | chg24h
+  // AK-085/C1: gruplu görünüm — Kripto/BIST/ABD karışık düz liste yerine bölümlenmiş.
+  const [groupFilter, setGroupFilter] = useState("Tümü");
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("ak_watch_collapsed_v1") || "[]")); }
+    catch { return new Set(); }
+  });
+  function toggleGroup(g) {
+    setCollapsed(prev => {
+      const n = new Set(prev);
+      n.has(g) ? n.delete(g) : n.add(g);
+      try { localStorage.setItem("ak_watch_collapsed_v1", JSON.stringify([...n])); } catch { /* sessiz */ }
+      return n;
+    });
+  }
   const [favorites, setFavorites] = useState(loadFavorites); // AK-061: favori semboller, listenin en üstüne sabitlenir
   const [alarmHistory, setAlarmHistory] = useState(listAlarmTrades); // AK-076: sinyal geldiğinde otomatik açılan hayali işlemler
   useEffect(() => { try { localStorage.setItem(WKEY, JSON.stringify(list)); } catch {} }, [list]);
@@ -227,6 +241,21 @@ export default function Izleme() {
     return favs.length ? [...favs, ...rest] : sortedRows;
   })();
 
+  // AK-085/C1: gruplu görünüm. Satırlar grup etiketine bölünür (veri-yok satırlar "Diğer"),
+  // grup içi sıra pinnedRows'tan (favori üstte + seçili sıralama) aynen korunur.
+  const GROUP_ORDER = ["Kripto", "BIST", "ABD", "Avrupa", "Kontrol", "Diğer"];
+  const grouped = (() => {
+    const m = new Map();
+    for (const r of pinnedRows) {
+      const g = r.bad ? "Diğer" : (r.group && r.group !== "—" ? r.group : "Diğer");
+      if (!m.has(g)) m.set(g, []);
+      m.get(g).push(r);
+    }
+    return GROUP_ORDER.filter(g => m.has(g)).map(g => ({ g, rows: m.get(g) }));
+  })();
+  const presentGroups = grouped.map(x => x.g);
+  const visibleGroups = groupFilter === "Tümü" ? grouped : grouped.filter(x => x.g === groupFilter);
+
   // En çok yükselen/düşen — yalnız gerçek veri satırları arasında
   const movers = rows.filter(r => !r.bad && r.chg24h != null);
   const topGainer = movers.length ? movers.reduce((a, b) => (b.chg24h > a.chg24h ? b : a)) : null;
@@ -320,23 +349,46 @@ export default function Izleme() {
       {rows.length === 0 ? (
         <div className="ak-izle-empty"><Eye size={26} /><p>Liste boş. Sembol ekle.</p></div>
       ) : (
-        <div className="ak-izle-list">
-          {pinnedRows.map(r => r.bad ? (
-            <div className="ak-wrow bad" key={r.sym}>
-              <button className={"ak-fav" + (favorites.has(r.sym) ? " on" : "")} onClick={() => toggleFav(r.sym)} title={favorites.has(r.sym) ? "Favorilerden çıkar" : "Favorile"}><Star size={14} fill={favorites.has(r.sym) ? "currentColor" : "none"} /></button>
-              <span className="sy">{r.sym}</span><span className="nm">veri yok — Binance'te {r.sym}USDT bulunamadı, sentetik profili de tanımlı değil</span><button className="ak-del" onClick={() => del(r.sym)}><Trash2 size={14} /></button></div>
-          ) : (
-            <div className="ak-wrow" key={r.sym}>
-              <button className={"ak-fav" + (favorites.has(r.sym) ? " on" : "")} onClick={() => toggleFav(r.sym)} title={favorites.has(r.sym) ? "Favorilerden çıkar" : "Favorile"}><Star size={14} fill={favorites.has(r.sym) ? "currentColor" : "none"} /></button>
-              <div className="ak-wid"><span className="sy">{r.sym}</span><span className="nm">{r.name} · {r.group} <i className={"src" + (r.real ? " real" : "")}>{r.real ? "● gerçek" : "○ örnek"}</i>{r.fresh && <i className={"fresh " + r.fresh.status}>{freshnessLabel(r.fresh)}</i>}</span></div>
-              <Spark sym={r.sym} />
-              <span className="last">{fmtP(r.last)}</span>
-              <span className={"chg " + (r.chg >= 0 ? "pos" : "neg")}>{r.chg >= 0 ? "+" : ""}{r.chg.toFixed(2)}%</span>
-              <span className={"edge " + (r.edge ? "on" : "")}>{r.edge ? <><ShieldCheck size={12} /> edge t={r.t}</> : `t=${r.t}`}</span>
-              <button className="ak-del" onClick={() => del(r.sym)}><Trash2 size={14} /></button>
+        <>
+          {/* AK-085/C1: grup filtresi — çipler yalnız listede fiilen VAR olan gruplardan oluşur */}
+          {presentGroups.length > 1 && (
+            <div className="ak-seg" style={{ marginBottom: 10 }}>
+              <button className={groupFilter === "Tümü" ? "on" : ""} onClick={() => setGroupFilter("Tümü")}>Tümü</button>
+              {presentGroups.map(g => (
+                <button key={g} className={groupFilter === g ? "on" : ""} onClick={() => setGroupFilter(g)}>{g}</button>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+          <div className="ak-izle-list">
+            {visibleGroups.map(({ g, rows: groupRows }) => (
+              <div key={g}>
+                <button
+                  className="ak-group-head"
+                  onClick={() => toggleGroup(g)}
+                  style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", background: "none", border: "none", cursor: "pointer", padding: "10px 2px 4px", color: "inherit", opacity: 0.75, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase" }}
+                >
+                  <span style={{ transform: collapsed.has(g) ? "rotate(-90deg)" : "none", transition: "transform .15s", display: "inline-block" }}>▾</span>
+                  {g} <span style={{ opacity: 0.6 }}>({groupRows.length})</span>
+                </button>
+                {!collapsed.has(g) && groupRows.map(r => r.bad ? (
+                  <div className="ak-wrow bad" key={r.sym}>
+                    <button className={"ak-fav" + (favorites.has(r.sym) ? " on" : "")} onClick={() => toggleFav(r.sym)} title={favorites.has(r.sym) ? "Favorilerden çıkar" : "Favorile"}><Star size={14} fill={favorites.has(r.sym) ? "currentColor" : "none"} /></button>
+                    <span className="sy">{r.sym}</span><span className="nm">veri yok — Binance'te {r.sym}USDT bulunamadı, sentetik profili de tanımlı değil</span><button className="ak-del" onClick={() => del(r.sym)}><Trash2 size={14} /></button></div>
+                ) : (
+                  <div className="ak-wrow" key={r.sym}>
+                    <button className={"ak-fav" + (favorites.has(r.sym) ? " on" : "")} onClick={() => toggleFav(r.sym)} title={favorites.has(r.sym) ? "Favorilerden çıkar" : "Favorile"}><Star size={14} fill={favorites.has(r.sym) ? "currentColor" : "none"} /></button>
+                    <div className="ak-wid"><span className="sy">{r.sym}</span><span className="nm">{r.name} <i className={"src" + (r.real ? " real" : "")}>{r.real ? "● gerçek" : "○ örnek"}</i>{r.fresh && <i className={"fresh " + r.fresh.status}>{freshnessLabel(r.fresh)}</i>}</span></div>
+                    <Spark sym={r.sym} />
+                    <span className="last">{fmtP(r.last)}</span>
+                    <span className={"chg " + (r.chg >= 0 ? "pos" : "neg")}>{r.chg >= 0 ? "+" : ""}{r.chg.toFixed(2)}%</span>
+                    <span className={"edge " + (r.edge ? "on" : "")}>{r.edge ? <><ShieldCheck size={12} /> edge t={r.t}</> : `t=${r.t}`}</span>
+                    <button className="ak-del" onClick={() => del(r.sym)}><Trash2 size={14} /></button>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </>
       )}
       <p className="ak-izle-note">● = gerçek veri (Binance 4H — listedeki HERHANGİ bir kripto sembolü SEMBOL+USDT olarak denenir) · ○ = örnek veri. Edge rozeti geçmiş 900 barın ölçümüdür, gelecek vaadi ve yatırım tavsiyesi değildir.</p>
 

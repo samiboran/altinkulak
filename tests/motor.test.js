@@ -880,4 +880,302 @@ test("canPurchase: yeterli bakiye + koşullar uygunsa onaylanır", () => {
   assert.equal(canPurchase([], item, 200).ok, true);
 });
 
+console.log("mum kalıbı dedektörleri (AK-087/C8 Faz 1)");
+{
+  const { isEngulfing, isPinBar, isDoji, isInsideBar, isMarubozu, findCandlePatterns, findEmaCross, findSupportResistance } = await import("../src/lib/detectors.js");
+  const B = (o, h, l, c) => ({ o, h, l, c });
+
+  test("boğa yutan: kırmızı gövdeyi yeşil tam kapsar", () => {
+    const bars = [B(105, 106, 99, 100), B(99, 107, 98, 106)];
+    assert.equal(isEngulfing(bars, 1), 1);
+  });
+  test("ayı yutan: yeşil gövdeyi kırmızı tam kapsar", () => {
+    const bars = [B(100, 106, 99, 105), B(106, 107, 98, 99)];
+    assert.equal(isEngulfing(bars, 1), -1);
+  });
+  test("yutmayan çift mum 0 döner", () => {
+    const bars = [B(100, 110, 90, 105), B(101, 104, 100, 103)];
+    assert.equal(isEngulfing(bars, 1), 0);
+  });
+  test("çekiç: uzun alt fitil → +1", () => {
+    const bars = [B(100, 101, 90, 100.5)];
+    assert.equal(isPinBar(bars, 0), 1);
+  });
+  test("kayan yıldız: uzun üst fitil → -1", () => {
+    const bars = [B(100, 110, 99.5, 99.8)];
+    assert.equal(isPinBar(bars, 0), -1);
+  });
+  test("doji: kırıntı gövde", () => {
+    const bars = [B(100, 105, 95, 100.2)];
+    assert.equal(isDoji(bars, 0), 1);
+    assert.equal(isDoji([B(100, 105, 95, 104)], 0), 0);
+  });
+  test("inside bar: önceki aralığın içinde", () => {
+    const bars = [B(100, 110, 90, 105), B(101, 106, 98, 103)];
+    assert.equal(isInsideBar(bars, 1), 1);
+    assert.equal(isInsideBar([B(100, 105, 95, 102), B(100, 106, 96, 103)], 1), 0);
+  });
+  test("marubozu: fitilsiz tam gövde, yön doğru", () => {
+    assert.equal(isMarubozu([B(100, 110, 100, 110)], 0), 1);
+    assert.equal(isMarubozu([B(110, 110, 100, 100)], 0), -1);
+    assert.equal(isMarubozu([B(100, 110, 95, 104)], 0), 0);
+  });
+  test("findCandlePatterns aralık tarar, tipleri etiketler", () => {
+    const bars = [B(105, 106, 99, 100), B(99, 107, 98, 106), B(100, 106, 99, 103)];
+    const found = findCandlePatterns(bars, 0, 2);
+    assert.ok(found.some(p => p.type === "engulfing" && p.i === 1 && p.dir === 1));
+    assert.ok(found.some(p => p.type === "insidebar" && p.i === 2));
+  });
+  test("findCandlePatterns lookahead korumalı: i, i+1 verisinden etkilenmez", () => {
+    const base = [B(105, 106, 99, 100), B(99, 107, 98, 106)];
+    const extended = [...base, B(50, 200, 10, 120)]; // sonrasına aşırı uç bar ekle
+    const a = findCandlePatterns(base, 0, 1);
+    const b = findCandlePatterns(extended, 0, 1).filter(p => p.i <= 1);
+    assert.deepEqual(a, b, "sonraki bar geçmiş tespiti değiştirdi — lookahead sızıntısı");
+  });
+  test("golden/death cross tespit edilir", () => {
+    const up = [];
+    for (let i = 0; i < 60; i++) up.push(B(100 - i * 0 + (i < 30 ? -i : (i - 30) * 3), 0, 0, i < 30 ? 100 - i : 70 + (i - 30) * 3));
+    up.forEach(b => { b.h = b.c + 1; b.l = b.c - 1; b.o = b.c; });
+    const crosses = findEmaCross(up, 5, 20);
+    assert.ok(crosses.some(c => c.type === "golden_cross"), "yükselişe dönüşte golden cross bulunmalı");
+  });
+  test("destek/direnç: iki kez dokunulan seviye birleşir", () => {
+    const bars = [];
+    for (let cycle = 0; cycle < 3; cycle++)
+      for (let i = 0; i < 14; i++) {
+        const c = i < 7 ? 100 + i * 2 : 114 - (i - 7) * 2;
+        bars.push(B(c, c + 1, c - 1, c));
+      }
+    const levels = findSupportResistance(bars, 3, 1.0);
+    assert.ok(levels.length >= 1, "en az bir seviye bulunmalı");
+    assert.ok(levels[0].touches >= 2, "tepe seviyesi çok dokunuşlu olmalı");
+  });
+}
+
+console.log("likidite süpürme + PARAMS bloğu (AK-087/C3, AK-084/C1)");
+{
+  const { findSweep } = await import("../src/lib/detectors.js");
+  const { hasParamsBlock, extractParams, upsertParams, ratiosFromLevels } = await import("../src/lib/paramsBlock.js");
+  const B = (o, h, l, c) => ({ o, h, l, c });
+
+  test("sweep_low: alt likidite süpürülüp kapanış geri döner", () => {
+    const bars = [];
+    for (let i = 0; i < 20; i++) bars.push(B(100, 101, 99, 100)); // lo=99
+    bars.push(B(100, 100.5, 98.9, 99.8)); // low 99'un %0.1 altı, kapanış üstte
+    const found = findSweep(bars, 20, 0.0004, 0.0035);
+    assert.equal(found.length, 1);
+    assert.equal(found[0].type, "sweep_low");
+    assert.equal(found[0].dir, 1);
+    assert.equal(found[0].level, 99);
+  });
+  test("bandın dışı süpürme sayılmaz (çok derin ihlal)", () => {
+    const bars = [];
+    for (let i = 0; i < 20; i++) bars.push(B(100, 101, 99, 100));
+    bars.push(B(100, 100.5, 95, 99.8)); // %4 ihlal — maxPct üstü
+    assert.equal(findSweep(bars, 20, 0.0004, 0.0035).length, 0);
+  });
+  test("kapanış geri dönmezse süpürme değil, kırılım", () => {
+    const bars = [];
+    for (let i = 0; i < 20; i++) bars.push(B(100, 101, 99, 100));
+    bars.push(B(100, 100.2, 98.9, 98.95)); // kapanış seviyenin altında kaldı
+    assert.equal(findSweep(bars, 20, 0.0004, 0.0035).length, 0);
+  });
+  test("findSweep lookahead korumalı", () => {
+    const bars = [];
+    for (let i = 0; i < 20; i++) bars.push(B(100, 101, 99, 100));
+    bars.push(B(100, 100.5, 98.9, 99.8));
+    const a = findSweep(bars, 20);
+    const b = findSweep([...bars, B(10, 300, 5, 200)], 20).filter(s => s.i < bars.length);
+    assert.deepEqual(a, b, "sonraki bar geçmiş sweep tespitini değiştirdi");
+  });
+
+  test("PARAMS: blok yoksa başa eklenir, serbest kod korunur", () => {
+    const code = "function mySignal(bars, h) {\n  return null;\n}";
+    const out = upsertParams(code, { slR: 2, tpR: 5 });
+    assert.ok(hasParamsBlock(out));
+    assert.ok(out.endsWith(code), "serbest kod bayt bayt korunmalı");
+    assert.deepEqual(extractParams(out), { slR: 2, tpR: 5 });
+  });
+  test("PARAMS: mevcut blok güncellenir, diğer anahtarlar yaşar", () => {
+    let code = upsertParams("// benim kodum\nreturn 1;", { fvgMinAtr: 0.3, ote: 0.62 });
+    code = upsertParams(code, { ote: 0.5 });
+    assert.deepEqual(extractParams(code), { fvgMinAtr: 0.3, ote: 0.5 });
+    assert.ok(code.includes("// benim kodum"));
+  });
+  test("PARAMS: bozuk blok null döner, upsert yine de güvenli", () => {
+    const broken = '// AK-PARAMS x\nconst PARAMS = { $$$ };\nkodum();';
+    assert.equal(extractParams(broken), null);
+    const fixed = upsertParams(broken, { slR: 2 });
+    assert.deepEqual(extractParams(fixed), { slR: 2 });
+    assert.ok(fixed.includes("kodum();"), "kullanıcı kodu asla silinmez");
+  });
+  test("PARAMS: string ve boolean değerler taşınır", () => {
+    const out = upsertParams("", { setup: "sweep+fvg", trendFiltre: true });
+    assert.deepEqual(extractParams(out), { setup: "sweep+fvg", trendFiltre: true });
+  });
+  test("ratiosFromLevels: 100 giriş / 98 SL / 110 TP → 1:5R", () => {
+    assert.deepEqual(ratiosFromLevels(100, 98, 110), { slR: 1, tpR: 5 });
+    assert.equal(ratiosFromLevels(100, 100, 110), null, "sıfır risk → null");
+  });
+}
+
+console.log("Brier skorlama — Tahmin Ligi motoru (AK-083/M1)");
+{
+  const { brierScore, meanBrier, leaderboard, calibrationCurve, overconfidence } = await import("../src/lib/brier.js");
+
+  test("Brier temel: %50 güven her sonuçta 0.25", () => {
+    assert.equal(brierScore(0.5, true), 0.25);
+    assert.equal(brierScore(0.5, false), 0.25);
+  });
+  test("Brier uçlar: %95 tuttu → küçük, %95 tutmadı → büyük ceza", () => {
+    assert.ok(brierScore(0.95, true) < 0.01);
+    assert.ok(brierScore(0.95, false) > 0.9);
+  });
+  test("güven [0.5, 0.95] bandına kıstırılır", () => {
+    assert.equal(brierScore(0.99, false), brierScore(0.95, false));
+    assert.equal(brierScore(0.2, true), brierScore(0.5, true));
+  });
+  test("kalibre mütevazı, aşırı özgüvenliyi yener", () => {
+    // A: %60 güven, 10'da 6 tutturur (kalibre). B: %90 güven, 10'da 6 tutturur.
+    const mk = (conf, hits, n) => Array.from({ length: n }, (_, i) => ({ confidence: conf, hit: i < hits }));
+    const a = meanBrier(mk(0.6, 6, 10)), b = meanBrier(mk(0.9, 6, 10));
+    assert.ok(a < b, `kalibre (${a}) aşırı özgüvenden (${b}) iyi olmalı`);
+  });
+  test("leaderboard: az katılımlı sıralama dışına düşer", () => {
+    const lb = leaderboard([
+      { userId: "tek-atis", preds: [{ confidence: 0.95, hit: true }] },
+      { userId: "istikrarli", preds: Array.from({ length: 6 }, () => ({ confidence: 0.6, hit: true })) },
+    ], 4);
+    assert.equal(lb[0].userId, "istikrarli", "tek şanslı tahmin ligi kazanmamalı");
+    assert.equal(lb[1].ranked, false);
+  });
+  test("çözülmemiş tahminler (hit yok) skora girmez", () => {
+    assert.equal(meanBrier([{ confidence: 0.8 }, { confidence: 0.7, hit: true }]), brierScore(0.7, true));
+  });
+  test("kalibrasyon eğrisi: kova isabet oranları doğru", () => {
+    const preds = [
+      ...Array.from({ length: 10 }, (_, i) => ({ confidence: 0.82, hit: i < 5 })), // %80 kovası, %50 isabet
+      ...Array.from({ length: 4 }, () => ({ confidence: 0.55, hit: true })),
+    ];
+    const curve = calibrationCurve(preds);
+    const b80 = curve.find(b => b.lo === 0.8);
+    assert.equal(b80.n, 10);
+    assert.equal(b80.hitRate, 0.5);
+  });
+  test("overconfidence: %80 güven + %50 isabet → ~+0.3, az veride null", () => {
+    const preds = Array.from({ length: 10 }, (_, i) => ({ confidence: 0.8, hit: i < 5 }));
+    assert.equal(overconfidence(preds), 0.3);
+    assert.equal(overconfidence(preds.slice(0, 3)), null);
+  });
+}
+
+console.log("Strateji Çıkarıcı kod üreteci (AK-087/C5)");
+{
+  const { generateSignalCode, AVAILABLE_BLOCKS } = await import("../src/lib/codegen.js");
+  const { extractParams, hasParamsBlock } = await import("../src/lib/paramsBlock.js");
+
+  test("sweep+fvg+ote üretimi: PARAMS bloklu, parse edilebilir, hipotez uyarılı", () => {
+    const code = generateSignalCode(["sweep", "fvg", "ote"], { slR: 2, tpR: 5 });
+    assert.ok(hasParamsBlock(code));
+    const p = extractParams(code);
+    assert.equal(p.tpR, 5);
+    assert.equal(p.sweepLookback, 20);
+    assert.equal(p.oteLevel, 0.62);
+    assert.ok(code.includes("HİPOTEZ"), "dürüstlük uyarısı kodda olmalı");
+    new Function(code + "\nreturn mySignal;"); // sözdizimi geçerli mi
+  });
+  test("yön bloğu yoksa varsayılan dir eklenir, sweep varsa eklenmez", () => {
+    assert.ok(generateSignalCode(["fvg"]).includes("let dir = 1"));
+    assert.ok(!generateSignalCode(["sweep", "fvg"]).includes("let dir = 1"));
+  });
+  test("boş/geçersiz seçim null", () => {
+    assert.equal(generateSignalCode([]), null);
+    assert.equal(generateSignalCode(["olmayan_blok"]), null);
+  });
+  test("AVAILABLE_BLOCKS panel için etiketli liste verir", () => {
+    assert.ok(AVAILABLE_BLOCKS.length >= 5);
+    assert.ok(AVAILABLE_BLOCKS.every(b => b.key && b.label));
+  });
+}
+
+console.log("kod üreteci uçtan uca (AK-087/C5 duman)");
+{
+  const { generateSignalCode } = await import("../src/lib/codegen.js");
+  const det = await import("../src/lib/detectors.js");
+
+  test("üretilen sweep kodu, sentetik süpürme barında sinyal döndürür", () => {
+    const code = generateSignalCode(["sweep"], { slR: 2, tpR: 5 });
+    const mySignal = new Function(code + "\nreturn mySignal;")();
+    const B = (o, h, l, c) => ({ o, h, l, c });
+    const bars = [];
+    for (let i = 0; i < 70; i++) bars.push(B(100, 101, 99, 100)); // lo=99 likidite
+    bars.push(B(100, 100.5, 98.93, 99.9)); // alt süpürme + geri kapanış
+    const sig = mySignal(bars, det);
+    assert.ok(sig, "sinyal dönmeli");
+    assert.equal(sig.dir, 1, "alt süpürme → LONG");
+    assert.ok(sig.stop < sig.entry && sig.target > sig.entry, "long: stop altta, hedef üstte");
+    const rr = Math.abs(sig.target - sig.entry) / Math.abs(sig.entry - sig.stop);
+    assert.ok(Math.abs(rr - 5) < 0.01, `R oranı PARAMS.tpR'yi izlemeli (5 bekleniyor, ${rr.toFixed(2)} geldi)`);
+  });
+}
+
+console.log("rozet motoru (AK-083/M3)");
+{
+  const { deriveBadges, visibleBadges, BADGES } = await import("../src/lib/badges.js");
+
+  test("streak 30 → hem 7 hem 30 rozeti", () => {
+    const b = deriveBadges({ maxStreakDays: 30, sicilCount: 40 });
+    assert.ok(b.includes("seri_7") && b.includes("seri_30") && b.includes("ilk_sicil"));
+  });
+  test("kalibrasyon: 8 hafta şartı — 7 haftada verilmez", () => {
+    assert.ok(!deriveBadges({ seasonBrier: { avg: 0.1, weeks: 7 } }).includes("kalibrasyon"));
+    assert.ok(deriveBadges({ seasonBrier: { avg: 0.1, weeks: 8 } }).includes("kalibrasyon"));
+  });
+  test("gizli rozet kazanılmadan listede görünmez, kazanılınca görünür", () => {
+    const before = visibleBadges([]);
+    assert.ok(!before.some(b => b.key === "disiplin"), "gizli + kazanılmamış → yok");
+    const after = visibleBadges(["disiplin"]);
+    assert.ok(after.some(b => b.key === "disiplin" && b.earned));
+  });
+  test("kurucu: 100. üye alır, 101. almaz", () => {
+    assert.ok(deriveBadges({ memberIndex: 100 }).includes("kurucu"));
+    assert.ok(!deriveBadges({ memberIndex: 101 }).includes("kurucu"));
+  });
+  test("boş stats → boş rozet, çökmez", () => {
+    assert.deepEqual(deriveBadges(), []);
+    assert.equal(visibleBadges().filter(b => b.earned).length, 0);
+  });
+}
+
+console.log("achievement motoru (AK-086)");
+{
+  const { deriveProgress, newlyCompleted, ACHIEVEMENTS } = await import("../src/lib/achievements.js");
+
+  test("progress: 3/5 streak → %60, done false", () => {
+    const p = deriveProgress({ loginStreak: 3 }).find(a => a.key === "gozlemci");
+    assert.equal(p.pct, 60);
+    assert.equal(p.done, false);
+    assert.equal(p.current, 3);
+  });
+  test("hedef aşımı: current hedefte kıstırılır, pct 100'ü aşmaz", () => {
+    const p = deriveProgress({ loginStreak: 12 }).find(a => a.key === "gozlemci");
+    assert.equal(p.current, 5);
+    assert.equal(p.pct, 100);
+    assert.equal(p.done, true);
+  });
+  test("newlyCompleted: yalnız YENİ bitenler döner", () => {
+    const stats = { lessonsDone: 1, loginStreak: 5 };
+    const fresh = newlyCompleted(stats, ["ogrenci"]);
+    assert.deepEqual(fresh.map(a => a.key), ["gozlemci"], "önceden bitmiş tekrar dönmemeli");
+  });
+  test("hiçbir achievement işlem SAYISINA bağlı değil (süreç ilkesi)", () => {
+    assert.ok(ACHIEVEMENTS.every(a => !/trade|islem|pozisyon/i.test(a.stat)), "trade-bazlı stat yasak");
+  });
+  test("boş stats: hepsi %0, hiçbiri done, çökmez", () => {
+    const all = deriveProgress();
+    assert.ok(all.every(a => a.pct === 0 && !a.done));
+  });
+}
+
 console.log(`\n${pass} test geçti${process.exitCode ? " (HATALAR VAR)" : " — motor sağlam."}`);

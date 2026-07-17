@@ -184,6 +184,11 @@ export default function Ben() {
         <p className="ak-rank-note">Rütbe kazanç oranından gelmez: sınırlandırılmış R birikimi + istatistik. Tek büyük işlemle atlanamaz; sicil silinmediği için geri de alınamaz.</p>
       </div>
 
+      {/* AK-023-EXT: Enerji kartı — Kulak Puanı bakiyesi + katkı rütbesi.
+          Veri Supabase point_events'ten (Code'un points.js modülü) — public rank cihaz-içi
+          veriden beslenemez; yapılandırılmamışsa kart 0 gösterir, fabrike veri yok (D6). */}
+      <EnerjiKart />
+
       {/* AK-023-EXT: Kulak Puanı — bakiye harcanınca düşer, lifetime (Katkı Rütbesi'ni besleyen) düşmez */}
       {user && (
         <div className="ak-rankcard ak-energy-card">
@@ -380,6 +385,30 @@ export default function Ben() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+
+function EnerjiKart() {
+  const { user } = useAuth();
+  const [ev, setEv] = useState([]);
+  useEffect(() => {
+    let ok = true;
+    if (user?.id) listPointEvents(user.id).then(r => { if (ok) setEv(r || []); });
+    return () => { ok = false; };
+  }, [user?.id]);
+  const lifetime = deriveLifetime(ev);
+  const balance = deriveBalance(ev);
+  const cr = contribRank(lifetime);
+  return (
+    <div className="ak-rankcard" style={{ marginTop: 10 }}>
+      <div className="ak-rank-main">
+        <span className="ak-rank-name">⚡ {balance} puan</span>
+        <span className="ak-rank-ctx">toplam kazanılan {lifetime} · katkı rütbesi: {cr.name}</span>
+      </div>
+      {cr.next && <span className="ak-rank-next">Sıradaki: <b>{cr.next.name}</b> — {cr.next.needP} puan kaldı</span>}
+      <p className="ak-rank-note">Kulak Puanı topluluğa katkıdan kazanılır, özellik açmak için harcanır — harcamak katkı rütbeni düşürmez. Kurallar: <a href="#/puanlar" style={{ color: "inherit" }}>/puanlar</a>. Edge Rütbesi'ne asla etki etmez.</p>
     </div>
   );
 }

@@ -6,7 +6,12 @@ const supabaseUrl = env.VITE_SUPABASE_URL || "";
 const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || "";
 
 // .env henüz eklenmediyse client kurulmaz — sayfalar çökmeden "yapılandırılmamış" durumuna düşer.
-export const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
+// AK-081/C1: oturum kalıcılığı açıkça sabitlenir — bir kez giren, çıkış yapana dek girişli kalır.
+export const supabase = supabaseUrl && supabaseAnonKey
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+    })
+  : null;
 
 const NOT_CONFIGURED = { error: { message: "Supabase yapılandırılmamış — .env dosyasını ekle (bkz. .env.example)." } };
 
@@ -16,6 +21,13 @@ export async function signInWithEmail(email) {
     email,
     options: { emailRedirectTo: window.location.origin + env.BASE_URL },
   });
+}
+
+// AK-081/C1: magic link mail uygulamasının İÇ tarayıcısında açılınca oturum yanlış tarayıcıda
+// doğuyor (Android/Gmail webview tuzağı). Maildeki 6 haneli kodu SİTEDE girmek bunu çözer.
+export async function verifyEmailOtp(email, token) {
+  if (!supabase) return NOT_CONFIGURED;
+  return supabase.auth.verifyOtp({ email, token: token.trim(), type: "email" });
 }
 
 export async function signOut() {

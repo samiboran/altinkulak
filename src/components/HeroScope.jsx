@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { Link } from "react-router-dom";
 import { ChevronRight, PlayCircle } from "lucide-react";
 import { buildWave, TIP_Y } from "../lib/homeData.js";
 
@@ -32,8 +33,8 @@ export default function HeroScope({ hero }) {
         <h1 className="ak-h1">{hero.h}</h1>
         <p className="ak-sub">{hero.s}</p>
         <div className="ak-cta">
-          <button className="ak-btn ak-btn-primary">Stratejini test et <ChevronRight size={16} /></button>
-          <button className="ak-btn ak-btn-ghost"><PlayCircle size={16} /> İzle &amp; uygula</button>
+          <Link className="ak-btn ak-btn-primary" to="/lab">Stratejini test et <ChevronRight size={16} /></Link>
+          <Link className="ak-btn ak-btn-ghost" to="/ogren"><PlayCircle size={16} /> İzle &amp; uygula</Link>
         </div>
       </div>
     </section>

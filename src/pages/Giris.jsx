@@ -1,17 +1,34 @@
 import { useState } from "react";
-import { KeyRound, Mail, Clock, Send } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { KeyRound, Mail, Clock, Send, Hash } from "lucide-react";
 import AkLogo from "../components/AkLogo.jsx";
-import { signInWithEmail } from "../lib/supabase.js";
+import { signInWithEmail, verifyEmailOtp } from "../lib/supabase.js";
 import "../styles/giris.css";
 
 export default function Giris() {
+  const navigate = useNavigate();
   const [mode, setMode] = useState("kod"); // kod | bekleme | eposta
   const [done, setDone] = useState(false);
   const [val, setVal] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  // AK-081/C1: linke tıklamak yerine maildeki 6 haneli kodu BURADA girme yolu —
+  // link mail uygulamasının iç tarayıcısında açılınca oturum yanlış tarayıcıda kalıyordu.
+  const [otp, setOtp] = useState("");
+  const [sentTo, setSentTo] = useState("");
 
-  function switchMode(m) { setMode(m); setDone(false); setVal(""); setErr(""); }
+  function switchMode(m) { setMode(m); setDone(false); setVal(""); setErr(""); setOtp(""); }
+
+  async function submitOtp() {
+    const t = otp.trim();
+    if (!/^\d{6}$/.test(t)) { setErr("Maildeki 6 haneli kodu gir."); return; }
+    setErr("");
+    setBusy(true);
+    const { error } = await verifyEmailOtp(sentTo, t);
+    setBusy(false);
+    if (error) { setErr("Kod doğrulanamadı — süresi dolmuş olabilir, yeni link iste."); return; }
+    navigate("/ben"); // oturum bu tarayıcıda açıldı, kalıcıdır
+  }
 
   async function submit() {
     const v = val.trim();
@@ -25,6 +42,7 @@ export default function Giris() {
       const { error } = await signInWithEmail(v);
       setBusy(false);
       if (error) { setErr(error.message); return; }
+      setSentTo(v);
       setDone(true);
       return;
     }
@@ -48,7 +66,15 @@ export default function Giris() {
         {done ? (
           <div className="ak-giris-done">
             <Clock size={20} />
-            <p>{mode === "kod" ? "Kod doğrulandığında hesabın açılacak." : mode === "eposta" ? "Sihirli link e-postana gönderildi — gelen kutunu kontrol et." : "Listeye eklendin. Sıran gelince e-posta göndereceğiz."}</p>
+            <p>{mode === "kod" ? "Kod doğrulandığında hesabın açılacak." : mode === "eposta" ? "E-postana bir giriş linki ve 6 haneli kod gönderildi." : "Listeye eklendin. Sıran gelince e-posta göndereceğiz."}</p>
+            {mode === "eposta" && (
+              <div className="ak-giris-form" style={{ marginTop: 12 }}>
+                <div className="ak-in"><Hash size={16} /><input placeholder="Maildeki 6 haneli kod" inputMode="numeric" maxLength={6} value={otp} onChange={e => { setOtp(e.target.value.replace(/\D/g, "")); setErr(""); }} /></div>
+                <button className="ak-btn ak-btn-primary" onClick={submitOtp} disabled={busy}>{busy ? "Doğrulanıyor…" : "Kodla giriş yap"}</button>
+                <p className="ak-giris-foot" style={{ marginTop: 6 }}>Linke tıklamak yerine kodu burada girmen önerilir — böylece oturum bu tarayıcıda açılır ve kalıcı olur.</p>
+                {err && <p className="ak-giris-err">{err}</p>}
+              </div>
+            )}
           </div>
         ) : (
           <div className="ak-giris-form">

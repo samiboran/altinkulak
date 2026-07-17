@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { NavLink, Link, useNavigate } from "react-router-dom";
-import { Search, Bell, User, LogOut, ChevronDown } from "lucide-react";
+import { Search, User, LogOut, ChevronDown } from "lucide-react";
 import AkLogo from "./AkLogo.jsx";
+import MobileMenu from "./MobileMenu.jsx";
 import { useAuth } from "../lib/AuthProvider.jsx";
 import { signOut } from "../lib/supabase.js";
 
@@ -31,6 +32,7 @@ export default function Navbar() {
 
   return (
     <header className="ak-top">
+      <MobileMenu />
       <Link className="ak-brand" to="/">
         <AkLogo size={30} />
         <span className="ak-word">altın<span>kulak</span></span>
@@ -53,8 +55,8 @@ export default function Navbar() {
         </div>
       </nav>
       <div className="ak-tools">
-        <button className="ak-icon" aria-label="Ara"><Search size={18} /></button>
-        <button className="ak-icon" aria-label="Bildirimler"><Bell size={18} /></button>
+        {/* AK-082/C2: Ara → Tarama; zil kaldırıldı (bildirim sistemi gelene dek). */}
+        <button className="ak-icon" aria-label="Ara" onClick={() => navigate("/tarama")}><Search size={18} /></button>
         {!loading && user ? (
           <>
             <Link className="ak-signin" to="/ben">Ben</Link>
