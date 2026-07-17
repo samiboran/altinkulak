@@ -1,14 +1,44 @@
 /* AK-050: MA50 için mevcut Order Block moru (.ak-c-ob) ile aynı ton — yeni sabit hex yerine tek yerden değişken */
 :root{ --ma-purple:#7C8CF0; }
 
-.ak-chartwrap{margin-bottom:18px;}
-.ak-cfilter{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:10px;}
+.ak-chartwrap{margin-bottom:18px;position:relative;}
 .ak-cflab{font-family:'JetBrains Mono';font-size:11.5px;color:var(--muted);}
 .ak-cchip{border:1px solid var(--line);background:transparent;color:var(--muted);padding:6px 12px;border-radius:18px;font-size:12.5px;cursor:pointer;transition:.13s;}
 .ak-cchip:hover{color:var(--txt);}
 .ak-cchip.on{border-color:#473c1c;background:#241E10;color:var(--gold-2);}
 .ak-cchip.teal.on{border-color:#1f5249;background:#10241F;color:var(--teal-soft);}
 .ak-chart{width:100%;height:340px;background:linear-gradient(180deg,#11181A,#0E1416);border:1px solid var(--line);border-radius:14px;touch-action:none;}
+
+/* AK-082 C1/C3: Binance modeli dikey side toolbar — masaüstünde grafiğin solunda ince ikon şeridi,
+   tıklayınca yanında flyout panel açılır. Chart.jsx dokunulmadı: bu yalnız onu saran düzen. */
+.ak-chart-shell{display:flex;align-items:flex-start;gap:10px;}
+.ak-chart-main{flex:1;min-width:0;}
+.ak-cf-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+.ak-toolrail{position:relative;flex:none;display:flex;flex-direction:column;gap:3px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:5px;}
+.ak-rail-btn{position:relative;width:34px;height:34px;border:none;border-radius:8px;background:transparent;color:var(--muted);display:grid;place-items:center;cursor:pointer;transition:.13s;}
+.ak-rail-btn:hover{color:var(--txt);background:var(--panel2);}
+.ak-rail-btn.on{color:var(--gold-2);background:#241E10;}
+.ak-rail-badge{position:absolute;top:-3px;right:-3px;background:var(--gold);color:#1a1305;font-family:'JetBrains Mono';font-size:9px;font-weight:600;border-radius:8px;min-width:14px;height:14px;line-height:14px;padding:0 3px;}
+.ak-rail-panel{position:absolute;top:0;left:calc(100% + 8px);z-index:25;background:#121C1A;border:1px solid var(--line);border-radius:12px;padding:12px;width:230px;box-shadow:0 8px 24px rgba(0,0,0,.45);display:flex;flex-direction:column;gap:8px;}
+.ak-rail-panel .ak-cchip{width:100%;text-align:left;border-radius:9px;}
+.ak-rail-panel-head{font-family:'JetBrains Mono';font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:4px;}
+.ak-rail-panel-head:first-child{margin-top:0;}
+.ak-rail-panel-row{display:flex;gap:6px;}
+.ak-rail-hint{font-size:11.5px;color:var(--teal-soft);font-family:'JetBrains Mono';}
+.ak-rail-veil{display:none;}
+@media(max-width:860px){
+  .ak-chart-shell{flex-direction:column;}
+  .ak-toolrail{order:2;flex-direction:row;width:100%;justify-content:center;}
+  .ak-rail-veil{display:block;position:fixed;inset:0;z-index:44;background:rgba(0,0,0,.45);}
+  .ak-rail-panel{
+    position:fixed;top:auto;left:0;right:0;bottom:0;z-index:45;
+    width:auto;max-width:none;max-height:70vh;overflow-y:auto;
+    border-radius:16px 16px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom));
+    animation:ak-sheet-in .18s ease-out;
+  }
+  @keyframes ak-sheet-in{from{transform:translateY(16px);opacity:0;}to{transform:none;opacity:1;}}
+}
+@media(prefers-reduced-motion:reduce){ .ak-rail-panel{animation:none;} }
 
 /* AK-058: kağıt-işlem kutusu — sağ üst, Binance Long/Short kutusunun eğitim/kaldıraçsız hali */
 .ak-c-outer{position:relative;}

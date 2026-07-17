@@ -65,6 +65,15 @@ export async function fetchProfileById(id) {
   return data;
 }
 
+// Toplu handle çözümü — lig tablosu gibi çok kullanıcılı listelerde tek tek fetchProfileById
+// çağırmak yerine (N+1) tek sorguda id->handle eşlemesi döner.
+export async function fetchProfilesByIds(ids) {
+  if (!supabase || !ids || !ids.length) return {};
+  const { data, error } = await supabase.from("profiles").select("id, handle").in("id", ids);
+  if (error) return {};
+  return Object.fromEntries((data || []).map((p) => [p.id, p.handle]));
+}
+
 export async function fetchStrategiesByUser(userId) {
   if (!supabase || !userId) return [];
   const { data, error } = await supabase.from("strategies").select("*").eq("user_id", userId).order("created_at", { ascending: false });
@@ -88,4 +97,39 @@ export async function unfollowUser(followerId, followingId) {
   if (!supabase || !followerId || !followingId) return false;
   const { error } = await supabase.from("follows").delete().eq("follower_id", followerId).eq("following_id", followingId);
   return !error;
+}
+
+// ================= AK-080-EXT: davet kodu + bekleme listesi (Giris.jsx) =================
+// invites şeması bu repo'nun migration'ları DIŞINDA (Fable'ın schema.sql'i) Supabase'e zaten
+// yüklendi — kesin bilinen alanlar: code (metin), used_by (uuid, null=kullanılmamış; görev
+// talimatının kendisinden). Emin olunmayan ekstra sütunlara YAZILMAZ — var olmayan bir sütuna
+// update göndermek isteğin tamamını başarısız kılar, minimum varsayım en güvenlisi.
+
+export async function verifyInviteCode(code) {
+  if (!supabase || !code) return { valid: false, error: "Kod gerekli." };
+  const clean = code.trim().toUpperCase();
+  const { data, error } = await supabase.from("invites").select("id, used_by").eq("code", clean).maybeSingle();
+  if (error) return { valid: false, error: "Kod doğrulanamadı — tekrar dene." };
+  if (!data) return { valid: false, error: "Bu davet kodu tanınmıyor." };
+  if (data.used_by) return { valid: false, error: "Bu davet kodu zaten kullanılmış." };
+  return { valid: true, inviteId: data.id };
+}
+
+// E-posta OTP doğrulanıp gerçek user.id elde edildikten SONRA çağrılır (Giris.jsx submitOtp).
+// .is("used_by", null) yarış durumuna karşı korur — iki sekmede aynı kod eşzamanlı kullanılırsa yalnız ilki kazanır.
+export async function redeemInviteCode(inviteId, userId) {
+  if (!supabase || !inviteId || !userId) return false;
+  const { error } = await supabase.from("invites").update({ used_by: userId }).eq("id", inviteId).is("used_by", null);
+  return !error;
+}
+
+// Bekleme listesi — insert-only, kimlik doğrulama gerektirmez (henüz hesabı olmayan kişi katılır).
+export async function joinWaitlist(email) {
+  if (!supabase || !email) return { ok: false };
+  const { error } = await supabase.from("waitlist").insert({ email: email.trim().toLowerCase() });
+  if (error) {
+    if (error.code === "23505") return { ok: true }; // zaten listede — kullanıcıya "başarılı" görünür, bilgi sızdırmaz
+    return { ok: false };
+  }
+  return { ok: true };
 }

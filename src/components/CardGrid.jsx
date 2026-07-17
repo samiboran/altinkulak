@@ -1,8 +1,8 @@
 import { Link } from "react-router-dom";
-import { PlayCircle, Newspaper, Cpu, FlaskConical, GraduationCap, Users } from "lucide-react";
+import { PlayCircle, Newspaper, Cpu, FlaskConical, GraduationCap, Users, Target } from "lucide-react";
 import { CARDS } from "../lib/homeData.js";
 
-const ICONS = { PlayCircle, Newspaper, Cpu, FlaskConical, GraduationCap, Users };
+const ICONS = { PlayCircle, Newspaper, Cpu, FlaskConical, GraduationCap, Users, Target };
 
 export default function CardGrid() {
   return (

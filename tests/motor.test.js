@@ -1178,4 +1178,70 @@ console.log("achievement motoru (AK-086)");
   });
 }
 
+console.log("Tahmin Ligi — veri katmanı (AK-083 UI)");
+{
+  const {
+    toBrierRows, groupByUser, fetchActiveQuestion, fetchMyPrediction,
+    lockPrediction, fetchResolvedQuestions, fetchResolvedPredictions, fetchMyResolvedPredictions,
+  } = await import("../src/lib/predictions.js");
+  const { fetchProfilesByIds } = await import("../src/lib/supabase.js");
+
+  test("toBrierRows: yalnız çözülmüş+outcome'lu satırlar geçer, hit doğru hesaplanır", () => {
+    const raw = [
+      { user_id: "u1", direction: "up", confidence: 0.8, question: { resolved: true, outcome: "up" } },
+      { user_id: "u1", direction: "down", confidence: 0.6, question: { resolved: true, outcome: "up" } },
+      { user_id: "u2", direction: "up", confidence: 0.7, question: { resolved: false, outcome: null } },
+      { user_id: "u2", direction: "up", confidence: 0.9, question: null },
+    ];
+    const rows = toBrierRows(raw);
+    assert.equal(rows.length, 2);
+    assert.deepEqual(rows[0], { userId: "u1", confidence: 0.8, hit: true });
+    assert.deepEqual(rows[1], { userId: "u1", confidence: 0.6, hit: false });
+  });
+  test("toBrierRows: boş/eksik girdide çökmez", () => {
+    assert.deepEqual(toBrierRows(null), []);
+    assert.deepEqual(toBrierRows([]), []);
+  });
+  test("groupByUser: aynı kullanıcının tahminleri tek girdide birikir", () => {
+    const rows = [
+      { userId: "u1", confidence: 0.8, hit: true },
+      { userId: "u2", confidence: 0.6, hit: false },
+      { userId: "u1", confidence: 0.7, hit: false },
+    ];
+    const grouped = groupByUser(rows);
+    assert.equal(grouped.length, 2);
+    const u1 = grouped.find((g) => g.userId === "u1");
+    assert.equal(u1.preds.length, 2);
+  });
+
+  // Bu test ortamında (.env boş) supabase client null'dur — motor.test.js'teki loadReal/AK-077
+  // testleriyle aynı ilke: async sonuçlar top-level await ile önce çözülür, test() SENKRON doğrular.
+  const activeQ = await fetchActiveQuestion();
+  const myPred = await fetchMyPrediction("q1", "u1");
+  const lockRes = await lockPrediction("q1", "u1", "up", 0.8);
+  const lockBadDir = await lockPrediction("q1", "u1", "sideways", 0.8);
+  const resolvedQs = await fetchResolvedQuestions();
+  const resolvedPreds = await fetchResolvedPredictions();
+  const myResolvedPreds = await fetchMyResolvedPredictions("u1");
+  const profilesMap = await fetchProfilesByIds(["u1", "u2"]);
+  const profilesMapEmpty = await fetchProfilesByIds([]);
+
+  test("Supabase yapılandırılmamışken tahmin sorguları dürüst boş değer döner", () => {
+    assert.equal(activeQ, null);
+    assert.equal(myPred, null);
+    assert.deepEqual(resolvedQs, []);
+    assert.deepEqual(resolvedPreds, []);
+    assert.deepEqual(myResolvedPreds, []);
+    assert.deepEqual(profilesMap, {});
+    assert.deepEqual(profilesMapEmpty, {});
+  });
+  test("lockPrediction: yapılandırılmamışken/eksik id'yle başarısız döner (çökmez)", () => {
+    assert.equal(lockRes.ok, false);
+  });
+  test("lockPrediction: geçersiz yön reddedilir", () => {
+    assert.equal(lockBadDir.ok, false);
+    assert.match(lockBadDir.error, /yön/i);
+  });
+}
+
 console.log(`\n${pass} test geçti${process.exitCode ? " (HATALAR VAR)" : " — motor sağlam."}`);

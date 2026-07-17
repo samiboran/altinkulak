@@ -47,4 +47,5 @@ export const CARDS = [
   { n: "04", icon: "FlaskConical",  title: "Haftanın Stratejisi",   desc: "Lab’dan öne çıkan, doğrulanmış setup.", chip: "t = 2.3", to: "/lab" },
   { n: "05", icon: "GraduationCap", title: "Eğitim · Başla",        desc: "Temel ekonomiden ileri analize kit’ler.", chip: null, to: "/ogren" },
   { n: "06", icon: "Users",         title: "Topluluk",              desc: "Trend videolar, strateji paylaş & fork’la.", chip: null, to: "/topluluk" },
+  { n: "07", icon: "Target",        title: "Haftanın Tahmini",      desc: "Yönünü tahmin et, güvenini ölç — Tahmin Ligi.", chip: "Yeni", to: "/lig" },
 ];

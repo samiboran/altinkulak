@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { FlaskConical, Code2, Activity, Play, Pause, SkipBack, SkipForward, RotateCcw, ShieldCheck, ShieldAlert, Search, SlidersHorizontal, Monitor, Dices, Calculator, LayoutGrid, Target, Download } from "lucide-react";
+import { FlaskConical, Code2, Activity, Play, Pause, SkipBack, SkipForward, RotateCcw, ShieldCheck, ShieldAlert, Search, SlidersHorizontal, Monitor, Dices, Calculator, LayoutGrid, Target, Download, PenTool } from "lucide-react";
 import { getBars, MARKET_GROUPS, ALL_SYMBOLS, loadReal, isReal, hasData, pairFor, tfOf, TIMEFRAMES, stats24h } from "../lib/data.js";
 import { atr } from "../lib/detectors.js";
 import { subscribe as subscribeLive } from "../lib/liveData.js";
@@ -148,10 +148,20 @@ export default function Lab() {
   const [magnetOn, setMagnetOn] = useState(true); // AK-069: rapor şikayeti — mıknatıs artık kapatılabilir (varsayılan açık)
   const [tf, setTf] = useState("4h");       // zaman dilimi (yalnız gerçek-veri sembolleri)
   const [lay, setLay] = useState(loadLayout);   // AK-022: panel görünürlüğü (kalıcı)
-  const [viewOpen, setViewOpen] = useState(false);
-  const [indOpen, setIndOpen] = useState(false);   // AK-026: göstergeler menüsü (çipler açıkta değil)
+  // AK-082 C1/C3: dağınık araç çipleri (Göstergeler/Karşılaştır/Görünüm/çizim) tek dikey side
+  // toolbar'a taşındı — indOpen/viewOpen/cmpOpen ayrı boolean'ları yerine TEK activeTool state'i
+  // (null | "draw" | "strategy" | "indicators" | "view"). Panel içerikleri ve altta yatan
+  // fonksiyonlar (setIndEnabled, setDrawMode, toggleReplay, setPanel...) DEĞİŞMEDİ — yalnız
+  // hangi state hangi paneli açık tuttuğu değişti.
+  const [activeTool, setActiveTool] = useState(null);
+  const railRef = useRef(null);
+  useEffect(() => {
+    function onDoc(e) { if (activeTool && railRef.current && !railRef.current.contains(e.target)) setActiveTool(null); }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [activeTool]);
   function setPanel(k, v) { setLay(L => { const n = { ...L, [k]: v }; saveLayout(n); return n; }); }
-  function resetBasic() { setLay({ ...BASIC }); saveLayout({ ...BASIC }); setViewOpen(false); }
+  function resetBasic() { setLay({ ...BASIC }); saveLayout({ ...BASIC }); setActiveTool(null); }
   // AK-068: bkz. DEFAULT_INDICATORS yorumu — tek liste, iki türetilmiş görünüm (concepts=backtest, chartConcepts=grafik)
   const [indicators, setIndicators] = useState(DEFAULT_INDICATORS);
   const indById = useMemo(() => Object.fromEntries(indicators.map(x => [x.id, x])), [indicators]);
@@ -202,7 +212,6 @@ export default function Lab() {
   const [chartType, setChartType] = useState("candle"); // AK-044: mum/çizgi/alan/heikin-ashi
   const [drawMode, setDrawMode] = useState(null);        // AK-044: null | "trendline" | "rect"
   const [drawCount, setDrawCount] = useState(0);         // AK-052: "Tümünü Temizle" yalnız çizim varken görünür
-  const [cmpOpen, setCmpOpen] = useState(false);
   const [compareOn, setCompareOn] = useState(false);
   const [compareSymbol, setCompareSymbol] = useState(null);
   const [compareQuery, setCompareQuery] = useState("");
@@ -472,11 +481,39 @@ export default function Lab() {
       </div>
 
       <div className="ak-chartwrap">
-        <div className="ak-cfilter">
-          <div className="ak-view">
-            <button className={"ak-cchip" + (indOpen ? " on" : "")} onClick={() => setIndOpen(v => !v)}><Activity size={12} /> Göstergeler{concepts.length ? ` (${concepts.length})` : ""}</button>
-            {indOpen && (
-              <div className="ak-view-menu">
+        {/* AK-082 C1/C3: Binance modeli dikey side toolbar — 4 grup (Çizim/Strateji araçları/
+            Göstergeler/Görünüm-Karşılaştır), tek activeTool state'i ile tek panel açık kalır.
+            Her chip/checkbox AYNI state ve fonksiyonlara bağlı — yalnız konumlandırma değişti. */}
+        {activeTool && <div className="ak-rail-veil" onClick={() => setActiveTool(null)} />}
+        <div className="ak-chart-shell">
+          <div className="ak-toolrail" ref={railRef}>
+            <button className={"ak-rail-btn" + (activeTool === "draw" ? " on" : "")} onClick={() => setActiveTool(t => t === "draw" ? null : "draw")} title="Çizim"><PenTool size={16} /></button>
+            <button className={"ak-rail-btn" + (activeTool === "strategy" ? " on" : "")} onClick={() => setActiveTool(t => t === "strategy" ? null : "strategy")} title="Strateji araçları"><Target size={16} /></button>
+            <button className={"ak-rail-btn" + (activeTool === "indicators" ? " on" : "")} onClick={() => setActiveTool(t => t === "indicators" ? null : "indicators")} title="Göstergeler">
+              <Activity size={16} />{concepts.length > 0 && <span className="ak-rail-badge">{concepts.length}</span>}
+            </button>
+            <button className={"ak-rail-btn" + (activeTool === "view" ? " on" : "")} onClick={() => setActiveTool(t => t === "view" ? null : "view")} title="Görünüm & Karşılaştır"><LayoutGrid size={16} /></button>
+
+            {activeTool === "draw" && (
+              <div className="ak-rail-panel">
+                <span className="ak-rail-panel-head">Çizim</span>
+                <button className={"ak-cchip" + (drawMode === "trendline" ? " on" : "")} onClick={() => setDrawMode(m => m === "trendline" ? null : "trendline")}>Trend Çizgisi</button>
+                <button className={"ak-cchip" + (drawMode === "rect" ? " on" : "")} onClick={() => setDrawMode(m => m === "rect" ? null : "rect")}>Dikdörtgen</button>
+                <button className={"ak-cchip" + (drawMode === "hline" ? " on" : "")} onClick={() => setDrawMode(m => m === "hline" ? null : "hline")} title="Tek tıkla tam genişlik yatay çizgi">Yatay Çizgi</button>
+                <button className={"ak-cchip" + (drawMode === "hray" ? " on" : "")} onClick={() => setDrawMode(m => m === "hray" ? null : "hray")} title="Tek tıkla, tıklanan bardan sağa uzanan ışın">Yatay Işın</button>
+                <button className={"ak-cchip" + (drawMode === "position" ? " on" : "")} onClick={() => setDrawMode(m => m === "position" ? null : "position")} title="Tek tıkla giriş/TP/SL kutuları eklenir, üçü de sürüklenebilir"><Target size={12} /> Pozisyon</button>
+                {drawCount > 0 && <button className="ak-cchip" onClick={() => chartRef.current?.clearDraws()}>Tümünü Temizle</button>}
+              </div>
+            )}
+            {activeTool === "strategy" && (
+              <div className="ak-rail-panel">
+                <span className="ak-rail-panel-head">Strateji araçları</span>
+                <button className={"ak-cchip teal" + (replay ? " on" : "")} onClick={toggleReplay}>Replay{replay ? " (açık)" : ""}</button>
+                <button className={"ak-cchip" + (lay.risk ? " on" : "")} onClick={() => setPanel("risk", !lay.risk)}><Calculator size={12} /> Pozisyon & Risk Hesaplayıcı {lay.risk ? "▲" : "▼"}</button>
+              </div>
+            )}
+            {activeTool === "indicators" && (
+              <div className="ak-rail-panel ak-ind-panel">
                 {CONCEPTS.map(([k, l]) => (
                   <label key={k}><input type="checkbox" checked={!!indById[k]?.enabled} onChange={() => toggleIndEnabled(k)} /> {l}</label>
                 ))}
@@ -501,61 +538,52 @@ export default function Lab() {
                 <label><input type="checkbox" checked={!!indById.rsi?.enabled} onChange={() => toggleIndEnabled("rsi")} /> RSI (14)</label>
               </div>
             )}
-          </div>
-          <button className={"ak-cchip teal" + (replay ? " on" : "")} onClick={toggleReplay}>Replay</button>
-          <div className="ak-tf">
-            {[["candle", "Mum"], ["line", "Çizgi"], ["area", "Alan"], ["heikinashi", "Heikin-Ashi"]].map(([k, l]) => (
-              <button key={k} className={chartType === k ? "on" : ""} onClick={() => setChartType(k)}>{l}</button>
-            ))}
-          </div>
-          <button className={"ak-cchip" + (drawMode === "trendline" ? " on" : "")} onClick={() => setDrawMode(m => m === "trendline" ? null : "trendline")}>Trend Çizgisi</button>
-          <button className={"ak-cchip" + (drawMode === "rect" ? " on" : "")} onClick={() => setDrawMode(m => m === "rect" ? null : "rect")}>Dikdörtgen</button>
-          <button className={"ak-cchip" + (drawMode === "hline" ? " on" : "")} onClick={() => setDrawMode(m => m === "hline" ? null : "hline")} title="Tek tıkla tam genişlik yatay çizgi">Yatay Çizgi</button>
-          <button className={"ak-cchip" + (drawMode === "hray" ? " on" : "")} onClick={() => setDrawMode(m => m === "hray" ? null : "hray")} title="Tek tıkla, tıklanan bardan sağa uzanan ışın">Yatay Işın</button>
-          <button className={"ak-cchip" + (drawMode === "position" ? " on" : "")} onClick={() => setDrawMode(m => m === "position" ? null : "position")} title="Tek tıkla giriş/TP/SL kutuları eklenir, üçü de sürüklenebilir"><Target size={12} /> Pozisyon</button>
-          {drawCount > 0 && <button className="ak-cchip" onClick={() => chartRef.current?.clearDraws()}>Tümünü Temizle</button>}
-          <div className="ak-view">
-            <button className={"ak-cchip teal" + (compareOn && compareSymbol ? " on" : "")} onClick={() => setCmpOpen(v => !v)}>Karşılaştır{compareOn && compareSymbol ? ` (${compareSymbol})` : ""}</button>
-            {cmpOpen && (
-              <div className="ak-view-menu">
+            {activeTool === "view" && (
+              <div className="ak-rail-panel">
+                <span className="ak-rail-panel-head">Grafik tipi</span>
+                <div className="ak-tf">
+                  {[["candle", "Mum"], ["line", "Çizgi"], ["area", "Alan"], ["heikinashi", "Heikin-Ashi"]].map(([k, l]) => (
+                    <button key={k} className={chartType === k ? "on" : ""} onClick={() => setChartType(k)}>{l}</button>
+                  ))}
+                </div>
+                <span className="ak-rail-panel-head">Karşılaştır</span>
                 <input type="text" placeholder="Sembol (örn. ETH)" value={compareQuery} spellCheck={false}
                   onChange={(e) => setCompareQuery(e.target.value)} className="ak-cmp-in" />
-                <button className="ak-view-basic" onClick={() => {
-                  const s = compareQuery.trim().toUpperCase();
-                  if (!s) return;
-                  setCompareSymbol(s); setCompareOn(true); setCmpOpen(false);
-                }}>Ekle</button>
-                {compareSymbol && (
-                  <button className="ak-view-basic" onClick={() => { setCompareOn(false); setCompareSymbol(null); setCompareQuery(""); setCmpOpen(false); }}>Kaldır</button>
-                )}
-              </div>
-            )}
-          </div>
-          <div className="ak-view">
-            <button className={"ak-cchip" + (viewOpen ? " on" : "")} onClick={() => setViewOpen(v => !v)}><LayoutGrid size={12} /> Görünüm</button>
-            {viewOpen && (
-              <div className="ak-view-menu">
+                <div className="ak-rail-panel-row">
+                  <button className="ak-view-basic" onClick={() => {
+                    const s = compareQuery.trim().toUpperCase();
+                    if (!s) return;
+                    setCompareSymbol(s); setCompareOn(true);
+                  }}>Ekle</button>
+                  {compareSymbol && (
+                    <button className="ak-view-basic" onClick={() => { setCompareOn(false); setCompareSymbol(null); setCompareQuery(""); }}>Kaldır</button>
+                  )}
+                </div>
+                {compareOn && compareSymbol && <span className="ak-rail-hint">Karşılaştırılıyor: {compareSymbol}</span>}
+                <span className="ak-rail-panel-head">Panel görünümü</span>
                 {PANELS.map(pn => (
                   <label key={pn.k}><input type="checkbox" checked={!!lay[pn.k]} onChange={e => setPanel(pn.k, e.target.checked)} /> {pn.label}</label>
                 ))}
                 <button className="ak-view-basic" onClick={resetBasic}>Temel (varsayılana dön)</button>
+                <span className="ak-rail-panel-head">Diğer</span>
+                <button className="ak-view-basic" onClick={() => chartRef.current?.goToBookmark()} title="Alt+tık ile sarı yer imi koy, buraya bas ya da işarete çift tıkla dön">◆ İşarete dön</button>
               </div>
             )}
           </div>
-          {pairFor(symbol) && (
-            <div className="ak-tf">
-              {TIMEFRAMES.map(([k, l]) => (
-                <button key={k} className={tf === k ? "on" : ""} onClick={() => setTf(k)}>{l}</button>
-              ))}
+
+          <div className="ak-chart-main">
+            <div className="ak-cf-top">
+              {pairFor(symbol) && (
+                <div className="ak-tf">
+                  {TIMEFRAMES.map(([k, l]) => (
+                    <button key={k} className={tf === k ? "on" : ""} onClick={() => setTf(k)}>{l}</button>
+                  ))}
+                </div>
+              )}
+              <span className={"ak-datasrc" + (isReal(symbol) ? " real" : "")}>
+                {isReal(symbol) ? `● GERÇEK VERİ · Binance ${(TIMEFRAMES.find(x => x[0] === tfOf(symbol)) || ["", "4s"])[1]}` : "○ örnek veri"}
+              </span>
             </div>
-          )}
-          <div className="ak-tf ak-tf-gold">
-            <button onClick={() => chartRef.current?.goToBookmark()} title="Alt+tık ile sarı yer imi koy, buraya bas ya da işarete çift tıkla dön">◆ İşarete dön</button>
-          </div>
-          <span className={"ak-datasrc" + (isReal(symbol) ? " real" : "")}>
-            {isReal(symbol) ? `● GERÇEK VERİ · Binance ${(TIMEFRAMES.find(x => x[0] === tfOf(symbol)) || ["", "4s"])[1]}` : "○ örnek veri"}
-          </span>
-        </div>
         {stats24 && (
           <div className="ak-24h">
             <span>24s Y: <b>{fmtP(stats24.high)}</b></span>
@@ -571,7 +599,9 @@ export default function Lab() {
         {dataOk && <Chart ref={chartRef} bars={replay ? getBars(symbol) : (liveBars || getBars(symbol))} concepts={chartConcepts} maList={maList} trades={replay ? null : res?.trades} logScale={logS} magnet={magnetOn} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} onDrawsChange={setDrawCount} showRsi={showRsi} onSandboxAdd={handleSandboxAdd}
           indicators={legendIndicators} onIndicatorToggleShown={toggleIndShown} onIndicatorRemove={removeIndicator} onIndicatorSetParam={setIndParam}
           lastRemovedIndicator={lastRemovedInd} onUndoRemoveIndicator={undoRemoveIndicator} onPushUndo={(action) => undoStackRef.current.push(action)} />}
-        {paperMsg && <p className="ak-paper-toast">{paperMsg}</p>}
+            {paperMsg && <p className="ak-paper-toast">{paperMsg}</p>}
+          </div>
+        </div>
         {replay && (
           <div className="ak-replay">
             <button className="ak-rp" onClick={() => setCursor(c => Math.max(winStart + 4, c - 1))} title="Geri"><SkipBack size={15} /></button>
@@ -718,9 +748,7 @@ export default function Lab() {
             </>
           )}
 
-          <button className="ak-adv-toggle" onClick={() => setPanel("risk", !lay.risk)}>
-            <Calculator size={14} /> Pozisyon & risk hesaplayıcı {lay.risk ? "▲" : "▼"}
-          </button>
+          {/* AK-082 C1: tetik artık dikey side toolbar'ın "Strateji araçları" panelinde — hesaplayıcının kendisi burada aynı yerde kalır */}
           {lay.risk && (() => {
             const acc = Number(rAcc) || 0, rp = Number(rPct) || 0, en = Number(rEntry) || 0, st = Number(rStop) || 0;
             const perUnit = Math.abs(en - st);

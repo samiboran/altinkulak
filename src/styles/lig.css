@@ -1,0 +1,49 @@
+/* AK-083: /lig — Tahmin Ligi v1 */
+.ak-lig-sec{margin-top:30px;}
+.ak-lig-sec h2{display:flex;align-items:center;gap:8px;font-family:'Chakra Petch';font-size:17px;color:var(--txt);margin:0 0 12px;}
+.ak-lig-note{font-size:12px;color:#647974;font-family:'JetBrains Mono';margin-top:10px;line-height:1.5;}
+.ak-lig-empty{display:flex;flex-direction:column;align-items:center;gap:10px;padding:38px;color:var(--muted);text-align:center;border:1px dashed #2f4742;border-radius:13px;}
+.ak-lig-empty svg{color:var(--teal-deep);}
+
+.ak-lig-card{background:linear-gradient(180deg,#17211F,#141E1C);border:1px solid var(--line);border-radius:14px;padding:20px 22px;}
+.ak-lig-q p{font-family:'Chakra Petch';font-size:18px;color:var(--txt);margin:6px 0 8px;}
+.ak-lig-sym{font-family:'JetBrains Mono';font-size:11px;color:var(--gold-2);background:#241E10;border:1px solid #473c1c;padding:2px 9px;border-radius:7px;}
+.ak-lig-closes{font-size:12px;color:var(--muted);font-family:'JetBrains Mono';}
+
+.ak-lig-locked{display:flex;align-items:center;gap:8px;margin-top:14px;padding:12px 14px;background:#10241F;border:1px solid #1f5249;border-radius:11px;color:var(--teal-soft);font-size:13.5px;}
+.ak-lig-locked svg{color:var(--teal-soft);flex:none;}
+
+.ak-lig-form{margin-top:16px;display:flex;flex-direction:column;gap:14px;}
+.ak-lig-dirs{display:flex;gap:8px;}
+.ak-lig-dir{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:11px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--muted);font-weight:600;font-size:14px;cursor:pointer;transition:.13s;}
+.ak-lig-dir:hover{color:var(--txt);}
+.ak-lig-dir.on.up{border-color:#1f5249;background:#10241F;color:var(--good);}
+.ak-lig-dir.on.down{border-color:#6b332f;background:#241616;color:var(--bad);}
+.ak-lig-conf{display:flex;flex-direction:column;gap:8px;font-size:13.5px;color:var(--txt);}
+.ak-lig-conf b{font-family:'JetBrains Mono';color:var(--gold-2);}
+.ak-lig-conf input[type=range]{width:100%;accent-color:var(--gold);}
+
+.ak-lig-table{border:1px solid var(--line);border-radius:13px;overflow:hidden;}
+.ak-lig-th,.ak-lig-tr{display:grid;grid-template-columns:40px 1fr 120px 120px;align-items:center;gap:10px;padding:12px 16px;}
+.ak-lig-th{background:#101A18;color:var(--muted);font-family:'JetBrains Mono';font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;}
+.ak-lig-tr{border-top:1px solid var(--line);font-size:13.5px;color:var(--txt);}
+.ak-lig-tr.unranked{color:var(--muted);}
+.ak-lig-tr .mono{font-family:'JetBrains Mono';}
+.ak-lig-tr em{font-style:normal;margin-left:8px;font-size:10.5px;color:#647974;font-family:'JetBrains Mono';}
+@media(max-width:640px){ .ak-lig-th,.ak-lig-tr{grid-template-columns:32px 1fr 90px;} .ak-lig-th span:nth-child(4),.ak-lig-tr .mono:nth-child(4){display:none;} }
+
+.ak-lig-calib{display:flex;flex-direction:column;gap:9px;}
+.ak-lig-calib-row{display:grid;grid-template-columns:70px 1fr 44px;align-items:center;gap:10px;}
+.ak-lig-calib-lbl{font-family:'JetBrains Mono';font-size:11.5px;color:var(--muted);}
+.ak-lig-calib-bars{position:relative;height:16px;background:#0E1816;border-radius:5px;overflow:hidden;}
+.ak-lig-calib-bar{position:absolute;top:0;bottom:0;left:0;border-radius:5px;}
+.ak-lig-calib-bar.conf{background:rgba(230,180,80,.35);z-index:1;}
+.ak-lig-calib-bar.hit{background:var(--teal);z-index:2;height:60%;top:20%;border-radius:3px;}
+.ak-lig-calib-n{font-family:'JetBrains Mono';font-size:11px;color:#647974;text-align:right;}
+.ak-lig-calib-legend{display:flex;gap:16px;margin-top:4px;font-size:11.5px;color:var(--muted);}
+.ak-lig-calib-legend span{display:inline-flex;align-items:center;gap:6px;}
+.ak-lig-calib-legend i{width:10px;height:10px;border-radius:3px;display:inline-block;}
+.ak-lig-calib-legend i.conf{background:rgba(230,180,80,.6);}
+.ak-lig-calib-legend i.hit{background:var(--teal);}
+.ak-lig-lesson{margin-top:14px;padding:11px 14px;background:#1d160c;border:1px solid #473c1c;border-radius:10px;color:#d8c39a;font-size:13px;line-height:1.55;}
+.ak-lig-lesson b{color:#f0d9a8;}
