@@ -6,6 +6,7 @@ import { useAuthGate } from "../lib/AuthGate.jsx";
 import { fetchProfileByHandle, fetchProfileById, fetchStrategiesByUser, fetchFollowState, followUser, unfollowUser } from "../lib/supabase.js";
 import { listTrades } from "../lib/ledger.js";
 import { edgeRank, contribRank } from "../lib/ranks.js";
+import { fetchLifetimePoints } from "../lib/points.js";
 import PortfolioPanel from "../components/PortfolioPanel.jsx";
 import "../styles/profil.css";
 
@@ -27,6 +28,7 @@ export default function Profil() {
   const [myHandle, setMyHandle] = useState(null);
   const [following, setFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
+  const [lifetimePoints, setLifetimePoints] = useState(0);
 
   // C1: isOwner = giriş yapmış kullanıcının kendi handle'ı === bakılan sayfanın handle'ı
   const isOwner = !!user && myHandle === handle;
@@ -52,6 +54,15 @@ export default function Profil() {
     return () => { on = false; };
   }, [profile]);
 
+  // AK-023-EXT: lifetime puan herkese açık okunur (RLS select:true) — başka bir kullanıcının
+  // vitrin sayfasında da gerçek Katkı Rütbesi görünsün diye (D6: fabrike puan yok, Supabase boşsa 0).
+  useEffect(() => {
+    let on = true;
+    if (!profile) { setLifetimePoints(0); return; }
+    fetchLifetimePoints(profile.id).then((n) => { if (on) setLifetimePoints(n); });
+    return () => { on = false; };
+  }, [profile]);
+
   useEffect(() => {
     let on = true;
     if (!user || !profile || isOwner) { setFollowing(false); return; }
@@ -74,8 +85,7 @@ export default function Profil() {
   // profil sahibi için mevcuttur. Başka birinin sicili bu cihazdan asla görülemez/fabrike
   // edilemez (D6) — o yüzden isOwner değilken rozet hiç gösterilmez (boş bırakmak, uydurmaktan iyidir).
   const myEdge = isOwner ? edgeRank(listTrades()) : null;
-  // AK-023 (davet ekonomisi) henüz veri üretmiyor — dürüst varsayılan: 0 puan = "Gözlemci".
-  const contrib = contribRank(0);
+  const contrib = contribRank(lifetimePoints); // AK-023-EXT: gerçek lifetime puandan — bkz. src/lib/points.js
 
   const [tab, setTab] = useState("strat");
 

@@ -12,6 +12,7 @@ const MORE_LINKS = [
   { to: "/izleme", label: "İzleme" },
   { to: "/ogren", label: "Eğitim" },
   { to: "/haberler", label: "Haberler" },
+  { to: "/puanlar", label: "Kulak Puanı" },
   { to: "/fiyatlandirma", label: "Fiyatlandırma" },
 ];
 

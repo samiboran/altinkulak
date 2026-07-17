@@ -1,18 +1,36 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRef } from "react";
-import { Monitor, Smartphone, Target, Brain, Plus, ShieldAlert, BookLock, FlaskConical, Trash2, Upload, Download } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Monitor, Smartphone, Target, Brain, Plus, ShieldAlert, BookLock, FlaskConical, Trash2, Upload, Download, Zap, Flame, History } from "lucide-react";
 import { addTrade, listTrades, summary, TAGS, SETUPS } from "../lib/ledger.js";
 import { addSandbox, listSandbox, removeSandbox } from "../lib/sandbox.js";
-import { edgeRank } from "../lib/ranks.js";
+import { edgeRank, contribRank } from "../lib/ranks.js";
 import { parseTradesCSV, dedupeKey, exportTradesCSV } from "../lib/csv.js";
 import { useAuthGate } from "../lib/AuthGate.jsx";
+import { useAuth } from "../lib/AuthProvider.jsx";
+import {
+  listPointEvents, checkAndAwardStreaks, spendPoints, deriveBalance, deriveLifetime,
+  currentStreakDays, spendItemStatus, canPurchase, SPENDING_TABLE, EARNING_TABLE,
+} from "../lib/points.js";
 import "../styles/ben.css";
+
+// AK-023-EXT: event -> okunabilir etiket (kazanım tipleri EARNING_TABLE'dan, harcama SPENDING_TABLE'dan)
+function pointEventLabel(e) {
+  if (e.type === "spend") {
+    const item = SPENDING_TABLE.find((i) => i.key === e.ref_id);
+    return item ? `Harcandı — ${item.label}` : "Harcama";
+  }
+  const row = EARNING_TABLE.find((r) => r.key === e.type);
+  return row ? row.label : e.type;
+}
+const fmtDT = (ms) => new Date(ms).toLocaleDateString("tr-TR", { day: "numeric", month: "short", year: "numeric" });
 
 const TAGCOL = { "Plana uydu": "ok", "Erken çıkış": "warn", "FOMO": "bad", "İntikam": "bad" };
 const fmtD = (iso) => new Date(iso).toLocaleDateString("tr-TR", { day: "numeric", month: "short" });
 
 export default function Ben() {
   const { requireAuth } = useAuthGate();
+  const { user } = useAuth();
   const [trades, setTrades] = useState(listTrades);
   const [sand, setSand] = useState(listSandbox);
   const [mode, setMode] = useState("sicil"); // sicil = kalıcı · sandbox = serbest pratik
@@ -23,6 +41,37 @@ export default function Ben() {
   // CSV import (AK-025): önizleme -> hedef seçimi -> yaz
   const fileRef = useRef(null);
   const [imp, setImp] = useState(null); // { rows, errors, skipped }
+
+  // AK-023-EXT: Kulak Puanı — event log Supabase'ten gelir (localStorage DEĞİL, contrib rank
+  // başka kullanıcıların gördüğü public bir alan). Giriş yoksa sessizce boş kalır.
+  const [points, setPoints] = useState([]);
+  const [spendBusy, setSpendBusy] = useState(null); // hangi kalem satın alınıyor (çift-tık koruması)
+  const [spendMsg, setSpendMsg] = useState(null);
+  useEffect(() => {
+    let on = true;
+    if (!user) { setPoints([]); return; }
+    (async () => {
+      await checkAndAwardStreaks(user.id, trades); // sicil serisi uygunsa otomatik ödül (idempotent)
+      const ev = await listPointEvents(user.id);
+      if (on) setPoints(ev);
+    })();
+    return () => { on = false; };
+  }, [user, trades]);
+
+  async function buyItem(item) {
+    if (!requireAuth("Enerji harcamak için giriş yap.")) return;
+    if (spendBusy) return;
+    setSpendBusy(item.key);
+    setSpendMsg(null);
+    const res = await spendPoints(user.id, item);
+    if (res.ok) {
+      setPoints(await listPointEvents(user.id));
+      setSpendMsg({ key: item.key, ok: true, text: "Etkinleştirildi." });
+    } else {
+      setSpendMsg({ key: item.key, ok: false, text: res.reason || "İşlem başarısız." });
+    }
+    setSpendBusy(null);
+  }
 
   // AK-080 C2: CSV içe aktarma sicile/sandbox'a kalıcı yazım demek — dosya seçiciyi açmadan önce duvar.
   function onCSVClick() {
@@ -84,6 +133,13 @@ export default function Ben() {
   const gap = s.n && s.avgPlan != null ? s.avgPlan - s.avgRealWin : 0;
   const rank = edgeRank(trades); // yalnız SİCİL sayılır — sandbox asla
 
+  // AK-023-EXT: bakiye harcanınca düşer, lifetime ASLA düşmez (D15) — contribRank BUNDAN beslenir.
+  const balance = deriveBalance(points);
+  const lifetime = deriveLifetime(points);
+  const contrib = contribRank(lifetime);
+  const streak = currentStreakDays(trades);
+  const history = [...points].sort((a, b) => b.ts - a.ts);
+
   function tryAdd() {
     setErr("");
     if (!requireAuth(mode === "sicil" ? "Sicile işlemek için giriş yap." : "Sandbox'a kayıt için giriş yap.")) return;
@@ -127,6 +183,23 @@ export default function Ben() {
         )}
         <p className="ak-rank-note">Rütbe kazanç oranından gelmez: sınırlandırılmış R birikimi + istatistik. Tek büyük işlemle atlanamaz; sicil silinmediği için geri de alınamaz.</p>
       </div>
+
+      {/* AK-023-EXT: Kulak Puanı — bakiye harcanınca düşer, lifetime (Katkı Rütbesi'ni besleyen) düşmez */}
+      {user && (
+        <div className="ak-rankcard ak-energy-card">
+          <div className="ak-rank-main">
+            <span className="ak-rank-name energy"><Zap size={18} /> {balance} enerji</span>
+            <span className="ak-rank-ctx">
+              {lifetime} lifetime · Katkı Rütbesi: {contrib.name}
+              {streak >= 7 && <> · <Flame size={12} /> {streak} gün seri</>}
+            </span>
+          </div>
+          {contrib.next && (
+            <span className="ak-rank-next">Sıradaki: <b>{contrib.next.name}</b> — {contrib.next.needP} puan daha</span>
+          )}
+          <p className="ak-rank-note">Enerji harcanabilir ama lifetime hiç düşmez — Katkı Rütbesi'ni harcadıkça kaybetmezsin. <Link to="/puanlar">Nasıl kazanılır?</Link></p>
+        </div>
+      )}
 
       <div className="ak-ben-cards">
         <div className="ak-ben-stat"><span className="v">{s.n}</span><span className="k">Sicildeki işlem</span></div>
@@ -177,6 +250,56 @@ export default function Ben() {
           {gap > 0.2 && (
             <p className="ak-disc-note"><Brain size={13} /> Planın ortalama {s.avgPlan.toFixed(1)}R, kazançların ortalama {s.avgRealWin.toFixed(1)}R. Sorun setup <b>seçiminde değil, yürütmede</b> — erken çıkıyorsun. Edge'in var ama disiplin onu kemiriyor.</p>
           )}
+        </div>
+      )}
+
+      {/* AK-023-EXT: harcama mağazası — "satın al" DEĞİL "aç/etkinleştir" (D15: para birimi değil) */}
+      {user && (
+        <div className="ak-energy-store">
+          <h2><Zap size={15} /> Enerjini kullan</h2>
+          <div className="ak-energy-grid">
+            {SPENDING_TABLE.map((item) => {
+              const status = spendItemStatus(points, item);
+              const check = canPurchase(points, item, balance);
+              const msg = spendMsg?.key === item.key ? spendMsg : null;
+              return (
+                <div className={"ak-energy-item" + (status.active ? " active" : "")} key={item.key}>
+                  <span className="lbl">{item.label}</span>
+                  <span className="cost mono">{item.cost} enerji</span>
+                  {status.active && (
+                    <span className="status">
+                      {item.durationDays ? `Aktif — ${Math.max(0, Math.ceil((status.expiresAt - Date.now()) / 86400000))} gün kaldı` : "Sahipsin"}
+                    </span>
+                  )}
+                  <button
+                    className="ak-btn ak-btn-secondary sm"
+                    disabled={!check.ok || spendBusy === item.key}
+                    title={!check.ok ? check.reason : undefined}
+                    onClick={() => buyItem(item)}
+                  >
+                    {spendBusy === item.key ? "…" : "Aç / Etkinleştir"}
+                  </button>
+                  {msg && <span className={"msg " + (msg.ok ? "ok" : "no")}>{msg.text}</span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* AK-023-EXT: kazanım/harcama geçmişi — event timeline */}
+      {user && history.length > 0 && (
+        <div className="ak-energy-history">
+          <h2><History size={15} /> Enerji geçmişi</h2>
+          <div className="ak-energy-hist-list">
+            {history.map((e) => (
+              <div className={"ak-energy-hist-row" + (e.amount < 0 ? " neg" : "")} key={e.id}>
+                <span>{pointEventLabel(e)}</span>
+                <span className="mono">{e.amount >= 0 ? "+" : ""}{e.amount}</span>
+                <span className="dt">{fmtDT(e.ts)}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

@@ -1,0 +1,18 @@
+/* AK-023-EXT: /puanlar — şeffaflık sayfası */
+.ak-puanlar-sec{margin-top:30px;}
+.ak-puanlar-sec h2{display:flex;align-items:center;gap:8px;font-family:'Chakra Petch';font-size:17px;color:var(--txt);margin:0 0 12px;}
+.ak-puanlar-table{border:1px solid var(--line);border-radius:13px;overflow:hidden;}
+.ak-puanlar-h,.ak-puanlar-r{display:grid;grid-template-columns:1fr 90px 160px;align-items:center;gap:10px;padding:12px 16px;}
+.ak-puanlar-h{background:#101A18;color:var(--muted);font-family:'JetBrains Mono';font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;}
+.ak-puanlar-r{border-top:1px solid var(--line);font-size:13.5px;color:var(--txt);}
+.ak-puanlar-r.soon{color:var(--muted);}
+.ak-puanlar-r .mono{font-family:'JetBrains Mono';font-weight:600;color:var(--gold-2);}
+.ak-puanlar-r .cap{font-size:11.5px;color:var(--muted);font-family:'JetBrains Mono';}
+.ak-puanlar-r em{font-style:normal;margin-left:8px;display:inline-flex;}
+@media(max-width:640px){
+  .ak-puanlar-h,.ak-puanlar-r{grid-template-columns:1fr 60px;}
+  .ak-puanlar-h span:nth-child(3),.ak-puanlar-r .cap{display:none;}
+}
+.ak-puanlar-brakes{margin:0;padding-left:20px;color:var(--muted);font-size:13.5px;line-height:1.8;}
+.ak-puanlar-brakes li{margin-bottom:4px;}
+.ak-puanlar-brakes b{color:var(--txt);}

@@ -7,6 +7,10 @@ import { getBars, parseKlines, loadReal, isReal, pairFor, hasData, stats24h, get
 import { normalizeTop500 } from "../src/lib/top500.js";
 import { detectModBSignals, DEFAULT_PARAMS } from "../src/lib/modB.js";
 import { applyTick, mergeGapFill } from "../src/lib/liveData.js";
+import {
+  deriveBalance, deriveLifetime, monthlyEarned, remainingMonthlyCap, currentStreakDays,
+  streakAwardedRecently, spendItemStatus, canPurchase, MONTHLY_CAP, SPENDING_TABLE,
+} from "../src/lib/points.js";
 
 let pass = 0;
 function test(name, fn) {
@@ -799,6 +803,81 @@ test("nextNudgeState: ikinci kapatmada permanent=true, bir daha asla gösterilme
   assert.equal(s2.count, 2);
   assert.equal(s2.permanent, true);
   assert.equal(shouldShowNudge(s2, Number.MAX_SAFE_INTEGER), false); // hiçbir zaman diliminde göstermez
+});
+
+console.log("Kulak Puanı ekonomisi (AK-023-EXT)");
+test("deriveBalance: kazanım + harcama toplamı (harcama düşer)", () => {
+  const events = [{ amount: 100 }, { amount: 50 }, { amount: -30 }];
+  assert.equal(deriveBalance(events), 120);
+});
+test("deriveLifetime: yalnız pozitif toplanır — harcama LIFETIME'ı ASLA düşürmez (D15 kilit karar)", () => {
+  const events = [{ amount: 100 }, { amount: 50 }, { amount: -30 }, { amount: -500 }];
+  assert.equal(deriveLifetime(events), 150); // -30 ve -500 yok sayılır
+  assert.equal(deriveBalance(events), -380); // ama bakiye gerçekten düşer
+});
+test("deriveBalance/deriveLifetime: boş/eksik dizide çökmez", () => {
+  assert.equal(deriveBalance([]), 0);
+  assert.equal(deriveLifetime(null), 0);
+});
+test("monthlyEarned: yalnız o ayın pozitif event'lerini toplar, harcama ve başka ay hariç", () => {
+  const ref = new Date(2026, 5, 15); // Haziran 2026
+  const events = [
+    { amount: 100, ts: new Date(2026, 5, 1).getTime() },
+    { amount: 50, ts: new Date(2026, 5, 20).getTime() },
+    { amount: -40, ts: new Date(2026, 5, 21).getTime() }, // harcama — sayılmaz
+    { amount: 300, ts: new Date(2026, 4, 30).getTime() }, // Mayıs — sayılmaz
+  ];
+  assert.equal(monthlyEarned(events, ref), 150);
+});
+test("remainingMonthlyCap: tavana yaklaştıkça azalır, asla negatif dönmez", () => {
+  const ref = new Date(2026, 5, 15);
+  const near = [{ amount: MONTHLY_CAP - 100, ts: ref.getTime() }];
+  assert.equal(remainingMonthlyCap(near, ref), 100);
+  const over = [{ amount: MONTHLY_CAP + 500, ts: ref.getTime() }];
+  assert.equal(remainingMonthlyCap(over, ref), 0);
+});
+test("currentStreakDays: ardışık günler doğru sayılır, boşluk sıfırlar", () => {
+  const day = (n) => new Date(2026, 0, n).toISOString();
+  assert.equal(currentStreakDays([{ d: day(1) }, { d: day(2) }, { d: day(3) }]), 3);
+  assert.equal(currentStreakDays([{ d: day(1) }, { d: day(5) }, { d: day(6) }]), 2); // 1-5 arası boşluk, yalnız 5-6 sayılır
+  assert.equal(currentStreakDays([]), 0);
+  assert.equal(currentStreakDays([{ d: day(1) }, { d: day(1) }]), 1); // aynı gün 2 kayıt = 1 gün (işlem sayısından bağımsız)
+});
+test("streakAwardedRecently: pencere içinde true, dışında false", () => {
+  const now = new Date(2026, 5, 15).getTime();
+  const events = [{ type: "streak_7", ts: now - 3 * 24 * 60 * 60 * 1000 }];
+  assert.equal(streakAwardedRecently(events, "streak_7", 7, new Date(now)), true);
+  assert.equal(streakAwardedRecently(events, "streak_7", 2, new Date(now)), false);
+});
+test("spendItemStatus: kalıcı+max'lı kalem (sandbox_slot) — 3'ten önce aktif&maxed=false, 3'te maxed", () => {
+  const item = SPENDING_TABLE.find((i) => i.key === "sandbox_slot");
+  const two = [{ type: "spend", ref_id: "sandbox_slot", ts: 1 }, { type: "spend", ref_id: "sandbox_slot", ts: 2 }];
+  const s2 = spendItemStatus(two, item);
+  assert.equal(s2.active, true); assert.equal(s2.count, 2); assert.equal(s2.maxed, false);
+  const three = [...two, { type: "spend", ref_id: "sandbox_slot", ts: 3 }];
+  assert.equal(spendItemStatus(three, item).maxed, true);
+});
+test("spendItemStatus: süreli kalem (backtest_quota) — pencere içinde aktif, dışında pasif", () => {
+  const item = SPENDING_TABLE.find((i) => i.key === "backtest_quota");
+  const now = new Date(2026, 5, 15);
+  const fresh = [{ type: "spend", ref_id: "backtest_quota", ts: now.getTime() - 5 * 24 * 60 * 60 * 1000 }];
+  assert.equal(spendItemStatus(fresh, item, now).active, true);
+  const stale = [{ type: "spend", ref_id: "backtest_quota", ts: now.getTime() - 40 * 24 * 60 * 60 * 1000 }];
+  assert.equal(spendItemStatus(stale, item, now).active, false);
+});
+test("canPurchase: yetersiz bakiye reddedilir", () => {
+  const item = SPENDING_TABLE.find((i) => i.key === "sandbox_slot"); // 500 puan
+  assert.equal(canPurchase([], item, 100).ok, false);
+});
+test("canPurchase: süreli kalem zaten aktifken tekrar satın alınamaz", () => {
+  const item = SPENDING_TABLE.find((i) => i.key === "backtest_quota");
+  const now = new Date(2026, 5, 15);
+  const events = [{ type: "spend", ref_id: "backtest_quota", ts: now.getTime() - 1000 }];
+  assert.equal(canPurchase(events, item, 10000, now).ok, false);
+});
+test("canPurchase: yeterli bakiye + koşullar uygunsa onaylanır", () => {
+  const item = SPENDING_TABLE.find((i) => i.key === "badge_showcase"); // 150 puan
+  assert.equal(canPurchase([], item, 200).ok, true);
 });
 
 console.log(`\n${pass} test geçti${process.exitCode ? " (HATALAR VAR)" : " — motor sağlam."}`);
