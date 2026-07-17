@@ -1,7 +1,6 @@
-import { useState, useEffect } from "react";
-import { useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import { Monitor, Smartphone, Target, Brain, Plus, ShieldAlert, BookLock, FlaskConical, Trash2, Upload, Download, Zap, Flame, History } from "lucide-react";
+import { Monitor, Smartphone, Target, Brain, Plus, ShieldAlert, BookLock, FlaskConical, Trash2, Upload, Download, Zap, Flame, History, Award, CheckCircle2 } from "lucide-react";
 import { addTrade, listTrades, summary, TAGS, SETUPS } from "../lib/ledger.js";
 import { addSandbox, listSandbox, removeSandbox } from "../lib/sandbox.js";
 import { edgeRank, contribRank } from "../lib/ranks.js";
@@ -10,8 +9,12 @@ import { useAuthGate } from "../lib/AuthGate.jsx";
 import { useAuth } from "../lib/AuthProvider.jsx";
 import {
   listPointEvents, checkAndAwardStreaks, spendPoints, deriveBalance, deriveLifetime,
-  currentStreakDays, spendItemStatus, canPurchase, SPENDING_TABLE, EARNING_TABLE,
+  currentStreakDays, spendItemStatus, canPurchase, SPENDING_TABLE, EARNING_TABLE, awardPoints,
 } from "../lib/points.js";
+import { deriveProgress, newlyCompleted } from "../lib/achievements.js";
+import { fetchProfileStats, fetchFollowCounts } from "../lib/profileStats.js";
+import { fetchProfileById } from "../lib/supabase.js";
+import IdentityStats from "../components/IdentityStats.jsx";
 import "../styles/ben.css";
 
 // AK-023-EXT: event -> okunabilir etiket (kazanım tipleri EARNING_TABLE'dan, harcama SPENDING_TABLE'dan)
@@ -57,6 +60,53 @@ export default function Ben() {
     })();
     return () => { on = false; };
   }, [user, trades]);
+
+  // AK-086 K1/K2: kimlik kartı şeridi + Başarımlar kartı — tek stats nesnesi (profileStats.js).
+  const [profile, setProfile] = useState(null);
+  const [stats, setStats] = useState({});
+  const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
+  const [newAchieveMsg, setNewAchieveMsg] = useState(null);
+  const awardingRef = useRef(false);
+
+  useEffect(() => {
+    let on = true;
+    if (!user) { setProfile(null); return; }
+    fetchProfileById(user.id).then((p) => { if (on) setProfile(p); });
+    return () => { on = false; };
+  }, [user]);
+
+  useEffect(() => {
+    let on = true;
+    if (!user) { setStats({}); return; }
+    fetchProfileStats(profile, { isOwner: true, trades }).then((s) => { if (on) setStats(s); });
+    return () => { on = false; };
+  }, [user, profile, trades]);
+
+  useEffect(() => {
+    let on = true;
+    if (!user) { setFollowCounts({ followers: 0, following: 0 }); return; }
+    fetchFollowCounts(user.id).then((c) => { if (on) setFollowCounts(c); });
+    return () => { on = false; };
+  }, [user]);
+
+  // K2 kutlama + ödül: tamamlanan başarımın KENDİ ANAHTARI point_events.type olarak kullanılır —
+  // bu hem points.js'e dokunmadan (imzalar değişmez) idempotent bir dedup anahtarı verir (bir kez
+  // ödüllenen başarım bir daha "newlyCompleted" dönmez, gerçek Supabase log'undan türetilir — D9),
+  // hem de EARNING_TABLE'a yeni satır eklemeyi gerektirmez.
+  useEffect(() => {
+    if (!user || awardingRef.current) return;
+    const awardedKeys = points.map((e) => e.type);
+    const fresh = newlyCompleted(stats, awardedKeys);
+    if (!fresh.length) return;
+    awardingRef.current = true;
+    (async () => {
+      for (const a of fresh) await awardPoints(user.id, a.key, a.points, a.key);
+      setPoints(await listPointEvents(user.id));
+      setNewAchieveMsg(fresh.map((a) => `${a.title} +${a.points}`).join(" · "));
+      setTimeout(() => setNewAchieveMsg((m) => (m === fresh.map((a) => `${a.title} +${a.points}`).join(" · ") ? null : m)), 5000);
+      awardingRef.current = false;
+    })();
+  }, [stats, points, user]);
 
   async function buyItem(item) {
     if (!requireAuth("Enerji harcamak için giriş yap.")) return;
@@ -170,6 +220,9 @@ export default function Ben() {
       <h1>Panon</h1>
       <p className="ak-ben-lead">İlerlemen, işlem geçmişin ve disiplinin burada. Asıl soru kazanç oranı değil: planına uyuyor musun, yoksa kendini mi kandırıyorsun?</p>
 
+      {/* AK-086 K1: kimlik kartı istatistik şeridi — Fikirler/Takipçi/Takip Edilen */}
+      {user && <IdentityStats profileId={user.id} ideas={stats.ideas || 0} followers={followCounts.followers} following={followCounts.following} />}
+
       {/* Edge Rütbesi — sicilden, bağlamıyla birlikte */}
       <div className="ak-rankcard">
         <div className="ak-rank-main">
@@ -203,6 +256,27 @@ export default function Ben() {
             <span className="ak-rank-next">Sıradaki: <b>{contrib.next.name}</b> — {contrib.next.needP} puan daha</span>
           )}
           <p className="ak-rank-note">Enerji harcanabilir ama lifetime hiç düşmez — Katkı Rütbesi'ni harcadıkça kaybetmezsin. <Link to="/puanlar">Nasıl kazanılır?</Link></p>
+        </div>
+      )}
+
+      {/* AK-086 K2: Başarımlar — deriveProgress(stats) achievements.js'ten değişmeden, 8 kademe */}
+      {user && (
+        <div className="ak-achieve-card">
+          <h2><Award size={15} /> Başarımlar</h2>
+          {newAchieveMsg && <p className="ak-achieve-toast">🎉 {newAchieveMsg}</p>}
+          <div className="ak-achieve-list">
+            {deriveProgress(stats).map((a) => (
+              <div className={"ak-achieve-row" + (a.done ? " done" : "")} key={a.key}>
+                <div className="ak-achieve-top">
+                  <span className="ak-achieve-title">{a.done && <CheckCircle2 size={13} />} {a.title}</span>
+                  <span className="ak-achieve-pts">+{a.points}</span>
+                </div>
+                <p className="ak-achieve-desc">{a.desc}</p>
+                <div className="ak-achieve-bar"><div style={{ width: a.pct + "%" }} /></div>
+                <span className="ak-achieve-ctx">{a.current}/{a.target}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

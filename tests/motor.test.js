@@ -1244,4 +1244,198 @@ console.log("Tahmin Ligi — veri katmanı (AK-083 UI)");
   });
 }
 
+console.log("kimlik kartı / başarım / rozet stats türetme (AK-086 UI)");
+{
+  const {
+    maxStreakDays, ideasCount, verifiedStrategiesCount, profileComplete,
+    fetchFollowCounts, fetchFollowList, fetchPredictionsCount, fetchMemberIndex, fetchProfileStats,
+  } = await import("../src/lib/profileStats.js");
+
+  test("maxStreakDays: TÜM geçmişteki en uzun seri döner, GÜNCEL seri değil (kırılmış seri sonrası da kalıcı)", () => {
+    // 5 günlük seri, 3 gün boşluk, sonra 2 günlük GÜNCEL seri — max hâlâ 5 olmalı
+    const mk = (isoDays) => isoDays.map((d) => ({ d: d + "T10:00:00.000Z" }));
+    const trades = mk(["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04", "2026-01-05", "2026-01-09", "2026-01-10"]);
+    assert.equal(maxStreakDays(trades), 5);
+  });
+  test("maxStreakDays: boş/tek günlük sicilde çökmez", () => {
+    assert.equal(maxStreakDays([]), 0);
+    assert.equal(maxStreakDays([{ d: "2026-01-01T00:00:00.000Z" }]), 1);
+  });
+  test("maxStreakDays: aynı gün birden çok kayıt tek gün sayılır (enflasyon freni ilkesiyle tutarlı)", () => {
+    const trades = [
+      { d: "2026-01-01T09:00:00.000Z" }, { d: "2026-01-01T18:00:00.000Z" },
+      { d: "2026-01-02T09:00:00.000Z" },
+    ];
+    assert.equal(maxStreakDays(trades), 2);
+  });
+
+  test("ideasCount: doğrulanmış strateji + tahmin katılımı toplamı (Fikirler formülü, K1)", () => {
+    assert.equal(ideasCount(3, 5), 8);
+    assert.equal(ideasCount(0, 0), 0);
+  });
+  test("ideasCount: negatif/eksik girdi çökmez, negatife düşmez", () => {
+    assert.equal(ideasCount(undefined, undefined), 0);
+    assert.equal(ideasCount(-5, 2), 2);
+  });
+
+  test("verifiedStrategiesCount: yalnız oos_t>=2 olanlar sayılır", () => {
+    const strategies = [{ oos_t: 2.5 }, { oos_t: 1.2 }, { oos_t: "2.0" }, { oos_t: null }];
+    assert.equal(verifiedStrategiesCount(strategies), 2);
+  });
+  test("verifiedStrategiesCount: boş/eksik girdide çökmez", () => {
+    assert.equal(verifiedStrategiesCount([]), 0);
+    assert.equal(verifiedStrategiesCount(undefined), 0);
+  });
+
+  test("profileComplete: handle VE job ikisi de dolu olmalı (K2 İlk Adım başarımı)", () => {
+    assert.equal(profileComplete({ handle: "elif", job: "trader" }), true);
+    assert.equal(profileComplete({ handle: "elif" }), false);
+    assert.equal(profileComplete({}), false);
+    assert.equal(profileComplete(null), false);
+  });
+
+  test("Supabase yapılandırılmamışken follow/prediction/member sorguları dürüst boş değer döner (D6)", async () => {
+    assert.deepEqual(await fetchFollowCounts("u1"), { followers: 0, following: 0 });
+    assert.deepEqual(await fetchFollowList("u1", "followers"), []);
+    assert.equal(await fetchPredictionsCount("u1"), 0);
+    assert.equal(await fetchMemberIndex("u1", "2026-01-01"), null);
+  });
+  test("fetchProfileStats: profil yoksa boş nesne, çökmez", async () => {
+    assert.deepEqual(await fetchProfileStats(null), {});
+  });
+  test("fetchProfileStats: isOwner=false iken sicil-bazlı alanlar 0 kalır (D1: cihaz-içi veri başkasına sızmaz)", async () => {
+    const trades = [{ d: "2026-01-01T00:00:00.000Z" }, { d: "2026-01-02T00:00:00.000Z" }];
+    const s = await fetchProfileStats({ id: "u1", handle: "x", created_at: "2026-01-01" }, { isOwner: false, trades });
+    assert.equal(s.sicilCount, 0);
+    assert.equal(s.maxStreakDays, 0);
+  });
+  test("fetchProfileStats: v1'de wired olmayan alanlar dürüstçe 0/null (fabrike veri yok, D6)", async () => {
+    const s = await fetchProfileStats({ id: "u1", handle: "x", created_at: "2026-01-01" }, { isOwner: true, trades: [] });
+    assert.equal(s.activeInvites, 0);
+    assert.equal(s.helpfulMarks, 0);
+    assert.equal(s.lessonsDone, 0);
+    assert.equal(s.scenariosDone, 0);
+    assert.equal(s.loginStreak, 0);
+    assert.equal(s.seasonBrier, null);
+    assert.equal(s.disciplineDays, 0);
+  });
+
+  // K3: gizli rozet görünürlüğü — badges.js'in KENDİ testleri zaten var (AK-083/M3 bloğu),
+  // burada Profil.jsx'in gerçekte tükettiği yol (profileStats çıktısı -> deriveBadges -> visibleBadges)
+  // uçtan uca doğrulanır.
+  const { deriveBadges, visibleBadges } = await import("../src/lib/badges.js");
+  test("uçtan uca: fetchProfileStats çıktısı deriveBadges/visibleBadges'e sorunsuz akar, gizli rozet gizli kalır", async () => {
+    const s = await fetchProfileStats({ id: "u1", handle: "x", created_at: "2026-01-01" }, { isOwner: true, trades: [] });
+    const earned = deriveBadges(s);
+    const shown = visibleBadges(earned);
+    assert.ok(!shown.some((b) => b.key === "kurucu"), "Supabase boşken memberIndex null — kurucu kazanılmamalı/görünmemeli");
+    assert.ok(!shown.some((b) => b.key === "disiplin"), "disciplineDays=0 iken gizli rozet listede olmamalı");
+  });
+}
+
+console.log("Strateji Çıkarıcı — İncele/oluşum paneli/dürüstlük kapısı (AK-084+087 UI)");
+{
+  const { rangeFromIndices, mapOccurrenceToBlockKey, analyzeRange, hypothesisStatus } = await import("../src/lib/strategyExtractor.js");
+  const { generateSignalCode } = await import("../src/lib/codegen.js");
+  const { extractParams } = await import("../src/lib/paramsBlock.js");
+
+  console.log("C1: seçim → bar aralığı çevirisi");
+  test("rangeFromIndices: sıra farketmez, min-max normalize edilir", () => {
+    assert.deepEqual(rangeFromIndices(120, 80), { start: 80, end: 120 });
+    assert.deepEqual(rangeFromIndices(80, 120), { start: 80, end: 120 });
+  });
+  test("rangeFromIndices: eşit uç noktalar da geçerli bir (sıfır genişlikli) aralık döner", () => {
+    assert.deepEqual(rangeFromIndices(50, 50), { start: 50, end: 50 });
+  });
+  test("rangeFromIndices: sayısal olmayan girdide null (çökmez)", () => {
+    assert.equal(rangeFromIndices(undefined, 10), null);
+    assert.equal(rangeFromIndices(10, NaN), null);
+  });
+
+  console.log("C3: oluşum türü → codegen.js AVAILABLE_BLOCKS anahtar eşlemesi");
+  test("mapOccurrenceToBlockKey: mum kalıpları → candle", () => {
+    assert.equal(mapOccurrenceToBlockKey("engulfing"), "candle");
+    assert.equal(mapOccurrenceToBlockKey("pinbar"), "candle");
+    assert.equal(mapOccurrenceToBlockKey("marubozu"), "candle");
+  });
+  test("mapOccurrenceToBlockKey: sweep/fvg/ote/emacross doğru eşlenir", () => {
+    assert.equal(mapOccurrenceToBlockKey("sweep_low"), "sweep");
+    assert.equal(mapOccurrenceToBlockKey("sweep_high"), "sweep");
+    assert.equal(mapOccurrenceToBlockKey("fvg"), "fvg");
+    assert.equal(mapOccurrenceToBlockKey("ote"), "ote");
+    assert.equal(mapOccurrenceToBlockKey("golden_cross"), "emacross");
+    assert.equal(mapOccurrenceToBlockKey("death_cross"), "emacross");
+  });
+  test("mapOccurrenceToBlockKey: codegen'de karşılığı olmayan türler (ob/bos/mitigation/sr) null döner", () => {
+    assert.equal(mapOccurrenceToBlockKey("ob"), null);
+    assert.equal(mapOccurrenceToBlockKey("bos"), null);
+    assert.equal(mapOccurrenceToBlockKey("mitigation"), null);
+    assert.equal(mapOccurrenceToBlockKey("sr"), null);
+    assert.equal(mapOccurrenceToBlockKey("bilinmeyen_tur"), null);
+  });
+  test("her mapOccurrenceToBlockKey çıktısı codegen.js AVAILABLE_BLOCKS içinde gerçekten var", async () => {
+    const { AVAILABLE_BLOCKS } = await import("../src/lib/codegen.js");
+    const keys = new Set(AVAILABLE_BLOCKS.map(b => b.key));
+    for (const t of ["engulfing", "pinbar", "marubozu", "sweep_low", "sweep_high", "fvg", "ote", "golden_cross", "death_cross"]) {
+      assert.ok(keys.has(mapOccurrenceToBlockKey(t)), `${t} → ${mapOccurrenceToBlockKey(t)} AVAILABLE_BLOCKS'ta yok`);
+    }
+  });
+
+  console.log("C2: oluşum paneli — dürüst boş durum + sweep barında gerçek tespit");
+  test("analyzeRange: rastgele/düz barda hiçbir güçlü oluşum yoksa boş kart listesi (uydurma yok)", () => {
+    const bars = [];
+    for (let i = 0; i < 80; i++) bars.push({ o: 100, h: 100.05, l: 99.95, c: 100 });
+    const { cards } = analyzeRange(bars, 60, 79);
+    assert.deepEqual(cards, []);
+  });
+  test("analyzeRange: bilinen bir süpürme barında sweep kartı gerçekten bulunur", () => {
+    const bars = [];
+    for (let i = 0; i < 70; i++) bars.push({ o: 100, h: 101, l: 99, c: 100 });
+    bars.push({ o: 100, h: 100.5, l: 98.93, c: 99.9 }); // alt süpürme + geri kapanış
+    const { cards, blockKeysFound } = analyzeRange(bars, 65, 70);
+    const sweepCard = cards.find(c => c.blockKey === "sweep");
+    assert.ok(sweepCard, "sweep kartı bulunmalı");
+    assert.ok(sweepCard.count >= 1);
+    assert.ok(blockKeysFound.includes("sweep"));
+  });
+  test("analyzeRange: aralık dışındaki oluşumlar sayılmaz", () => {
+    const bars = [];
+    for (let i = 0; i < 70; i++) bars.push({ o: 100, h: 101, l: 99, c: 100 });
+    bars.push({ o: 100, h: 100.5, l: 98.93, c: 99.9 }); // sweep i=70
+    const { cards } = analyzeRange(bars, 0, 20); // süpürmenin çok öncesi
+    assert.ok(!cards.some(c => c.blockKey === "sweep"));
+  });
+  test("analyzeRange: boş/çok kısa barda çökmez", () => {
+    assert.deepEqual(analyzeRange([], 0, 10), { cards: [], blockKeysFound: [] });
+    assert.deepEqual(analyzeRange(null, 0, 10), { cards: [], blockKeysFound: [] });
+  });
+
+  console.log("C5-DÜRÜSTLÜK-KAPISI: hipotez etiketi OOS öncesi kalkmıyor (D19)");
+  test("kod üretildi ama henüz test edilmedi → HİPOTEZ", () => {
+    const s = hypothesisStatus({ tested: false });
+    assert.equal(s.label, "HİPOTEZ");
+  });
+  test("hiç kod üretilmedi → null (rozet hiç gösterilmez)", () => {
+    assert.equal(hypothesisStatus(null), null);
+  });
+  test("OOS testi geçti (t≥2) → DOĞRULANDI, HİPOTEZ asla geri dönmez", () => {
+    const s = hypothesisStatus({ tested: true, verdictGood: true, tStat: 2.4 });
+    assert.match(s.label, /DOĞRULANDI/);
+    assert.doesNotMatch(s.label, /HİPOTEZ/);
+  });
+  test("OOS testi geçmedi (t<2) → REDDEDİLDİ, yine de HİPOTEZ değil (net sonuç, muğlaklık yok)", () => {
+    const s = hypothesisStatus({ tested: true, verdictGood: false, tStat: 0.8 });
+    assert.match(s.label, /REDDEDİLDİ/);
+  });
+
+  console.log("C4: kural kurucudan üretilen kod PARAMS'lı ve parse edilebilir (BÖLÜM 1 senkronu üzerinde çalışır)");
+  test("generateSignalCode çıktısı extractParams ile hemen okunabilir", () => {
+    const code = generateSignalCode(["sweep", "fvg"], { slR: 2, tpR: 4 });
+    const params = extractParams(code);
+    assert.ok(params);
+    assert.equal(params.slR, 2);
+    assert.equal(params.tpR, 4);
+  });
+}
+
 console.log(`\n${pass} test geçti${process.exitCode ? " (HATALAR VAR)" : " — motor sağlam."}`);

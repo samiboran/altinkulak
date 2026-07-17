@@ -7,7 +7,11 @@ import { fetchProfileByHandle, fetchProfileById, fetchStrategiesByUser, fetchFol
 import { listTrades } from "../lib/ledger.js";
 import { edgeRank, contribRank } from "../lib/ranks.js";
 import { fetchLifetimePoints } from "../lib/points.js";
+import { fetchProfileStats, fetchFollowCounts } from "../lib/profileStats.js";
+import { deriveBadges, visibleBadges } from "../lib/badges.js";
 import PortfolioPanel from "../components/PortfolioPanel.jsx";
+import IdentityStats from "../components/IdentityStats.jsx";
+import BadgeStrip from "../components/BadgeStrip.jsx";
 import "../styles/profil.css";
 
 // AK-077: Ben.jsx = mutfak (sandbox/sicil/parametreler, düzenlenebilir), Profil.jsx = vitrin (public,
@@ -29,6 +33,8 @@ export default function Profil() {
   const [following, setFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [lifetimePoints, setLifetimePoints] = useState(0);
+  const [stats, setStats] = useState({});
+  const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
 
   // C1: isOwner = giriş yapmış kullanıcının kendi handle'ı === bakılan sayfanın handle'ı
   const isOwner = !!user && myHandle === handle;
@@ -69,6 +75,23 @@ export default function Profil() {
     fetchFollowState(user.id, profile.id).then((f) => { if (on) setFollowing(f); });
     return () => { on = false; };
   }, [user, profile, isOwner]);
+
+  // AK-086 K1/K3: kimlik kartı şeridi (Fikirler/Takipçi/Takip Edilen) + rozet vitrini aynı
+  // stats nesnesinden beslenir. isOwner=false iken sicil-bazlı alanlar profileStats.js içinde
+  // zaten 0 kalır (D1: cihaz-içi veri, başkasının cihazından görülemez).
+  useEffect(() => {
+    let on = true;
+    if (!profile) { setStats({}); return; }
+    fetchProfileStats(profile, { isOwner, trades: isOwner ? listTrades() : [] }).then((s) => { if (on) setStats(s); });
+    return () => { on = false; };
+  }, [profile, isOwner]);
+
+  useEffect(() => {
+    let on = true;
+    if (!profile) { setFollowCounts({ followers: 0, following: 0 }); return; }
+    fetchFollowCounts(profile.id).then((c) => { if (on) setFollowCounts(c); });
+    return () => { on = false; };
+  }, [profile]);
 
   async function toggleFollow() {
     if (!user) { requireAuth(`@${handle}'ı takip etmek için giriş yap.`); return; }
@@ -126,6 +149,8 @@ export default function Profil() {
   // C2 (2): doğrulanmış istatistik bloğu — yalnız Supabase'teki public strategies'ten (n = toplam strateji sayısı)
   const bestT = strategies.length ? Math.max(...strategies.map(s => Number(s.oos_t) || 0)) : 0;
   const verifiedCount = strategies.filter(s => Number(s.oos_t) >= 2).length;
+  // AK-086 K3: rozet vitrini — deriveBadges/visibleBadges achievements.js/badges.js'ten değişmeden kullanılır.
+  const badges = visibleBadges(deriveBadges(stats));
 
   return (
     <div className="ak-prof">
@@ -138,6 +163,8 @@ export default function Profil() {
             <span className="ak-rank teal"><Award size={13} /> Katkı: {contrib.name}</span>
             <span className="ak-prof-meta">İstatistikle doğrulanmış {verifiedCount} strateji</span>
           </div>
+          {/* AK-086 K1: kimlik kartı istatistik şeridi — Fikirler/Takipçi/Takip Edilen */}
+          <IdentityStats profileId={profile.id} ideas={stats.ideas || 0} followers={followCounts.followers} following={followCounts.following} />
         </div>
         {isOwner ? (
           <button className="ak-btn ak-btn-secondary" disabled title="Yakında">
@@ -159,6 +186,9 @@ export default function Profil() {
         <div className="ak-ps"><b>{verifiedCount}</b><span>doğrulanmış strateji</span></div>
         <div className="ak-ps"><b>{strategies.length}</b><span>toplam strateji</span></div>
       </div>
+
+      {/* AK-086 K3: rozet vitrini — gizli rozetler kazanılmadıkça DOM'a hiç girmez (badges.js) */}
+      <BadgeStrip badges={badges} />
 
       <div className="ak-prof-tabs">
         <button className={tab === "strat" ? "on" : ""} onClick={() => setTab("strat")}><TrendingUp size={15} /> Stratejiler</button>
