@@ -138,12 +138,13 @@ main{min-height:60vh;}
 @media(max-width:860px){
   .ak-burger{display:inline-flex;}
   .ak-drawer-wrap{
-    position:fixed;inset:0;z-index:40;
-    background:rgba(0,0,0,.45);backdrop-filter:blur(2px);
+    position:fixed;top:0;left:0;right:0;bottom:0;z-index:70;
+    background:rgba(0,0,0,.6); /* blur YOK: Android Chrome'da backdrop-filter, çocuk bg'lerini boyamayabiliyor */
   }
   .ak-drawer{
     position:absolute;top:0;left:0;bottom:0;width:min(78vw,300px);
-    background:var(--panel,#131a1d);border-right:1px solid var(--line);
+    background:#111A1D;border-right:1px solid #25322F;
+    box-shadow:8px 0 28px rgba(0,0,0,.55);
     padding:70px 14px 20px;display:flex;flex-direction:column;gap:4px;
     animation:ak-drawer-in .18s ease-out;
   }
