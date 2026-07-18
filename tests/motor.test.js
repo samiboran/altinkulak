@@ -953,6 +953,271 @@ console.log("mum kalıbı dedektörleri (AK-087/C8 Faz 1)");
   });
 }
 
+console.log("geometri dedektörleri: çift tepe/dip + OBO/ters OBO (AK-088/C1-C2)");
+{
+  const { findDoubleTopBottom, findHeadShoulders } = await import("../src/lib/detectors.js");
+  const B = (o, h, l, c) => ({ o, h, l, c });
+
+  // İki eşit seviyeli tepe (130), aralarında bir dip (~100), ikinci tepeden sonra
+  // boyun çizgisinin (neckline) altına kapanış — "tamamlanmış" çift tepe.
+  function buildDoubleTop() {
+    const bars = [];
+    const push = (o, h, l, c) => bars.push(B(o, h, l, c));
+    for (let i = 0; i < 10; i++) push(100, 100.2, 99.8, 100);
+    let p = 100;
+    for (let i = 0; i < 9; i++) { const c = p + 1.8; push(p, c + 0.2, p - 0.2, c); p = c; }
+    push(p, 130, p - 0.2, p + 1); p += 1; // 1. tepe
+    for (let i = 0; i < 10; i++) { const c = p - 1.9; push(p, p + 0.2, c - 0.2, c); p = c; }
+    for (let i = 0; i < 9; i++) { const c = p + 1.8; push(p, c + 0.2, p - 0.2, c); p = c; }
+    push(p, 130, p - 0.2, p + 1); p += 1; // 2. tepe (aynı seviye)
+    for (let i = 0; i < 10; i++) { const c = p - 3; push(p, p + 0.2, c - 0.3, c); p = c; } // neckline kırılımı
+    return bars;
+  }
+  // Aynı kalıp ama ikinci tepeden sonra kırılım YOK — pivot penceresini dolduracak kadar bar var
+  // (swingWin=5, yani 2. tepeden sonra en az 5 bar gerekir) ama fiyat neckline'ın (~98) çok
+  // üstünde kalıyor, hiç kırılmıyor — kalıp bulunur ama confirmed=false kalmalı.
+  function buildDoubleTopUnconfirmed() {
+    const bars = [];
+    const push = (o, h, l, c) => bars.push(B(o, h, l, c));
+    for (let i = 0; i < 10; i++) push(100, 100.2, 99.8, 100);
+    let p = 100;
+    for (let i = 0; i < 9; i++) { const c = p + 1.8; push(p, c + 0.2, p - 0.2, c); p = c; }
+    push(p, 130, p - 0.2, p + 1); p += 1; // 1. tepe
+    for (let i = 0; i < 10; i++) { const c = p - 1.9; push(p, p + 0.2, c - 0.2, c); p = c; }
+    for (let i = 0; i < 9; i++) { const c = p + 1.8; push(p, c + 0.2, p - 0.2, c); p = c; }
+    push(p, 130, p - 0.2, p + 1); p += 1; // 2. tepe (aynı seviye)
+    for (let i = 0; i < 10; i++) { const c = p - 0.3; push(p, p + 0.2, c - 0.2, c); p = c; } // hafif düşüş, neckline'a inmez
+    return bars;
+  }
+  function buildDoubleBottom() {
+    const bars = [];
+    const push = (o, h, l, c) => bars.push(B(o, h, l, c));
+    for (let i = 0; i < 10; i++) push(100, 100.2, 99.8, 100);
+    let p = 100;
+    for (let i = 0; i < 9; i++) { const c = p - 1.8; push(p, p + 0.2, c - 0.2, c); p = c; }
+    push(p, p + 0.2, 70, p - 1); p -= 1; // 1. dip
+    for (let i = 0; i < 10; i++) { const c = p + 1.9; push(p, c + 0.2, p - 0.2, c); p = c; }
+    for (let i = 0; i < 9; i++) { const c = p - 1.8; push(p, p + 0.2, c - 0.2, c); p = c; }
+    push(p, p + 0.2, 70, p - 1); p -= 1; // 2. dip (aynı seviye)
+    for (let i = 0; i < 10; i++) { const c = p + 3; push(p, c + 0.3, p - 0.2, c); p = c; } // neckline kırılımı
+    return bars;
+  }
+
+  test("çift tepe: iki eşit seviyeli tepe + neckline kırılımı → confirmed", () => {
+    const found = findDoubleTopBottom(buildDoubleTop(), 5, 0.3);
+    const dt = found.find(x => x.type === "doubletop");
+    assert.ok(dt, "çift tepe bulunmalı");
+    assert.equal(dt.confirmed, true);
+    assert.ok(dt.i2 > dt.i1);
+  });
+  test("çift tepe: neckline kırılmadıysa confirmed=false (kalıp var ama tamamlanmamış)", () => {
+    const found = findDoubleTopBottom(buildDoubleTopUnconfirmed(), 5, 0.3);
+    const dt = found.find(x => x.type === "doubletop");
+    assert.ok(dt, "kalıp yine de bulunmalı (henüz kırılmamış)");
+    assert.equal(dt.confirmed, false);
+  });
+  test("çift dip: iki eşit seviyeli dip + neckline kırılımı → confirmed", () => {
+    const found = findDoubleTopBottom(buildDoubleBottom(), 5, 0.3);
+    const db = found.find(x => x.type === "doublebottom");
+    assert.ok(db, "çift dip bulunmalı");
+    assert.equal(db.confirmed, true);
+  });
+  test("düz barda (dejenere pivot) hiç çift tepe/dip uydurulmaz — dürüstlük", () => {
+    const flat = [];
+    for (let i = 0; i < 80; i++) flat.push(B(100, 100.05, 99.95, 100));
+    assert.deepEqual(findDoubleTopBottom(flat, 5, 0.3), []);
+  });
+  test("monoton trendde (eşleşen ikinci seviye yok) çift tepe/dip bulunmaz", () => {
+    const bars = [];
+    let p = 100;
+    for (let i = 0; i < 80; i++) { p += 0.5; bars.push(B(p - 0.5, p + 0.1, p - 0.6, p)); }
+    assert.deepEqual(findDoubleTopBottom(bars, 5, 0.3), []);
+  });
+  test("lookahead korumalı: gelecek barlar geçmişteki tepe/dip KEŞFİNİ (i1,i2,level) değiştirmez", () => {
+    const base = buildDoubleTopUnconfirmed();
+    const before = findDoubleTopBottom(base, 5, 0.3).find(x => x.type === "doubletop");
+    const extended = [...base, B(200, 210, 190, 205), B(200, 210, 190, 205)];
+    const after = findDoubleTopBottom(extended, 5, 0.3).find(x => x.type === "doubletop" && x.i2 === before.i2);
+    assert.ok(after, "aynı kalıp gelecekte de bulunmalı");
+    assert.equal(after.i1, before.i1);
+    assert.equal(after.level, before.level);
+  });
+
+  // OBO: sol omuz(115) - baş(135, belirgin yüksek) - sağ omuz(115) + neckline kırılımı.
+  function buildHS() {
+    const bars = [];
+    const push = (o, h, l, c) => bars.push(B(o, h, l, c));
+    for (let i = 0; i < 10; i++) push(100, 100.2, 99.8, 100);
+    let p = 100;
+    for (let i = 0; i < 8; i++) { const c = p + 1.8; push(p, c + 0.2, p - 0.2, c); p = c; }
+    push(p, 115, p - 0.2, p + 1); p += 1; // sol omuz
+    for (let i = 0; i < 8; i++) { const c = p - 1.9; push(p, p + 0.2, c - 0.2, c); p = c; }
+    for (let i = 0; i < 8; i++) { const c = p + 2.5; push(p, c + 0.2, p - 0.2, c); p = c; }
+    push(p, 135, p - 0.2, p + 1); p += 1; // baş
+    for (let i = 0; i < 8; i++) { const c = p - 2.8; push(p, p + 0.2, c - 0.2, c); p = c; }
+    for (let i = 0; i < 8; i++) { const c = p + 1.8; push(p, c + 0.2, p - 0.2, c); p = c; }
+    push(p, 115, p - 0.2, p + 1); p += 1; // sağ omuz
+    for (let i = 0; i < 10; i++) { const c = p - 3; push(p, p + 0.2, c - 0.3, c); p = c; } // neckline kırılımı
+    return bars;
+  }
+  function buildIHS() {
+    const bars = [];
+    const push = (o, h, l, c) => bars.push(B(o, h, l, c));
+    for (let i = 0; i < 10; i++) push(100, 100.2, 99.8, 100);
+    let p = 100;
+    for (let i = 0; i < 8; i++) { const c = p - 1.8; push(p, p + 0.2, c - 0.2, c); p = c; }
+    push(p, p + 0.2, 85, p - 1); p -= 1; // sol omuz
+    for (let i = 0; i < 8; i++) { const c = p + 1.9; push(p, c + 0.2, p - 0.2, c); p = c; }
+    for (let i = 0; i < 8; i++) { const c = p - 2.5; push(p, p + 0.2, c - 0.2, c); p = c; }
+    push(p, p + 0.2, 65, p - 1); p -= 1; // baş
+    for (let i = 0; i < 8; i++) { const c = p + 2.8; push(p, c + 0.2, p - 0.2, c); p = c; }
+    for (let i = 0; i < 8; i++) { const c = p - 1.8; push(p, p + 0.2, c - 0.2, c); p = c; }
+    push(p, p + 0.2, 85, p - 1); p -= 1; // sağ omuz
+    for (let i = 0; i < 10; i++) { const c = p + 3; push(p, c + 0.3, p - 0.2, c); p = c; } // neckline kırılımı
+    return bars;
+  }
+
+  test("OBO: sol omuz≈sağ omuz, baş belirgin yüksek + neckline kırılımı → confirmed", () => {
+    const found = findHeadShoulders(buildHS(), 5, 0.3);
+    const hs = found.find(x => x.type === "hs");
+    assert.ok(hs, "OBO bulunmalı");
+    assert.equal(hs.confirmed, true);
+    assert.ok(hs.headI > hs.leftShoulderI && hs.rightShoulderI > hs.headI);
+  });
+  test("Ters OBO: sol omuz≈sağ omuz, baş belirgin düşük + neckline kırılımı → confirmed", () => {
+    const found = findHeadShoulders(buildIHS(), 5, 0.3);
+    const ihs = found.find(x => x.type === "ihs");
+    assert.ok(ihs, "Ters OBO bulunmalı");
+    assert.equal(ihs.confirmed, true);
+  });
+  test("düz barda hiç OBO uydurulmaz — dürüstlük", () => {
+    const flat = [];
+    for (let i = 0; i < 80; i++) flat.push(B(100, 100.05, 99.95, 100));
+    assert.deepEqual(findHeadShoulders(flat, 5, 0.3), []);
+  });
+  test("monoton trendde OBO bulunmaz (omuz benzerliği/baş uçluğu şartı sağlanmaz)", () => {
+    const bars = [];
+    let p = 100;
+    for (let i = 0; i < 80; i++) { p += 0.5; bars.push(B(p - 0.5, p + 0.1, p - 0.6, p)); }
+    assert.deepEqual(findHeadShoulders(bars, 5, 0.3), []);
+  });
+}
+
+console.log("geometri dedektörü: daralan üçgen (AK-088/C3)");
+{
+  const { findTriangle } = await import("../src/lib/detectors.js");
+  const B = (o, h, l, c) => ({ o, h, l, c });
+  const triWave = (t) => { const f = t - Math.floor(t); return f < 0.5 ? (4 * f - 1) : (3 - 4 * f); };
+  // Üçgen barları: üst/alt zarf yavaşça yakınsar/kayar, her bar küçük fitille zarfa dokunur
+  // (gerçekçi ATR ölçeği — tüm zarf genişliğine yayılan dev mumlar değil).
+  function buildTriangle(kind) {
+    const bars = [], n = 60, period = 10;
+    for (let i = 0; i < n; i++) {
+      let top, bot;
+      if (kind === "asc") { top = 115; bot = 90 + (i / n) * 13; }
+      else if (kind === "desc") { top = 120 - (i / n) * 13; bot = 95; }
+      else if (kind === "sym") { top = 120 - (i / n) * 10; bot = 90 + (i / n) * 10; }
+      else { top = 120; bot = 90; } // "flat": yakınsamayan paralel kanal
+      const center = (top + bot) / 2, half = (top - bot) / 2;
+      const c = center + half * triWave(i / period);
+      bars.push(B(c - 0.15, c + 0.2, c - 0.2, c));
+    }
+    return bars;
+  }
+
+  test("yükselen üçgen: üst yatay + alt yükseliyor → triangle_asc", () => {
+    const found = findTriangle(buildTriangle("asc"), 60, 4);
+    assert.equal(found.length, 1);
+    assert.equal(found[0].type, "triangle_asc");
+    assert.ok(found[0].lowerSlope > 0);
+  });
+  test("alçalan üçgen: üst düşüyor + alt yatay → triangle_desc", () => {
+    const found = findTriangle(buildTriangle("desc"), 60, 4);
+    assert.equal(found.length, 1);
+    assert.equal(found[0].type, "triangle_desc");
+    assert.ok(found[0].upperSlope < 0);
+  });
+  test("simetrik üçgen: ikisi de yakınsıyor → triangle_sym", () => {
+    const found = findTriangle(buildTriangle("sym"), 60, 4);
+    assert.equal(found.length, 1);
+    assert.equal(found[0].type, "triangle_sym");
+  });
+  test("yakınsamayan paralel kanal → üçgen değil (boş dizi, dürüstlük)", () => {
+    assert.deepEqual(findTriangle(buildTriangle("flat"), 60, 4), []);
+  });
+  test("lookback'ten kısa veri → boş dizi (çökmez)", () => {
+    assert.deepEqual(findTriangle(buildTriangle("asc").slice(0, 20), 60, 4), []);
+  });
+  test("sonuç yalnız verilen barların sınırları içinde kalır (lookahead yok)", () => {
+    const bars = buildTriangle("asc");
+    const found = findTriangle(bars, 60, 4);
+    for (const t of found) {
+      assert.ok(t.startI >= 0 && t.endI === bars.length - 1);
+    }
+  });
+}
+
+console.log("divergence: fiyat/gösterge uyumsuzluğu (AK-088/C4, jenerik)");
+{
+  const { findDivergence, rsi } = await import("../src/lib/detectors.js");
+  const B = (o, h, l, c) => ({ o, h, l, c });
+
+  // Ayı divergence: fiyat 2. tepede daha yüksek (higher high), momentum (ve dolayısıyla RSI) daha zayıf.
+  function buildBearishDiv() {
+    const bars = [];
+    for (let i = 0; i < 20; i++) bars.push(B(100, 100.5, 99.5, 100));
+    for (let i = 0; i < 10; i++) { const c = 100 + i * 3; bars.push(B(c - 3, c + 0.3, c - 3.2, c)); } // güçlü 1. ralli
+    for (let i = 0; i < 6; i++) { const c = 130 - i * 2; bars.push(B(c + 2, c + 2.1, c - 0.1, c)); }
+    for (let i = 0; i < 10; i++) { const c = 118 + i * 1.5; bars.push(B(c - 1.5, c + 0.1, c - 1.6, c)); } // zayıf 2. ralli (daha yüksek tepe)
+    for (let i = 0; i < 5; i++) { const c = 133 - i * 1; bars.push(B(c + 1, c + 1.1, c - 0.1, c)); }
+    return bars;
+  }
+  // Boğa divergence: fiyat 2. dipte daha düşük (lower low), momentum daha zayıf (RSI yükseliyor).
+  function buildBullishDiv() {
+    const bars = [];
+    for (let i = 0; i < 20; i++) bars.push(B(100, 100.5, 99.5, 100));
+    for (let i = 0; i < 10; i++) { const c = 100 - i * 3; bars.push(B(c + 3, c + 3.2, c - 0.3, c)); } // güçlü 1. düşüş
+    for (let i = 0; i < 6; i++) { const c = 70 + i * 2; bars.push(B(c - 2, c + 0.1, c - 2.1, c)); }
+    for (let i = 0; i < 10; i++) { const c = 82 - i * 1.5; bars.push(B(c + 1.5, c + 1.6, c - 0.1, c)); } // zayıf 2. düşüş (daha düşük dip)
+    for (let i = 0; i < 5; i++) { const c = 67 + i * 1; bars.push(B(c - 1, c + 0.1, c - 1.1, c)); }
+    return bars;
+  }
+
+  test("ayı divergence: fiyat higher-high, RSI lower-high → bearish_div", () => {
+    const bars = buildBearishDiv();
+    const found = findDivergence(bars, rsi(bars), 30);
+    const d = found.find(x => x.type === "bearish_div");
+    assert.ok(d, "ayı divergence bulunmalı");
+    assert.ok(bars[d.priceI2].h > bars[d.priceI1].h);
+  });
+  test("boğa divergence: fiyat lower-low, RSI higher-low → bullish_div", () => {
+    const bars = buildBullishDiv();
+    const found = findDivergence(bars, rsi(bars), 30);
+    const d = found.find(x => x.type === "bullish_div");
+    assert.ok(d, "boğa divergence bulunmalı");
+    assert.ok(bars[d.priceI2].l < bars[d.priceI1].l);
+  });
+  test("monoton trendde (fiyat/gösterge aynı yönde) divergence uydurulmaz — dürüstlük", () => {
+    const bars = [];
+    let p = 200;
+    for (let i = 0; i < 80; i++) { p -= 1; bars.push(B(p + 1, p + 1.1, p - 0.5, p)); }
+    assert.deepEqual(findDivergence(bars, rsi(bars), 30), []);
+  });
+  test("indicatorArr verilmezse (null/undefined) çökmez, boş döner — RSI kendi hesaplanmaz", () => {
+    const bars = buildBearishDiv();
+    assert.deepEqual(findDivergence(bars, null, 30), []);
+    assert.deepEqual(findDivergence(null, rsi(bars), 30), []);
+  });
+  test("sonuç indeksleri asla dizinin dışına taşmaz (lookahead yok)", () => {
+    const bars = buildBearishDiv();
+    const found = findDivergence(bars, rsi(bars), 30);
+    for (const d of found) {
+      assert.ok(d.priceI1 < bars.length && d.priceI2 < bars.length);
+      assert.ok(d.priceI1 < d.priceI2);
+    }
+  });
+}
+
 console.log("likidite süpürme + PARAMS bloğu (AK-087/C3, AK-084/C1)");
 {
   const { findSweep } = await import("../src/lib/detectors.js");
@@ -1380,6 +1645,24 @@ console.log("Strateji Çıkarıcı — İncele/oluşum paneli/dürüstlük kapı
       assert.ok(keys.has(mapOccurrenceToBlockKey(t)), `${t} → ${mapOccurrenceToBlockKey(t)} AVAILABLE_BLOCKS'ta yok`);
     }
   });
+  test("mapOccurrenceToBlockKey (AK-088): geometri/divergence türleri doğru eşlenir", () => {
+    assert.equal(mapOccurrenceToBlockKey("doubletop"), "doubletop");
+    assert.equal(mapOccurrenceToBlockKey("doublebottom"), "doublebottom");
+    assert.equal(mapOccurrenceToBlockKey("hs"), "hs");
+    assert.equal(mapOccurrenceToBlockKey("ihs"), "ihs");
+    assert.equal(mapOccurrenceToBlockKey("triangle_asc"), "triangle");
+    assert.equal(mapOccurrenceToBlockKey("triangle_desc"), "triangle");
+    assert.equal(mapOccurrenceToBlockKey("triangle_sym"), "triangle");
+    assert.equal(mapOccurrenceToBlockKey("bullish_div"), "divergence");
+    assert.equal(mapOccurrenceToBlockKey("bearish_div"), "divergence");
+  });
+  test("her AK-088 mapOccurrenceToBlockKey çıktısı da codegen.js AVAILABLE_BLOCKS içinde var", async () => {
+    const { AVAILABLE_BLOCKS } = await import("../src/lib/codegen.js");
+    const keys = new Set(AVAILABLE_BLOCKS.map(b => b.key));
+    for (const t of ["doubletop", "doublebottom", "hs", "ihs", "triangle_asc", "triangle_desc", "triangle_sym", "bullish_div", "bearish_div"]) {
+      assert.ok(keys.has(mapOccurrenceToBlockKey(t)), `${t} → ${mapOccurrenceToBlockKey(t)} AVAILABLE_BLOCKS'ta yok`);
+    }
+  });
 
   console.log("C2: oluşum paneli — dürüst boş durum + sweep barında gerçek tespit");
   test("analyzeRange: düz barda AYRIK oluşumlar (mum kalıbı/süpürme/FVG) uydurulmaz", () => {
@@ -1412,6 +1695,36 @@ console.log("Strateji Çıkarıcı — İncele/oluşum paneli/dürüstlük kapı
   test("analyzeRange: boş/çok kısa barda çökmez", () => {
     assert.deepEqual(analyzeRange([], 0, 10), { cards: [], blockKeysFound: [] });
     assert.deepEqual(analyzeRange(null, 0, 10), { cards: [], blockKeysFound: [] });
+  });
+
+  console.log("C2-AK-088: oluşum paneli — geometri kartları + divergence'ın showRsi kapısı");
+  test("analyzeRange: bilinen bir çift tepe barında doubletop kartı gerçekten bulunur", () => {
+    const bars = [];
+    const push = (o, h, l, c) => bars.push({ o, h, l, c });
+    for (let i = 0; i < 10; i++) push(100, 100.2, 99.8, 100);
+    let p = 100;
+    for (let i = 0; i < 9; i++) { const c = p + 1.8; push(p, c + 0.2, p - 0.2, c); p = c; }
+    push(p, 130, p - 0.2, p + 1); p += 1;
+    for (let i = 0; i < 10; i++) { const c = p - 1.9; push(p, p + 0.2, c - 0.2, c); p = c; }
+    for (let i = 0; i < 9; i++) { const c = p + 1.8; push(p, c + 0.2, p - 0.2, c); p = c; }
+    push(p, 130, p - 0.2, p + 1); p += 1;
+    for (let i = 0; i < 10; i++) { const c = p - 3; push(p, p + 0.2, c - 0.3, c); p = c; }
+    const { cards, blockKeysFound } = analyzeRange(bars, 0, bars.length - 1);
+    const dtCard = cards.find(c => c.blockKey === "doubletop");
+    assert.ok(dtCard, "doubletop kartı bulunmalı");
+    assert.ok(blockKeysFound.includes("doubletop"));
+  });
+  test("analyzeRange: showRsi geçilmezse divergence hiç HESAPLANMAZ (RSI'yı kendi başına çıkarmaz)", () => {
+    const bars = [];
+    for (let i = 0; i < 20; i++) bars.push({ o: 100, h: 100.5, l: 99.5, c: 100 });
+    for (let i = 0; i < 10; i++) { const c = 100 + i * 3; bars.push({ o: c - 3, h: c + 0.3, l: c - 3.2, c }); }
+    for (let i = 0; i < 6; i++) { const c = 130 - i * 2; bars.push({ o: c + 2, h: c + 2.1, l: c - 0.1, c }); }
+    for (let i = 0; i < 10; i++) { const c = 118 + i * 1.5; bars.push({ o: c - 1.5, h: c + 0.1, l: c - 1.6, c }); }
+    for (let i = 0; i < 5; i++) { const c = 133 - i * 1; bars.push({ o: c + 1, h: c + 1.1, l: c - 0.1, c }); }
+    const withoutRsi = analyzeRange(bars, 0, bars.length - 1);
+    assert.ok(!withoutRsi.cards.some(c => c.blockKey === "divergence"), "showRsi olmadan divergence görünmemeli");
+    const withRsi = analyzeRange(bars, 0, bars.length - 1, { showRsi: true });
+    assert.ok(withRsi.cards.some(c => c.blockKey === "divergence"), "showRsi=true iken divergence kartı bulunmalı");
   });
 
   console.log("C5-DÜRÜSTLÜK-KAPISI: hipotez etiketi OOS öncesi kalkmıyor (D19)");

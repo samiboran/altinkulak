@@ -278,3 +278,173 @@ export function findSweep(bars, lookback = 20, minPct = 0.0004, maxPct = 0.0035)
   }
   return out;
 }
+
+// ================= AK-088 FAZ 2: Geometri dedektörleri =================
+// Ortak swing-point çıkarımı: findSupportResistance ile AYNI merkezi-pencere pivot fikri, ancak
+// TEK FARK — pivot penceresinde TEK BAŞINA en uç bar olmalı (eşitlik yok). Düz/yatay barlarda
+// (her bar diğerleriyle eşit) böylece hiç pivot bulunmaz; S/R'de kabul edilebilen bu dejenere
+// durum, geometri kalıpları için "kalıp yok" dürüstlüğünü bozardı.
+function swingPoints(bars, swingWin) {
+  const highs = [], lows = [];
+  for (let i = swingWin; i < bars.length - swingWin; i++) {
+    const win = bars.slice(i - swingWin, i + swingWin + 1);
+    const maxH = Math.max(...win.map(b => b.h));
+    const minL = Math.min(...win.map(b => b.l));
+    if (bars[i].h === maxH && win.filter(b => b.h === maxH).length === 1) highs.push({ i, price: bars[i].h });
+    if (bars[i].l === minL && win.filter(b => b.l === minL).length === 1) lows.push({ i, price: bars[i].l });
+  }
+  return { highs, lows };
+}
+
+// Çift tepe / çift dip: iki benzer seviyeli swing (tolATR bandı), aralarında min mesafe (2×swingWin).
+// confirmed: sağ tepe/dipten SONRA kapanış boyun çizgisini (aradaki en uç zıt seviye) kırdıysa —
+// standart TA kuralı, "tamamlanmış kalıp" için şart.
+export function findDoubleTopBottom(bars, swingWin = 5, tolATR = 0.3) {
+  if (bars.length < swingWin * 2 + 1) return [];
+  const a = atr(bars, 14);
+  const { highs, lows } = swingPoints(bars, swingWin);
+  const minGap = swingWin * 2;
+  const out = [];
+  for (let x = 0; x < highs.length; x++) {
+    for (let y = x + 1; y < highs.length; y++) {
+      const h1 = highs[x], h2 = highs[y];
+      if (h2.i - h1.i < minGap) continue;
+      const tol = (a[h2.i] || a[a.length - 1] || 0) * tolATR;
+      if (Math.abs(h1.price - h2.price) > tol) continue;
+      const neckline = Math.min(...bars.slice(h1.i, h2.i + 1).map(b => b.l));
+      let confirmed = false;
+      for (let j = h2.i + 1; j < bars.length; j++) if (bars[j].c < neckline) { confirmed = true; break; }
+      out.push({ type: "doubletop", i1: h1.i, i2: h2.i, level: (h1.price + h2.price) / 2, neckline, confirmed });
+    }
+  }
+  for (let x = 0; x < lows.length; x++) {
+    for (let y = x + 1; y < lows.length; y++) {
+      const l1 = lows[x], l2 = lows[y];
+      if (l2.i - l1.i < minGap) continue;
+      const tol = (a[l2.i] || a[a.length - 1] || 0) * tolATR;
+      if (Math.abs(l1.price - l2.price) > tol) continue;
+      const neckline = Math.max(...bars.slice(l1.i, l2.i + 1).map(b => b.h));
+      let confirmed = false;
+      for (let j = l2.i + 1; j < bars.length; j++) if (bars[j].c > neckline) { confirmed = true; break; }
+      out.push({ type: "doublebottom", i1: l1.i, i2: l2.i, level: (l1.price + l2.price) / 2, neckline, confirmed });
+    }
+  }
+  return out;
+}
+
+// OBO / Ters OBO: ardışık 3 swing (sol omuz / baş / sağ omuz). Omuzlar tolATR bandında benzer
+// seviyede, baş ikisinden en az tolATR kadar belirgin şekilde uç olmalı. confirmed: C1 ile aynı
+// ilke — sağ omuzdan sonra kapanış boyun çizgisini kırmalı.
+export function findHeadShoulders(bars, swingWin = 5, tolATR = 0.3) {
+  if (bars.length < swingWin * 2 + 1) return [];
+  const a = atr(bars, 14);
+  const { highs, lows } = swingPoints(bars, swingWin);
+  const out = [];
+  for (let k = 0; k + 2 < highs.length; k++) {
+    const ls = highs[k], hd = highs[k + 1], rs = highs[k + 2];
+    const tol = (a[rs.i] || a[a.length - 1] || 0) * tolATR;
+    if (Math.abs(ls.price - rs.price) > tol) continue;
+    if (!(hd.price > ls.price + tol && hd.price > rs.price + tol)) continue;
+    const trough1 = Math.min(...bars.slice(ls.i, hd.i + 1).map(b => b.l));
+    const trough2 = Math.min(...bars.slice(hd.i, rs.i + 1).map(b => b.l));
+    const neckline = (trough1 + trough2) / 2;
+    let confirmed = false;
+    for (let j = rs.i + 1; j < bars.length; j++) if (bars[j].c < neckline) { confirmed = true; break; }
+    out.push({ type: "hs", leftShoulderI: ls.i, headI: hd.i, rightShoulderI: rs.i, neckline, confirmed });
+  }
+  for (let k = 0; k + 2 < lows.length; k++) {
+    const ls = lows[k], hd = lows[k + 1], rs = lows[k + 2];
+    const tol = (a[rs.i] || a[a.length - 1] || 0) * tolATR;
+    if (Math.abs(ls.price - rs.price) > tol) continue;
+    if (!(hd.price < ls.price - tol && hd.price < rs.price - tol)) continue;
+    const peak1 = Math.max(...bars.slice(ls.i, hd.i + 1).map(b => b.h));
+    const peak2 = Math.max(...bars.slice(hd.i, rs.i + 1).map(b => b.h));
+    const neckline = (peak1 + peak2) / 2;
+    let confirmed = false;
+    for (let j = rs.i + 1; j < bars.length; j++) if (bars[j].c > neckline) { confirmed = true; break; }
+    out.push({ type: "ihs", leftShoulderI: ls.i, headI: hd.i, rightShoulderI: rs.i, neckline, confirmed });
+  }
+  return out;
+}
+
+// Basit lineer regresyon: eğim (m) ve y-kesimi (b), x = pencere-içi bar index.
+function linReg(pts) {
+  const n = pts.length;
+  if (n < 2) return null;
+  const mx = pts.reduce((s, p) => s + p.x, 0) / n;
+  const my = pts.reduce((s, p) => s + p.y, 0) / n;
+  let num = 0, den = 0;
+  for (const p of pts) { num += (p.x - mx) * (p.y - my); den += (p.x - mx) ** 2; }
+  const m = den === 0 ? 0 : num / den;
+  return { m, b: my - m * mx };
+}
+
+// Daralan üçgen: son `lookback` bardaki lokal pivotlardan (2 barlık pencere) üst/alt trend
+// çizgileri lineer regresyonla uydurulur. Eğime göre sınıflandırma (ATR-ölçekli düzlük eşiği):
+// üst yatay + alt yükseliyor → yükselen; üst düşüyor + alt yatay → alçalan; ikisi de yakınsıyor
+// (üst düşüyor, alt yükseliyor) → simetrik. Basit regresyon yeterli, curve-fitting gerekmez.
+export function findTriangle(bars, lookback = 40, minTouches = 4) {
+  if (bars.length < lookback) return [];
+  const startI = bars.length - lookback;
+  const seg = bars.slice(startI);
+  const pivWin = 2;
+  const highPts = [], lowPts = [];
+  for (let i = pivWin; i < seg.length - pivWin; i++) {
+    const w = seg.slice(i - pivWin, i + pivWin + 1);
+    if (seg[i].h === Math.max(...w.map(b => b.h))) highPts.push({ x: i, y: seg[i].h });
+    if (seg[i].l === Math.min(...w.map(b => b.l))) lowPts.push({ x: i, y: seg[i].l });
+  }
+  if (highPts.length < 2 || lowPts.length < 2 || highPts.length + lowPts.length < minTouches) return [];
+  const upper = linReg(highPts), lower = linReg(lowPts);
+  if (!upper || !lower) return [];
+  const a = atr(bars, 14);
+  const flat = (a[bars.length - 1] || a[a.length - 1] || 0) * 0.02;
+  const upFlat = Math.abs(upper.m) < flat, loFlat = Math.abs(lower.m) < flat;
+  let type = null;
+  if (upFlat && lower.m > flat) type = "triangle_asc";
+  else if (loFlat && upper.m < -flat) type = "triangle_desc";
+  else if (upper.m < -flat && lower.m > flat) type = "triangle_sym";
+  if (!type) return [];
+  let apex = null;
+  if (upper.m !== lower.m) {
+    const xApex = (lower.b - upper.b) / (upper.m - lower.m);
+    apex = { i: startI + Math.round(xApex), price: upper.m * xApex + upper.b };
+  }
+  return [{ type, startI, endI: bars.length - 1, upperSlope: upper.m, lowerSlope: lower.m, apex }];
+}
+
+// ================= AK-088 FAZ 3: Divergence (jenerik osilatör) =================
+// Fiyat swing'leri (yüksek/düşük) ile dışarıdan verilen gösterge dizisi (rsi(bars) vb. — burada
+// TEKRAR HESAPLANMAZ, çağıran sorumlu) arasında uyumsuzluk. Yalnız [n-lookback, n) penceresi
+// taranır — kendisine kadar olan barlar, lookahead yok. Jenerik: herhangi bir osilatör array'i
+// ile çalışır (MACD vb. ileride eklenirse bu fonksiyon yeniden yazılmaz).
+export function findDivergence(bars, indicatorArr, lookback = 30) {
+  if (!bars || !indicatorArr || !bars.length) return [];
+  const win = 3;
+  const n = bars.length;
+  const from = Math.max(win, n - lookback);
+  const priceHighs = [], priceLows = [];
+  for (let i = from; i < n - win; i++) {
+    const w = bars.slice(i - win, i + win + 1);
+    if (bars[i].h === Math.max(...w.map(b => b.h))) priceHighs.push(i);
+    if (bars[i].l === Math.min(...w.map(b => b.l))) priceLows.push(i);
+  }
+  const out = [];
+  for (let x = 0; x < priceHighs.length; x++) {
+    for (let y = x + 1; y < priceHighs.length; y++) {
+      const i1 = priceHighs[x], i2 = priceHighs[y];
+      if (indicatorArr[i1] == null || indicatorArr[i2] == null) continue;
+      if (bars[i2].h > bars[i1].h && indicatorArr[i2] < indicatorArr[i1])
+        out.push({ type: "bearish_div", priceI1: i1, priceI2: i2, indicatorI1: i1, indicatorI2: i2 });
+    }
+  }
+  for (let x = 0; x < priceLows.length; x++) {
+    for (let y = x + 1; y < priceLows.length; y++) {
+      const i1 = priceLows[x], i2 = priceLows[y];
+      if (indicatorArr[i1] == null || indicatorArr[i2] == null) continue;
+      if (bars[i2].l < bars[i1].l && indicatorArr[i2] > indicatorArr[i1])
+        out.push({ type: "bullish_div", priceI1: i1, priceI2: i2, indicatorI1: i1, indicatorI2: i2 });
+    }
+  }
+  return out;
+}

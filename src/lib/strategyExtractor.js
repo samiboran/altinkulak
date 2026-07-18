@@ -4,6 +4,7 @@
 import {
   findFVG, findSweep, findFib, inOTE, findCandlePatterns, findEmaCross,
   findOrderBlocks, findBOS, findMitigation, findSupportResistance,
+  findDoubleTopBottom, findHeadShoulders, findTriangle, findDivergence, rsi,
 } from "./detectors.js";
 
 // C1: sürükleme uç noktalarından (bar index, sıra farketmez) normalize edilmiş [start,end] aralığı.
@@ -21,6 +22,10 @@ const TYPE_TO_BLOCK = {
   fvg: "fvg",
   ote: "ote",
   golden_cross: "emacross", death_cross: "emacross",
+  doubletop: "doubletop", doublebottom: "doublebottom",
+  hs: "hs", ihs: "ihs",
+  triangle_asc: "triangle", triangle_desc: "triangle", triangle_sym: "triangle",
+  bullish_div: "divergence", bearish_div: "divergence",
 };
 export function mapOccurrenceToBlockKey(type) {
   return TYPE_TO_BLOCK[type] || null;
@@ -33,13 +38,19 @@ const TYPE_LABEL = {
   ote: "Fib / OTE bölgesi",
   golden_cross: "Golden cross", death_cross: "Death cross",
   ob: "Order Block", bos: "BOS (yapı kırılımı)", mitigation: "Mitigasyon", sr: "Destek/Direnç",
+  doubletop: "Çift Tepe", doublebottom: "Çift Dip",
+  hs: "Omuz-Baş-Omuz (OBO)", ihs: "Ters OBO",
+  triangle_asc: "Yükselen Üçgen", triangle_desc: "Alçalan Üçgen", triangle_sym: "Simetrik Üçgen",
+  bullish_div: "Boğa Uyumsuzluğu (Divergence)", bearish_div: "Ayı Uyumsuzluğu (Divergence)",
 };
 
 // C2: seçili bar aralığında TÜM dedektörler koşar, oluşum türüne göre gruplanmış kartlar döner.
 // lookaheadBars: dedektörlerin ihtiyaç duyduğu bağlam için aralığın SONUNA kadar (± birkaç bar)
 // tüm geçmiş taranır, ama yalnız [startIdx,endIdx] içine düşen oluşumlar sayılır — lookahead
 // ihlali yok (gelecek bara asla bakılmaz, yalnız geçmiş bağlam kullanılır).
-export function analyzeRange(bars, startIdx, endIdx) {
+// opts.showRsi: true ise divergence de taranır (RSI hesaplaması gerektirir — grafik zaten RSI'yı
+// açık göstermiyorsa gereksiz hesap yapılmaz, sessizce atlanır, hata fırlatılmaz).
+export function analyzeRange(bars, startIdx, endIdx, opts = {}) {
   if (!bars || !bars.length) return { cards: [], blockKeysFound: [] };
   const lo = Math.max(0, startIdx), hi = Math.min(bars.length - 1, endIdx);
   if (hi < lo) return { cards: [], blockKeysFound: [] };
@@ -58,6 +69,13 @@ export function analyzeRange(bars, startIdx, endIdx) {
   for (const b of findBOS(bars)) if (inRange(b.i)) counts.set("bos", (counts.get("bos") || 0) + 1);
   for (const m of findMitigation(bars)) if (inRange(m.i)) counts.set("mitigation", (counts.get("mitigation") || 0) + 1);
   for (const s of findSupportResistance(bars)) if (inRange(s.lastI)) counts.set("sr", (counts.get("sr") || 0) + 1);
+  for (const d of findDoubleTopBottom(bars)) if (inRange(d.i2)) counts.set(d.type, (counts.get(d.type) || 0) + 1);
+  for (const h of findHeadShoulders(bars)) if (inRange(h.rightShoulderI)) counts.set(h.type, (counts.get(h.type) || 0) + 1);
+  for (const t of findTriangle(bars)) if (inRange(t.endI)) counts.set(t.type, (counts.get(t.type) || 0) + 1);
+  if (opts.showRsi) {
+    const rsiArr = rsi(bars);
+    for (const dv of findDivergence(bars, rsiArr)) if (inRange(dv.priceI2)) counts.set(dv.type, (counts.get(dv.type) || 0) + 1);
+  }
 
   // OTE: findFib TEK bir güncel salınım döner (dizi değil) — aralıktaki barlardan kaçı o
   // salınımın OTE bölgesinde kapanmış diye sayılır (aralığın SONUNA kadar geçmişten hesaplanır).

@@ -55,6 +55,66 @@ const BLOCKS = {
       "  if (typeof dir !== \"undefined\" && ((dir === 1 && !trendUp) || (dir === -1 && trendUp))) return null;",
     ],
   },
+  doubletop: {
+    label: "Çift Tepe",
+    params: { dtSwingWin: 5, dtTolAtr: 0.3 },
+    code: [
+      "  // Çift Tepe: iki benzer seviyeli tepe + boyun çizgisi kırılımı teyidi",
+      "  const dt = h.findDoubleTopBottom(bars.slice(0, i + 1), PARAMS.dtSwingWin, PARAMS.dtTolAtr).find(p => p.type === \"doubletop\" && p.confirmed && p.i2 <= i);",
+      "  if (!dt) return null;",
+      "  const dir = -1; // çift tepe kırılımı → SHORT",
+    ],
+  },
+  doublebottom: {
+    label: "Çift Dip",
+    params: { dtSwingWin: 5, dtTolAtr: 0.3 },
+    code: [
+      "  // Çift Dip: iki benzer seviyeli dip + boyun çizgisi kırılımı teyidi",
+      "  const db = h.findDoubleTopBottom(bars.slice(0, i + 1), PARAMS.dtSwingWin, PARAMS.dtTolAtr).find(p => p.type === \"doublebottom\" && p.confirmed && p.i2 <= i);",
+      "  if (!db) return null;",
+      "  const dir = 1; // çift dip kırılımı → LONG",
+    ],
+  },
+  hs: {
+    label: "Omuz-Baş-Omuz (OBO)",
+    params: { hsSwingWin: 5, hsTolAtr: 0.3 },
+    code: [
+      "  // OBO: sol omuz-baş-sağ omuz + boyun çizgisi kırılımı teyidi",
+      "  const hp = h.findHeadShoulders(bars.slice(0, i + 1), PARAMS.hsSwingWin, PARAMS.hsTolAtr).find(p => p.type === \"hs\" && p.confirmed && p.rightShoulderI <= i);",
+      "  if (!hp) return null;",
+      "  const dir = -1; // OBO kırılımı → SHORT",
+    ],
+  },
+  ihs: {
+    label: "Ters OBO",
+    params: { hsSwingWin: 5, hsTolAtr: 0.3 },
+    code: [
+      "  // Ters OBO: sol omuz-baş-sağ omuz + boyun çizgisi kırılımı teyidi",
+      "  const hp = h.findHeadShoulders(bars.slice(0, i + 1), PARAMS.hsSwingWin, PARAMS.hsTolAtr).find(p => p.type === \"ihs\" && p.confirmed && p.rightShoulderI <= i);",
+      "  if (!hp) return null;",
+      "  const dir = 1; // ters OBO kırılımı → LONG",
+    ],
+  },
+  triangle: {
+    label: "Daralan Üçgen",
+    params: { triLookback: 40, triMinTouches: 4 },
+    code: [
+      "  // Daralan üçgen: son pencerede üst/alt trend çizgileri yakınsıyor mu?",
+      "  const tris = h.findTriangle(bars.slice(0, i + 1), PARAMS.triLookback, PARAMS.triMinTouches);",
+      "  if (!tris.length) return null;",
+    ],
+  },
+  divergence: {
+    label: "RSI Uyumsuzluğu (Divergence)",
+    params: { divLookback: 30 },
+    code: [
+      "  // RSI Divergence: fiyat ile RSI arasında uyumsuzluk var mı?",
+      "  const rsiArr = h.rsi(bars.slice(0, i + 1));",
+      "  const dv = h.findDivergence(bars.slice(0, i + 1), rsiArr, PARAMS.divLookback).find(d => d.priceI2 <= i);",
+      "  if (!dv) return null;",
+      "  const dir = dv.type === \"bullish_div\" ? 1 : -1;",
+    ],
+  },
 };
 
 export const AVAILABLE_BLOCKS = Object.entries(BLOCKS).map(([key, b]) => ({ key, label: b.label }));
@@ -65,9 +125,10 @@ export function generateSignalCode(selections, risk = { slR: 2, tpR: 5 }) {
   const picked = (selections || []).filter(s => BLOCKS[s]);
   if (!picked.length) return null;
 
-  // Yön üretmeyen kombinasyonlarda varsayılan yön bloğu gerekir: sweep yön verir,
-  // vermiyorsa trend filtresinden türet, o da yoksa long varsay (kullanıcı düzenler).
-  const hasDir = picked.includes("sweep");
+  // Yön üretmeyen kombinasyonlarda varsayılan yön bloğu gerekir: sweep/geometri/divergence
+  // blokları kendi yönünü üretir (kırılım/uyumsuzluk yönü), vermeyenlerde long varsay (kullanıcı düzenler).
+  const DIR_BLOCKS = ["sweep", "doubletop", "doublebottom", "hs", "ihs", "divergence"];
+  const hasDir = picked.some(k => DIR_BLOCKS.includes(k));
 
   const params = { slR: risk.slR, tpR: risk.tpR };
   for (const s of picked) Object.assign(params, BLOCKS[s].params);
