@@ -1956,4 +1956,21 @@ console.log("rafThrottle — pan/zoom/crosshair kare-başına-bir-kez (AK-085-TA
   });
 }
 
+console.log("Mobil grafik tam ekran — çıkış kararı (AK-092)");
+{
+  const { exitPlan } = await import("../src/lib/fullscreenExit.js");
+
+  test("exitPlan: akFullscreen işareti varsa 'geri' tetiklenmeli (Android geri tuşuyla aynı yol)", () => {
+    assert.deepEqual(exitPlan({ akFullscreen: true }), { goBack: true });
+  });
+  test("exitPlan: işaret yoksa (ör. sayfa doğrudan açıldıysa) doğrudan kapat, geri tetiklenmez", () => {
+    assert.deepEqual(exitPlan({}), { goBack: false });
+    assert.deepEqual(exitPlan(null), { goBack: false });
+    assert.deepEqual(exitPlan(undefined), { goBack: false });
+  });
+  test("exitPlan: başka bir sayfanın kendi history state'i (akFullscreen yok) yanlışlıkla tetiklemez", () => {
+    assert.deepEqual(exitPlan({ someOtherFlag: true }), { goBack: false });
+  });
+}
+
 console.log(`\n${pass} test geçti${process.exitCode ? " (HATALAR VAR)" : " — motor sağlam."}`);
