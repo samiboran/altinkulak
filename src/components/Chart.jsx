@@ -1,6 +1,6 @@
 import { useMemo, useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
 import { Lock, Unlock, Copy, Trash2 } from "lucide-react";
-import { findFVG, findOrderBlocks, findBOS, ema, rsi, findMitigation, orderFlowArr, findFib } from "../lib/detectors.js";
+import { findFVG, findOrderBlocks, findBOS, ema, rsi, findMitigation, orderFlowArr, findFib, findSweep } from "../lib/detectors.js";
 import ChartLegend from "./ChartLegend.jsx";
 
 // AK-069: çizimlere kalıcı id — sicil/sandbox'takiyle aynı desen (crypto.randomUUID, yoksa yedek)
@@ -35,7 +35,7 @@ const EMPTY_MA_LIST = [];
 // props: bars, concepts(array), showEma(bool), maList([{period,color}]), maxView(son N bar)
 // AK-050: maList verilirse çoklu MA (her biri kendi periyot+rengiyle) çizilir; verilmezse
 // showEma(bool) eski tek-EMA20 davranışını birebir korur (geriye uyumluluk).
-const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = true, maList = null, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false, magnet = true, chartType = "candle", symbol = "", drawMode = null, compareBars = null, onDrawsChange = null, showRsi = false, onSandboxAdd = null, indicators = [], onIndicatorToggleShown = null, onIndicatorRemove = null, onIndicatorSetParam = null, lastRemovedIndicator = null, onUndoRemoveIndicator = null, onPushUndo = null }, ref) {
+const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = true, maList = null, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false, magnet = true, chartType = "candle", symbol = "", drawMode = null, compareBars = null, onDrawsChange = null, showRsi = false, onSandboxAdd = null, indicators = [], onIndicatorToggleShown = null, onIndicatorRemove = null, onIndicatorSetParam = null, lastRemovedIndicator = null, onUndoRemoveIndicator = null, onPushUndo = null, onPositionDragEnd = null, onInspectRange = null }, ref) {
   const hasR = range && range.start != null;
   const FUT = 120; // sağda gelecek boşluğu (fib/projeksiyon) — pencere son barı bu kadar aşabilir
   const rawEnd = hasR ? range.end : bars.length - 1;
@@ -58,6 +58,8 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
   const obs = useMemo(() => concepts.includes("ob") ? findOrderBlocks(bars).filter(o => inWin(o.i)) : [], [bars, concepts, off, endIdx]);
   const bos = useMemo(() => concepts.includes("bos") ? findBOS(bars).filter(b => inWin(b.i)) : [], [bars, concepts, off, endIdx]);
   const mits = useMemo(() => concepts.includes("mit") ? findMitigation(bars).filter(m => inWin(m.i)) : [], [bars, concepts, off, endIdx]);
+  // AK-087/C6: Eşleşme Gezgini'nde "sweep" bloklu bir kural gezilirken süpürme oku çizilebilsin diye.
+  const sweeps = useMemo(() => concepts.includes("sweep") ? findSweep(bars).filter(s => inWin(s.i)) : [], [bars, concepts, off, endIdx]);
   const ofArr = useMemo(() => concepts.includes("of") ? orderFlowArr(bars) : null, [bars, concepts]);
   const fib = useMemo(() => concepts.includes("fib") ? findFib(view, view.length) : null, [view, concepts]);
   // AK-044: Heikin-Ashi tüm seriden hesaplanır (önceki HA gövdesine bağımlı), sonra pencereye kırpılır
@@ -261,7 +263,28 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
       onRangeSelect(gs, gs + width - 1);
     }
   }
-  useImperativeHandle(ref, () => ({ goToBookmark, clearDraws: () => { setDraws([]); setSelectedDrawId(null); setCtxMenu(null); } }));
+  useImperativeHandle(ref, () => ({
+    goToBookmark,
+    clearDraws: () => { setDraws([]); setSelectedDrawId(null); setCtxMenu(null); },
+    // AK-084/S1: kod→grafik senkronu — seçili pozisyon kutusu varsa onu, yoksa en son eklenen
+    // pozisyon kutusunu günceller. Hiç pozisyon kutusu yoksa sessizce hiçbir şey yapmaz.
+    // YALNIZ tpR taşınır: giriş/SL sabit kalır, TP = giriş + yön×risk×tpR yeniden hesaplanır.
+    // (PARAMS.slR codegen.js'te ATR çarpanıdır — paramsBlock.ratiosFromLevels'ın hep 1 dönen
+    // slR'ıyla AYNI ANLAMA gelmez; slR'ı buraya geri yazmak stop genişliğini sessizce bozardı.)
+    applyParamsToPositionTpR: (tpR) => {
+      if (!Number.isFinite(tpR) || tpR <= 0) return;
+      setDraws(ds => {
+        const positions = ds.filter(d => d.type === "position");
+        if (!positions.length) return ds;
+        const target = positions.find(d => d.id === selectedDrawId) || positions[positions.length - 1];
+        const risk = Math.abs(target.entry - target.sl);
+        if (!(risk > 0)) return ds;
+        const dir = target.tp >= target.entry ? 1 : -1;
+        const tp = target.entry + dir * risk * tpR;
+        return ds.map(d => d.id === target.id ? { ...d, tp } : d);
+      });
+    },
+  }));
 
   // AK-030: sürükleme modları — varsayılan PAN (TV standardı), Shift+sürükle = alan seç,
   // sağ eksen üzerinde sürükle = dikey ölçek (fiyatı aç/kapa). Çift tık: grafikte tümü, eksende oto-sığdır.
@@ -378,9 +401,22 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
     setHandDragging(false);
     if (d?.mode === "draw") {
       const g = d.ghost;
+      // AK-087/C1: "İncele" seçimi kalıcı bir çizim DEĞİL — bar aralığına çevrilip dışarı
+      // verilir (oluşum paneli açılsın diye), draws listesine hiç eklenmez.
+      if (g && g.type === "inspect") {
+        if (g.a.i !== g.b.i) onInspectRange && onInspectRange(Math.min(g.a.i, g.b.i), Math.max(g.a.i, g.b.i));
+        setDrawGhost(null);
+        return;
+      }
       if (g && (g.a.i !== g.b.i || g.a.price !== g.b.price)) setDraws(ds => [...ds, { ...g, id: uid(), locked: false }]);
       setDrawGhost(null);
       return;
+    }
+    if (d?.mode === "posdrag") {
+      // AK-084/S2: sürükleme BİTİNCE (mousemove'da değil) parent'a haber verilir — R:R hesabı
+      // ve PARAMS senkronu yalnız burada tetiklenir.
+      const dr = draws.find(x => x.id === d.id);
+      if (dr) onPositionDragEnd && onPositionDragEnd(dr);
     }
     if (d?.mode === "sel" && sel && onRangeSelect && Math.abs(sel.b - sel.a) >= 3) {
       if (Math.abs(sel.yb - sel.ya) >= 14) { // dikeyde de kutu çizildiyse fiyat bandına dal
@@ -610,6 +646,10 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
     }
 
     const x0 = x(gi(d.a.i)), y0 = y(d.a.price), x1 = x(gi(d.b.i)), y1 = y(d.b.price);
+    // AK-087/C1: "İncele" seçimi — dikdörtgenle aynı görsel (kesikli kenar, yarı saydam dolgu), kalıcı değil.
+    if (d.type === "inspect") {
+      return <rect key={key} x={Math.min(x0, x1)} y={Math.min(y0, y1)} width={Math.abs(x1 - x0)} height={Math.abs(y1 - y0)} className="ak-c-inspect" />;
+    }
     return (
       <g key={key}>
         {d.type === "rect"
@@ -657,6 +697,17 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
       {fvgs.map((g, k) => <rect key={"f" + k} x={x(gi(g.i))} y={y(g.hi)} width={Math.min(6, view.length - gi(g.i)) * step} height={Math.max(2, y(g.lo) - y(g.hi))} className={g.dir === 1 ? "ak-c-fvg up" : "ak-c-fvg dn"} />)}
       {obs.map((o, k) => <rect key={"o" + k} x={x(gi(o.i)) - bw} y={y(o.hi)} width={Math.min(7, view.length - gi(o.i)) * step} height={Math.max(2, y(o.lo) - y(o.hi))} className="ak-c-ob" />)}
       {bos.map((b, k) => <g key={"b" + k}><line x1={x(Math.max(0, gi(b.i) - 4))} y1={y(b.price)} x2={x(gi(b.i)) + step} y2={y(b.price)} className="ak-c-bos" /><text x={x(gi(b.i)) + step + 2} y={y(b.price) - 2} className="ak-c-boslab">BOS</text></g>)}
+      {/* AK-087/C6: süpürme oku — seviye çizgisi + yönü gösteren küçük ok ucu */}
+      {sweeps.map((s, k) => {
+        const cx = x(gi(s.i)), cy = y(s.level);
+        const pts = s.dir === 1 ? `${cx - 5},${cy + 8} ${cx + 5},${cy + 8} ${cx},${cy}` : `${cx - 5},${cy - 8} ${cx + 5},${cy - 8} ${cx},${cy}`;
+        return (
+          <g key={"sw" + k}>
+            <line x1={x(Math.max(0, gi(s.i) - 5))} y1={cy} x2={x(gi(s.i)) + step} y2={cy} className="ak-c-sweep-line" />
+            <polygon points={pts} className="ak-c-sweep-arrow" />
+          </g>
+        );
+      })}
 
       {/* Fibonacci seviyeleri + indirim/primli bölge */}
       {fib && <g>

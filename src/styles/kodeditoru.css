@@ -16,9 +16,12 @@
 .ak-kod-toolbar select:focus{border-color:var(--teal-deep);}
 .ak-kod-time{font-family:'JetBrains Mono';font-size:11.5px;color:#647974;margin-left:auto;}
 
-.ak-kod-editor{border:1px solid var(--line);border-radius:13px;overflow:hidden;margin-bottom:14px;}
+.ak-kod-editor{border:1px solid var(--line);border-radius:13px;overflow:hidden;margin-bottom:14px;transition:border-color .2s, box-shadow .2s;}
 .ak-kod-editor .cm-editor{font-family:'JetBrains Mono';font-size:13px;}
 .ak-kod-editor .cm-scroller{overflow:auto;}
+/* AK-084/S2: grafikten (pozisyon kutusu sürüklemesi) PARAMS güncellendiğinde 1sn görsel doğrulama */
+.ak-kod-editor.flash{border-color:var(--gold);box-shadow:0 0 0 2px rgba(230,180,80,.35);}
+.ak-kod-params-warn{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--gold-2);background:#241E10;border:1px solid #473c1c;padding:4px 9px;border-radius:7px;font-family:'JetBrains Mono';}
 
 .ak-kod-error{display:flex;align-items:flex-start;gap:8px;background:#2A1714;border:1px solid #4a2a24;color:#E08A7A;border-radius:11px;padding:12px 14px;font-family:'JetBrains Mono';font-size:12.5px;line-height:1.5;margin-bottom:14px;white-space:pre-wrap;word-break:break-word;}
 

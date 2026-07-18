@@ -1382,11 +1382,15 @@ console.log("Strateji Çıkarıcı — İncele/oluşum paneli/dürüstlük kapı
   });
 
   console.log("C2: oluşum paneli — dürüst boş durum + sweep barında gerçek tespit");
-  test("analyzeRange: rastgele/düz barda hiçbir güçlü oluşum yoksa boş kart listesi (uydurma yok)", () => {
+  test("analyzeRange: düz barda AYRIK oluşumlar (mum kalıbı/süpürme/FVG) uydurulmaz", () => {
+    // OTE/Destek-Direnç sürekli ölçümlerdir (her fiyat serisinde bir "salınım" vardır — codegen.js'in
+    // kendi inOTE kullanımıyla AYNI, buradan icat edilmedi); ama AYRIK oluşumlar (gövde/boşluk/süpürme
+    // matematiği gerektirir) düz barda kesinlikle sıfır olmalı — dürüstlük testi bunu doğrular.
     const bars = [];
     for (let i = 0; i < 80; i++) bars.push({ o: 100, h: 100.05, l: 99.95, c: 100 });
     const { cards } = analyzeRange(bars, 60, 79);
-    assert.deepEqual(cards, []);
+    const discreteTypes = new Set(["engulfing", "pinbar", "marubozu", "sweep_low", "sweep_high", "fvg", "golden_cross", "death_cross"]);
+    assert.ok(!cards.some(c => discreteTypes.has(c.type)), "düz barda ayrık oluşum bulunmamalı");
   });
   test("analyzeRange: bilinen bir süpürme barında sweep kartı gerçekten bulunur", () => {
     const bars = [];

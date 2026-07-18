@@ -1,14 +1,17 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { FlaskConical, Code2, Activity, Play, Pause, SkipBack, SkipForward, RotateCcw, ShieldCheck, ShieldAlert, Search, SlidersHorizontal, Monitor, Dices, Calculator, LayoutGrid, Target, Download, PenTool } from "lucide-react";
+import { FlaskConical, Code2, Activity, Play, Pause, SkipBack, SkipForward, RotateCcw, ShieldCheck, ShieldAlert, Search, SlidersHorizontal, Monitor, Dices, Calculator, LayoutGrid, Target, Download, PenTool, ChevronLeft, ChevronRight } from "lucide-react";
 import { getBars, MARKET_GROUPS, ALL_SYMBOLS, loadReal, isReal, hasData, pairFor, tfOf, TIMEFRAMES, stats24h } from "../lib/data.js";
 import { atr } from "../lib/detectors.js";
 import { subscribe as subscribeLive } from "../lib/liveData.js";
 import Chart from "../components/Chart.jsx";
 import Timeline from "../components/Timeline.jsx";
 import SistemimKoduPanel from "../components/SistemimKoduPanel.jsx";
+import StrategyExtractor from "../components/StrategyExtractor.jsx";
 import { runBacktest, simulateOutcome, randomEntryControl, monteCarlo } from "../lib/backtest.js";
 import { tStat, verdict, sharpeLike, trainTestSplit } from "../lib/stats.js";
-import { runUserCode } from "../lib/sandboxRunner.js";
+import { runUserCode, runUserCodeWalkForward } from "../lib/sandboxRunner.js";
+import { extractParams, upsertParams, ratiosFromLevels } from "../lib/paramsBlock.js";
+import { rangeFromIndices, hypothesisStatus } from "../lib/strategyExtractor.js";
 import { addSandbox } from "../lib/sandbox.js";
 import { useAuthGate } from "../lib/AuthGate.jsx";
 import { createUndoStack, bindUndoHotkeys } from "../lib/undoStack.js";
@@ -305,6 +308,94 @@ export default function Lab() {
     setRes(null);
     setCodeInfo(null);
   }
+
+  // AK-084 S1/S2: kod↔grafik PARAMS senkronu — externalCode/Version SistemimKoduPanel'e enjeksiyon
+  // (C4'ten kod üretimi ya da S2'den TP sürüklemesi), flashVersion editördeki flash'ı tetikler.
+  const [externalCode, setExternalCode] = useState(null);
+  const [externalCodeVersion, setExternalCodeVersion] = useState(0);
+  const [flashVersion, setFlashVersion] = useState(0);
+  const [paramsWarn, setParamsWarn] = useState(false);
+  function pushCodeToEditor(code) {
+    setExternalCode(code);
+    setExternalCodeVersion(v => v + 1);
+    codeRef.current = code;
+  }
+  function handleParamsChange(params, { malformed }) {
+    setParamsWarn(!!malformed);
+    if (params && Number.isFinite(Number(params.tpR))) {
+      chartRef.current?.applyParamsToPositionTpR(Number(params.tpR));
+    }
+  }
+  function handlePositionDragEnd(draw) {
+    const ratios = ratiosFromLevels(draw.entry, draw.sl, draw.tp);
+    if (!ratios) return;
+    const updated = upsertParams(codeRef.current, { tpR: ratios.tpR });
+    pushCodeToEditor(updated);
+    setFlashVersion(v => v + 1);
+  }
+
+  // AK-087 C1/C2: "İncele" seçimi → bar aralığı, Strateji Çıkarıcı paneli bu aralığı analiz eder.
+  const [inspectRange, setInspectRange] = useState(null); // {start,end} | null
+  function handleInspectRange(aI, bI) {
+    setInspectRange(rangeFromIndices(aI, bI));
+    setActiveTool(null);
+    setDrawMode(null);
+  }
+
+  // AK-087 C4/C5: üretilen kural HİPOTEZ olarak başlar; OOS testi bitene dek etiket kalkmaz (D19).
+  const [hypothesis, setHypothesis] = useState(null); // null | {tested:false} | {tested:true, verdictGood, tStat}
+  const [oosBusy, setOosBusy] = useState(false);
+  const [matchIncludesSweep, setMatchIncludesSweep] = useState(false);
+  function handleGeneratedCode(code) {
+    switchStratMode("kendi");
+    pushCodeToEditor(code);
+    setHypothesis({ tested: false });
+    setMatchIncludesSweep(code.includes("h.findSweep"));
+    setInspectRange(null);
+    setRes(null);
+    setCodeInfo(null);
+  }
+  async function runOosTest() {
+    if (!hasData(symbol) || oosBusy) return;
+    setOosBusy(true);
+    const bars = getBars(symbol);
+    const params = extractParams(codeRef.current);
+    const out = await runUserCodeWalkForward(codeRef.current, bars, params);
+    const signals = out.ok && Array.isArray(out.result) ? out.result.map(s => ({ ...s, hedef1: s.hedef1 ?? s.target })) : [];
+    const { test } = trainTestSplit(bars, 0.7);
+    const testOut = await runUserCodeWalkForward(codeRef.current, test, params);
+    const testSignals = testOut.ok && Array.isArray(testOut.result) ? testOut.result.map(s => ({ ...s, hedef1: s.hedef1 ?? s.target })) : [];
+    const stats = buildCodeStats(bars, signals, test, testSignals);
+    setRes(stats);
+    setCodeInfo(stats.tradeCount === 0 ? { kind: "empty" } : { kind: "ok" });
+    setHypothesis({ tested: true, verdictGood: stats.verdict.good, tStat: stats.tStat });
+    setMatchIdx(0);
+    setOosBusy(false);
+  }
+
+  // AK-087 C6: Eşleşme Gezgini — dönem seçici (3ay/1yıl/tümü) sabit tam-geçmiş OOS sonucundan
+  // (res.trades, her zaman TAM bars dizisine göre indekslenir) ilgili son N bar'a düşen eşleşmeleri
+  // filtreler — index uzayı asla değişmez, backtest yeniden koşulmaz (basit + tutarlı).
+  const [matchPeriod, setMatchPeriod] = useState("1yil"); // "3ay" | "1yil" | "tumu"
+  const [matchIdx, setMatchIdx] = useState(0);
+  const PERIOD_BARS = { "3ay": 540, "1yil": 2160, tumu: Infinity };
+  const periodTrades = useMemo(() => {
+    if (!res?.trades?.length) return [];
+    const bars = getBars(symbol);
+    const cutoff = Number.isFinite(PERIOD_BARS[matchPeriod]) ? bars.length - PERIOD_BARS[matchPeriod] : -1;
+    return res.trades.filter(t => t.entryIdx >= cutoff);
+  }, [res, matchPeriod, symbol]);
+  function goToMatch(idx) {
+    if (!periodTrades.length) return;
+    const n = periodTrades.length;
+    const clamped = ((idx % n) + n) % n;
+    setMatchIdx(clamped);
+    const t = periodTrades[clamped];
+    const bars = getBars(symbol);
+    const span = Math.max(20, Math.round(bars.length * 0.03));
+    const s = Math.max(0, t.entryIdx - span), e = Math.min(bars.length - 1, t.entryIdx + span);
+    setWin({ s: s / (bars.length - 1), e: e / (bars.length - 1) });
+  }
   async function handleCodeRunResult(out) {
     if (!out.ok) {
       setCodeInfo({ kind: "error", message: out.error });
@@ -342,6 +433,7 @@ export default function Lab() {
     let on = true;
     setRes(null);
     setCodeInfo(null);
+    setHypothesis(null); // yeni sembol/TF — önceki hipotez farklı veriye ait, taşınmaz
     setLiveBars(null); // yeni sembol/TF — önceki canlı veri artık geçersiz
     let unsub = null;
     loadReal(symbol, tf).then((b) => {
@@ -510,6 +602,7 @@ export default function Lab() {
                 <span className="ak-rail-panel-head">Strateji araçları</span>
                 <button className={"ak-cchip teal" + (replay ? " on" : "")} onClick={toggleReplay}>Replay{replay ? " (açık)" : ""}</button>
                 <button className={"ak-cchip" + (lay.risk ? " on" : "")} onClick={() => setPanel("risk", !lay.risk)}><Calculator size={12} /> Pozisyon & Risk Hesaplayıcı {lay.risk ? "▲" : "▼"}</button>
+                <button className={"ak-cchip" + (drawMode === "inspect" ? " on" : "")} onClick={() => setDrawMode(m => m === "inspect" ? null : "inspect")} title="Grafikte bir bölge seç — o aralıktaki oluşumlardan strateji kur"><Search size={12} /> İncele</button>
               </div>
             )}
             {activeTool === "indicators" && (
@@ -596,9 +689,10 @@ export default function Lab() {
             <b>{symbol}</b> için veri bekleniyor… Binance'te {symbol}USDT deneniyor; bulunamazsa burada açıkça söylenir — başka sembolün örnek verisi ASLA gösterilmez.
           </div>
         )}
-        {dataOk && <Chart ref={chartRef} bars={replay ? getBars(symbol) : (liveBars || getBars(symbol))} concepts={chartConcepts} maList={maList} trades={replay ? null : res?.trades} logScale={logS} magnet={magnetOn} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} onDrawsChange={setDrawCount} showRsi={showRsi} onSandboxAdd={handleSandboxAdd}
+        {dataOk && <Chart ref={chartRef} bars={replay ? getBars(symbol) : (liveBars || getBars(symbol))} concepts={hypothesis?.tested && matchIncludesSweep ? [...chartConcepts, "sweep"] : chartConcepts} maList={maList} trades={replay ? null : res?.trades} logScale={logS} magnet={magnetOn} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} onDrawsChange={setDrawCount} showRsi={showRsi} onSandboxAdd={handleSandboxAdd}
           indicators={legendIndicators} onIndicatorToggleShown={toggleIndShown} onIndicatorRemove={removeIndicator} onIndicatorSetParam={setIndParam}
-          lastRemovedIndicator={lastRemovedInd} onUndoRemoveIndicator={undoRemoveIndicator} onPushUndo={(action) => undoStackRef.current.push(action)} />}
+          lastRemovedIndicator={lastRemovedInd} onUndoRemoveIndicator={undoRemoveIndicator} onPushUndo={(action) => undoStackRef.current.push(action)}
+          onPositionDragEnd={handlePositionDragEnd} onInspectRange={handleInspectRange} />}
             {paperMsg && <p className="ak-paper-toast">{paperMsg}</p>}
           </div>
         </div>
@@ -703,6 +797,15 @@ export default function Lab() {
           </div>
           <div className="ak-active-sym">Seçili: <b>{symbol}</b></div>
 
+          {inspectRange && (
+            <StrategyExtractor
+              bars={getBars(symbol)}
+              range={inspectRange}
+              onGenerateCode={handleGeneratedCode}
+              onClose={() => setInspectRange(null)}
+            />
+          )}
+
           {stratMode === "hazir" ? (
             <>
               {/* Risk:Ödül serbest giriş */}
@@ -741,9 +844,28 @@ export default function Lab() {
                 showResultsList={false}
                 onRunResult={handleCodeRunResult}
                 onCodeChange={(c) => { codeRef.current = c; }}
+                onParamsChange={handleParamsChange}
+                externalCode={externalCode}
+                externalCodeVersion={externalCodeVersion}
+                flashVersion={flashVersion}
               />
+              {paramsWarn && <span className="ak-kod-params-warn">PARAMS okunamadı — son geçerli hal korunuyor</span>}
               {codeInfo?.kind === "empty" && (
                 <p className="ak-note">Kod çalıştı ama hiç işlem tetiklenmedi — kod hatasız çalıştı, sinyal üretmedi ya da tetiklenen sinyaller 40 bar içinde ne stop ne hedefe değmedi.</p>
+              )}
+              {hypothesis && (() => {
+                const hs = hypothesisStatus(hypothesis);
+                return (
+                  <div className={"ak-hyp-badge " + hs.tone}>{hs.label}</div>
+                );
+              })()}
+              {hypothesis && !hypothesis.tested && (
+                <div className="ak-se-gate">
+                  <p>Bu kural senin seçtiğin bölgeden çıktı; oraya uyması sürpriz değil. Gerçek sınav: tüm geçmişte test et.</p>
+                  <button className="ak-btn ak-btn-primary" onClick={runOosTest} disabled={oosBusy}>
+                    <ShieldCheck size={15} /> {oosBusy ? "Test ediliyor…" : "Tüm geçmişte test et"}
+                  </button>
+                </div>
               )}
             </>
           )}
@@ -803,6 +925,47 @@ export default function Lab() {
                     <div><span className="ak-mc-v">{res.mc.worstDD}R</span><span className="ak-mc-k">en kötü drawdown</span></div>
                     <div><span className={"ak-mc-v " + (res.mc.negPct > 0 ? "no" : "ok")}>%{res.mc.negPct}</span><span className="ak-mc-k">zararla biten</span></div>
                   </div>
+                </div>
+              )}
+              {hypothesis?.tested && (
+                <div className="ak-mg">
+                  <div className="ak-mg-sum">
+                    <div className="ak-mg-sum-row">
+                      <span>Eşleşme Gezgini</span>
+                      <div className="ak-tf">
+                        {[["3ay", "3ay"], ["1yil", "1yıl"], ["tumu", "Tümü"]].map(([k, l]) => (
+                          <button key={k} className={matchPeriod === k ? "on" : ""} onClick={() => { setMatchPeriod(k); setMatchIdx(0); }}>{l}</button>
+                        ))}
+                      </div>
+                    </div>
+                    {periodTrades.length === 0 ? (
+                      <p className="ak-se-nohit">Bu dönemde kuralına uyan bölge bulunamadı.</p>
+                    ) : (
+                      <p>
+                        Bu dönemde kuralına uyan <b>{periodTrades.length}</b> bölge —{" "}
+                        <b>{periodTrades.filter(t => t.outcome > 0).length}</b> kazanç,{" "}
+                        <b>{periodTrades.filter(t => t.outcome <= 0).length}</b> kayıp
+                      </p>
+                    )}
+                  </div>
+                  {periodTrades.length > 0 && (
+                    <>
+                      <div className="ak-mg-nav">
+                        <button onClick={() => goToMatch(matchIdx - 1)}><ChevronLeft size={14} /></button>
+                        <span>◀ {matchIdx + 1}/{periodTrades.length} ▶</span>
+                        <button onClick={() => goToMatch(matchIdx + 1)}><ChevronRight size={14} /></button>
+                      </div>
+                      <div className="ak-mg-list">
+                        {periodTrades.map((t, i) => (
+                          <button key={i} className={"ak-mg-row" + (i === matchIdx ? " on" : "")} onClick={() => goToMatch(i)}>
+                            <span className="dt">#{t.entryIdx} · {t.dir === 1 ? "LONG" : "SHORT"}</span>
+                            <span className={"rr " + (t.outcome > 0 ? "pos" : "neg")}>{t.outcome > 0 ? "+" : ""}{Math.round(t.outcome * 100) / 100}R</span>
+                            <span>{t.outcome > 0 ? "W" : "L"}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </>

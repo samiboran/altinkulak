@@ -4,8 +4,11 @@ import { javascript } from "@codemirror/lang-javascript";
 import { Play, AlertTriangle, RotateCcw, Wand2 } from "lucide-react";
 import { getBars, hasData, ALL_SYMBOLS } from "../lib/data.js";
 import { runUserCode } from "../lib/sandboxRunner.js";
+import { hasParamsBlock, extractParams } from "../lib/paramsBlock.js";
 import "../styles/kodeditoru.css";
 import "../styles/izleme.css"; // AK-065: sonuç listesi Izleme'deki sinyal satırı stiliyle aynı
+
+const PARAMS_DEBOUNCE_MS = 500; // AK-084/S1: kod→grafik senkronu her tuşta değil, yazma durunca tetiklenir
 
 // AK-073: KodEditoru.jsx'teki editör+çalıştır+şablon arayüzü buraya taşındı — hem KodEditoru.jsx
 // (bağımsız/deneysel sayfa) hem Lab.jsx ("Kendi Kodum" sekmesi, grafiğe bağlı) bu bileşeni kullanır.
@@ -132,6 +135,11 @@ function fmtP(p) {
 //   showResultsList    — true: "Sonuçlar" listesini (Izleme sinyal satırı stiliyle) kendi içinde gösterir; false: sonucu yalnız onRunResult ile dışa verir (Lab.jsx grafik+Sonuç paneline bağlar)
 //   onRunResult        — her çalıştırma tamamlandığında çağrılır: ({ok, result, error, ms}) => void
 //   onCodeChange       — kod her değiştiğinde çağrılır: (code: string) => void — Lab.jsx OOS turu için son kodu izler
+//   onParamsChange     — AK-084/S1: kod değişip 500ms sakinleşince çağrılır: (params|null, {malformed:boolean}) => void
+//                        params null + malformed=false → blok hiç yok (normal). params null + malformed=true → blok var ama parse edilemedi (PARAMS okunamadı rozeti).
+//   externalCode       — AK-084/S2/C4: Lab.jsx'ten (pozisyon kutusu sürüklemesi ya da Strateji Çıkarıcı) enjekte edilen kod
+//   externalCodeVersion— externalCode her değiştiğinde bir artan sayaç — aynı string iki kez gelse bile yeniden uygulanabilsin diye
+//   flashVersion       — arttıkça editör 1sn sarı flash yapar (PARAMS'ın grafikten güncellendiğini görsel doğrular)
 export default function SistemimKoduPanel({
   symbol,
   onSymbolChange = null,
@@ -139,11 +147,48 @@ export default function SistemimKoduPanel({
   showResultsList = true,
   onRunResult = null,
   onCodeChange = null,
+  onParamsChange = null,
+  externalCode = null,
+  externalCodeVersion = 0,
+  flashVersion = 0,
 }) {
   const [code, setCode] = useState(loadSavedCode);
   const [running, setRunning] = useState(false);
   const [out, setOut] = useState(null); // {ok, result, error, ms}
   const runToken = useRef(0); // eskimiş (üst üste tıklanmış) çalıştırmaların sonucu yok sayılır
+  const [paramsMalformed, setParamsMalformed] = useState(false); // AK-084/S1: blok var ama parse edilemedi
+  const [flash, setFlash] = useState(false);
+  const appliedExternalVersion = useRef(0);
+
+  // AK-084/S2/C4: Lab.jsx yeni kod enjekte ettiğinde (sürükleme sonrası upsertParams ya da
+  // Strateji Çıkarıcı'nın "Kodu üret" çıktısı) editör buna geçer. Kullanıcı kodu ASLA sessizce
+  // ezilmez — yalnız version gerçekten ilerlediğinde uygulanır.
+  useEffect(() => {
+    if (externalCode == null) return;
+    if (externalCodeVersion <= appliedExternalVersion.current) return;
+    appliedExternalVersion.current = externalCodeVersion;
+    setCode(externalCode);
+  }, [externalCode, externalCodeVersion]);
+
+  useEffect(() => {
+    if (flashVersion <= 0) return;
+    setFlash(true);
+    const t = setTimeout(() => setFlash(false), 1000);
+    return () => clearTimeout(t);
+  }, [flashVersion]);
+
+  // AK-084/S1: kod→grafik senkronu — 500ms debounce, blok yoksa sessiz, bozuksa rozet.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const hasBlock = hasParamsBlock(code);
+      const params = extractParams(code);
+      setParamsMalformed(hasBlock && !params);
+      onParamsChange && onParamsChange(params, { malformed: hasBlock && !params });
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, PARAMS_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code]);
 
   // AK-067: Basit Mod — kod yazmadan checkbox kombinasyonu
   const [mode, setMode] = useState("kod"); // "kod" | "basit"
@@ -181,7 +226,9 @@ export default function SistemimKoduPanel({
     setRunning(true);
     setOut(null);
     const t0 = performance.now();
-    const res = await runUserCode(code, bars);
+    // AK-084/S3: mySignal'e helpers.params olarak extractParams sonucu geçilir — aynı kaynak,
+    // grafikteki kutularla senkron çalışsın (debounce beklemeden, ÇALIŞTIR anındaki en güncel kodla).
+    const res = await runUserCode(code, bars, extractParams(code));
     if (token !== runToken.current) return; // bu arada yeni bir çalıştırma başlamış — atla
     setRunning(false);
     const full = { ...res, ms: Math.round(performance.now() - t0) };
@@ -250,9 +297,14 @@ export default function SistemimKoduPanel({
           <RotateCcw size={13} /> Şablona dön
         </button>
         {out && !running && out.ms != null && <span className="ak-kod-time">{out.ms} ms</span>}
+        {paramsMalformed && (
+          <span className="ak-kod-params-warn" title="AK-PARAMS bloğu var ama okunamadı — kod DEĞİŞTİRİLMEDİ, kutular son geçerli halde kaldı.">
+            <AlertTriangle size={12} /> PARAMS okunamadı
+          </span>
+        )}
       </div>
 
-      <div className="ak-kod-editor">
+      <div className={"ak-kod-editor" + (flash ? " flash" : "")}>
         <CodeMirror
           value={code}
           height="360px"
