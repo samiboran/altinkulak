@@ -8,12 +8,14 @@
 //                      (bkz. supabase.js: invites şemasında yalnız code/used_by kesin biliniyor).
 //   helpfulMarks    — yorum/faydalı-işaret sistemi henüz yok.
 //   lessonsDone     — ders tamamlama takip verisi henüz yok.
-//   scenariosDone   — Replay Ligi henüz yok.
 //   loginStreak     — giriş-günü takip tablosu henüz yok (sicil streak'i ile KARIŞTIRILMAZ, farklı kavram).
-//   seasonBrier     — Tahmin Ligi "sezon" pencere tanımı henüz yok (badges.js kalibrasyon rozeti için).
 //   disciplineDays  — "sert düşüş günü + sicil var + işlem yok" dedektörü henüz yok (badges.js disiplin rozeti için).
+// scenariosDone/seasonBrier AK-083-TAMAMLAMA'da WIRED oldu (replay.js/seasons.js — aşağıda).
 // memberIndex İSE wired: profiles.created_at üzerinden ucuz ve dürüst hesaplanabiliyor.
 import { supabase, fetchStrategiesByUser, fetchProfilesByIds } from "./supabase.js";
+import { fetchMyScenarioCount } from "./replay.js";
+import { fetchActiveSeason, computeSeasonBrier } from "./seasons.js";
+import { fetchMyResolvedPredictionsWithDates } from "./predictions.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -87,12 +89,17 @@ export async function fetchMemberIndex(userId, createdAt) {
 // isOwner=false iken sicil-bazlı alanlar (D1: cihaz-içi veri, başkasının cihazından görülemez) 0 kalır.
 export async function fetchProfileStats(profile, { isOwner = false, trades = [] } = {}) {
   if (!profile) return {};
-  const [strategies, predictions, memberIndex] = await Promise.all([
+  const [strategies, predictions, memberIndex, scenariosDone, season] = await Promise.all([
     fetchStrategiesByUser(profile.id),
     fetchPredictionsCount(profile.id),
     fetchMemberIndex(profile.id, profile.created_at),
+    fetchMyScenarioCount(profile.id),
+    fetchActiveSeason(),
   ]);
   const verified = verifiedStrategiesCount(strategies);
+  // seasonBrier: aktif sezon yoksa ya da pencerede hiç tahmin yoksa dürüst null (D6) — sicil-bazlı
+  // alanların aksine isOwner'a gated DEĞİL, "predictions" sayacıyla aynı ailede (kamuya açık performans).
+  const seasonBrier = season ? computeSeasonBrier(await fetchMyResolvedPredictionsWithDates(profile.id), season) : null;
   return {
     sicilCount: isOwner ? trades.length : 0,
     maxStreakDays: isOwner ? maxStreakDays(trades) : 0,
@@ -103,9 +110,9 @@ export async function fetchProfileStats(profile, { isOwner = false, trades = [] 
     activeInvites: 0,
     helpfulMarks: 0,
     lessonsDone: 0,
-    scenariosDone: 0,
+    scenariosDone,
     loginStreak: 0,
-    seasonBrier: null,
+    seasonBrier,
     disciplineDays: 0,
     memberIndex,
   };

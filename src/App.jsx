@@ -26,6 +26,7 @@ const Ders = lazy(() => import("./pages/Ders.jsx"));
 const KodEditoru = lazy(() => import("./pages/KodEditoru.jsx"));
 const Puanlar = lazy(() => import("./pages/Puanlar.jsx"));
 const Lig = lazy(() => import("./pages/Lig.jsx"));
+const Senaryo = lazy(() => import("./pages/Senaryo.jsx"));
 
 // AK-060: kayan sembol seridi yalnizca izleme agirlikli sayfalarda gorunur
 const TICKER_PATHS = ["/lab", "/izleme"];
@@ -70,6 +71,7 @@ export default function App() {
         <Route path="/kod-editorum" element={<KodEditoru />} />
         <Route path="/puanlar" element={<Puanlar />} />
         <Route path="/lig" element={<Lig />} />
+        <Route path="/senaryo" element={<Senaryo />} />
       </Route>
     </Routes>
   );

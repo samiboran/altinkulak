@@ -47,3 +47,22 @@
 .ak-lig-calib-legend i.hit{background:var(--teal);}
 .ak-lig-lesson{margin-top:14px;padding:11px 14px;background:#1d160c;border:1px solid #473c1c;border-radius:10px;color:#d8c39a;font-size:13px;line-height:1.55;}
 .ak-lig-lesson b{color:#f0d9a8;}
+
+/* AK-083-TAMAMLAMA/C4: son sonuç kartı */
+.ak-lig-result{background:linear-gradient(180deg,#17211F,#141E1C);border:1px solid var(--line);border-radius:14px;padding:18px 20px;}
+.ak-lig-result-head{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.ak-lig-result p{font-family:'Chakra Petch';font-size:15.5px;color:var(--txt);margin:8px 0;}
+.ak-lig-verdict{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;padding:4px 10px;border-radius:8px;}
+.ak-lig-verdict.hit{color:var(--good);background:#10241F;border:1px solid #1f5249;}
+.ak-lig-verdict.miss{color:var(--bad);background:#241616;border:1px solid #6b332f;}
+.ak-lig-result-stats{display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:var(--muted);margin-top:6px;}
+.ak-lig-result-stats b{color:var(--txt);font-family:'JetBrains Mono';}
+
+/* AK-083-TAMAMLAMA/C2: haftalık Brier geçmişi — sosyal değil istatistik, o yüzden büyük/net (D7) */
+.ak-lig-weekly{margin-top:18px;}
+.ak-lig-weekly-lbl{font-size:12px;color:var(--muted);font-family:'JetBrains Mono';display:flex;gap:8px;align-items:center;}
+.ak-lig-weekly-bars{display:flex;align-items:flex-end;gap:6px;height:56px;margin-top:8px;}
+.ak-lig-weekly-bar{flex:1;height:100%;display:flex;align-items:flex-end;background:#0E1816;border-radius:4px;overflow:hidden;}
+.ak-lig-weekly-fill{width:100%;border-radius:4px 4px 0 0;}
+.ak-lig-weekly-fill.hit{background:var(--teal);}
+.ak-lig-weekly-fill.miss{background:#6b332f;}

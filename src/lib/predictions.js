@@ -112,3 +112,45 @@ export async function fetchMyResolvedPredictions(userId) {
   if (error) return [];
   return toBrierRows(data);
 }
+
+// AK-083-TAMAMLAMA/C2/C7: toBrierRows ile AYNI filtre + closesAt taşınır (haftalık geçmiş grafiği
+// ve sezon penceresi filtrelemesi bunu kullanır). toBrierRows'un şeklini DEĞİŞTİRMEZ — o fonksiyon
+// başka yerde birebir {userId,confidence,hit} bekleniyor ve testleri var, ayrı tutulur.
+export function toBrierRowsWithDate(rawRows) {
+  return (rawRows || [])
+    .filter((r) => r?.question?.resolved && r.question.outcome)
+    .map((r) => ({
+      userId: r.user_id,
+      confidence: Number(r.confidence),
+      hit: r.direction === r.question.outcome,
+      closesAt: r.question.closes_at,
+    }));
+}
+
+export async function fetchMyResolvedPredictionsWithDates(userId) {
+  if (!supabase || !userId) return [];
+  const { data, error } = await supabase
+    .from("predictions")
+    .select("user_id, direction, confidence, question:prediction_questions(resolved, outcome, closes_at)")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true });
+  if (error) return [];
+  return toBrierRowsWithDate(data);
+}
+
+// AK-083-TAMAMLAMA/C4: en son ÇÖZÜLMÜŞ soruya kilitlediğin tahmin — sonuç ekranı/kalibrasyon dersi
+// buradan beslenir. Tek aktif soru tasarımı (fetchActiveQuestion) sayesinde created_at DESC ~ en
+// yeni çözüm demektir, ayrı bir closes_at join-sıralaması gerekmez.
+export async function fetchMyLastResolvedResult(userId) {
+  if (!supabase || !userId) return null;
+  const { data, error } = await supabase
+    .from("predictions")
+    .select("direction, confidence, created_at, question:prediction_questions!inner(sym, question_text, outcome, resolved, closes_at)")
+    .eq("user_id", userId)
+    .eq("question.resolved", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) return null;
+  return data;
+}
