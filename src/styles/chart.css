@@ -41,6 +41,43 @@ a.ak-cchip{display:inline-flex;align-items:center;gap:6px;text-decoration:none;}
 }
 @media(prefers-reduced-motion:reduce){ .ak-rail-panel{animation:none;} }
 
+/* AK-092: mobil grafik tam ekran modu — TEK Chart, iki yerleşim. Normalde .ak-chart-viewport
+   sıradan bir sarmalayıcı (position:relative, buton konumlamak için); tam ekranda .ak-chart-fullscreen
+   eklenir (position:fixed;inset:0), viewport'un TAMAMINI kaplar. Navbar/Footer/MobileTabBar
+   Lab.jsx'in DIŞINDA (Layout'ta) render edilir — onları "unmount" edemeyiz, bu yüzden z-index
+   hepsinden yüksek (drawer:70, rail-veil/panel:44/45) + opak arka plan ile ÜSTLERİNE biner
+   (aynı .ak-drawer-wrap tekniği: blur YOK, Android Chrome'da backdrop-filter çocuk bg'lerini
+   boyamayabiliyor — bkz. AK-081/C3 notu). Ayrıca Lab.jsx'in geri kalanı (head/toolrail/cf-top/
+   ranges/vb.) fullscreen'de {!fullscreen && ...} ile hiç render edilmiyor (erişilebilirlik:
+   arkada gizli kalan içerik tab-sırasına da girmesin).
+   position:fixed'in viewport'a göreli kalması için hiçbir ata elemanda transform/filter/contain
+   OLMAMALI — main{}/.ak-lab{} kontrol edildi, yok (bkz. AK-092 commit notu). */
+.ak-chart-viewport{position:relative;}
+.ak-chart-fullscreen{
+  position:fixed;inset:0;z-index:90;background:var(--bg);
+  display:flex;flex-direction:column;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.ak-chart-fullscreen .ak-chart{height:100%;width:100%;border-radius:0;border:none;}
+.ak-chart-fullscreen .ak-c-outer{flex:1;min-height:0;}
+.ak-chart-fullscreen .ak-nodata{margin:auto;}
+
+.ak-chart-fs-btn{display:none;}
+@media(max-width:860px){
+  .ak-chart-fs-btn{
+    display:flex;align-items:center;justify-content:center;
+    position:absolute;top:10px;right:10px;z-index:5;
+    width:32px;height:32px;border-radius:8px;border:none;
+    background:rgba(0,0,0,.5);color:#fff;cursor:pointer;
+  }
+}
+.ak-chart-fs-exit{
+  display:flex;align-items:center;justify-content:center;
+  position:absolute;top:calc(10px + env(safe-area-inset-top));right:10px;z-index:95;
+  width:36px;height:36px;border-radius:50%;border:none;
+  background:rgba(0,0,0,.5);color:#fff;cursor:pointer;
+}
+
 /* AK-058: kağıt-işlem kutusu — sağ üst, Binance Long/Short kutusunun eğitim/kaldıraçsız hali */
 .ak-c-outer{position:relative;}
 .ak-paperbox{position:absolute;top:14px;right:14px;display:flex;flex-direction:column;align-items:flex-end;gap:5px;pointer-events:none;}

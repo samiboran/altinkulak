@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
-import { FlaskConical, Code2, Activity, Play, Pause, SkipBack, SkipForward, RotateCcw, ShieldCheck, ShieldAlert, Search, SlidersHorizontal, Monitor, Dices, Calculator, LayoutGrid, Target, Download, PenTool, ChevronLeft, ChevronRight, Film } from "lucide-react";
+import { FlaskConical, Code2, Activity, Play, Pause, SkipBack, SkipForward, RotateCcw, ShieldCheck, ShieldAlert, Search, SlidersHorizontal, Monitor, Dices, Calculator, LayoutGrid, Target, Download, PenTool, ChevronLeft, ChevronRight, Film, Maximize2, X } from "lucide-react";
 import { getBars, MARKET_GROUPS, ALL_SYMBOLS, loadReal, isReal, hasData, pairFor, tfOf, TIMEFRAMES, stats24h } from "../lib/data.js";
 import { atr } from "../lib/detectors.js";
 import { subscribe as subscribeLive } from "../lib/liveData.js";
@@ -17,6 +17,7 @@ import { addSandbox } from "../lib/sandbox.js";
 import { useAuthGate } from "../lib/AuthGate.jsx";
 import { createUndoStack, bindUndoHotkeys } from "../lib/undoStack.js";
 import { PANELS, BASIC, loadLayout, saveLayout } from "../lib/layout.js";
+import { exitPlan } from "../lib/fullscreenExit.js";
 import "../styles/lab.css";
 import "../styles/chart.css";
 import "../styles/kodeditoru.css";
@@ -301,6 +302,48 @@ export default function Lab() {
   const boxRef = useRef(null);
   const chartRef = useRef(null); // AK-047: yer imi imperative handle (goToBookmark)
 
+  // AK-092: mobil grafik tam ekran modu — TEK Chart, iki yerleşim (bu ref'i sarmalayan
+  // .ak-chart-viewport CSS ile fixed-overlay'e geçer, <Chart> hiç unmount olmaz, state korunur).
+  const [fullscreen, setFullscreen] = useState(false);
+  const chartViewportRef = useRef(null);
+  function enterFullscreen() {
+    setFullscreen(true); // CSS fixed-overlay HER ZAMAN uygulanır (iOS Safari'de Fullscreen API yok)
+    chartViewportRef.current?.requestFullscreen?.().catch(() => {}); // ek fayda: tarayıcı kromu da gizlenir (varsa)
+  }
+  function requestExitFullscreen() {
+    // X/ESC/donanım geri tuşu AYNI yoldan geçer: pushState ile eklenen geçmiş girdisini
+    // "geri" ile tüket — popstate fullscreen'i kapatır (Android geri tuşuyla birebir aynı davranış).
+    if (exitPlan(window.history.state).goBack) window.history.back();
+    else setFullscreen(false);
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+  }
+  useEffect(() => {
+    if (!fullscreen) return;
+    window.history.pushState({ akFullscreen: true }, "");
+    function onPopState() { setFullscreen(false); }
+    function onKeyDown(e) { if (e.key === "Escape") requestExitFullscreen(); }
+    window.addEventListener("popstate", onPopState);
+    window.addEventListener("keydown", onKeyDown);
+    document.body.style.overflow = "hidden"; // AK-081/C3 MobileMenu ile aynı desen — arkada kaymasın
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = "";
+    };
+  }, [fullscreen]); // eslint-disable-line
+  // Sistem hareketiyle (ör. Android'in kendi tam ekran çıkışı) Fullscreen API'den çıkılırsa
+  // state senkron kalsın — kullanıcı X'e basmadan da doğru yerde bitsin.
+  useEffect(() => {
+    function onFsChange() {
+      if (!document.fullscreenElement) {
+        setFullscreen(false);
+        if (exitPlan(window.history.state).goBack) window.history.back();
+      }
+    }
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
+
   // AK-073: "Hazır Strateji" / "Kendi Kodum" sekmesi — ikisi de AYNI res state'ini besler,
   // Chart'ın trades prop'u ve Sonuç paneli kaynağa bakmaksızın aynı şekilde çalışır.
   const [stratMode, setStratMode] = useState("hazir"); // "hazir" | "kendi"
@@ -567,22 +610,24 @@ export default function Lab() {
 
   return (
     <div className="ak-lab">
-      <div className="ak-lab-head">
-        <span className="ak-eyebrow">STRATEJİ LABORATUVARI</span>
-        <h1>Kur, test et — istatistik yalan söylemez.</h1>
-        <p className="ak-lab-lead">
-          Lookahead-bias engelli, 70/30 train/test, rastgele giriş kontrol grubuyla. Sonuç sadece kazanç eğrisi değil; out-of-sample t-istatistiğiyle <b>ne kadar güvenilir</b> onu da söyler.
-        </p>
-        <span className="ak-deskonly"><Monitor size={13} /> Tam strateji kurulumu masaüstü içindir. Telefonda izleme + hızlı test sunulur.</span>
-      </div>
+      {!fullscreen && (
+        <div className="ak-lab-head">
+          <span className="ak-eyebrow">STRATEJİ LABORATUVARI</span>
+          <h1>Kur, test et — istatistik yalan söylemez.</h1>
+          <p className="ak-lab-lead">
+            Lookahead-bias engelli, 70/30 train/test, rastgele giriş kontrol grubuyla. Sonuç sadece kazanç eğrisi değil; out-of-sample t-istatistiğiyle <b>ne kadar güvenilir</b> onu da söyler.
+          </p>
+          <span className="ak-deskonly"><Monitor size={13} /> Tam strateji kurulumu masaüstü içindir. Telefonda izleme + hızlı test sunulur.</span>
+        </div>
+      )}
 
       <div className="ak-chartwrap">
         {/* AK-082 C1/C3: Binance modeli dikey side toolbar — 4 grup (Çizim/Strateji araçları/
             Göstergeler/Görünüm-Karşılaştır), tek activeTool state'i ile tek panel açık kalır.
             Her chip/checkbox AYNI state ve fonksiyonlara bağlı — yalnız konumlandırma değişti. */}
-        {activeTool && <div className="ak-rail-veil" onClick={() => setActiveTool(null)} />}
+        {!fullscreen && activeTool && <div className="ak-rail-veil" onClick={() => setActiveTool(null)} />}
         <div className="ak-chart-shell">
-          <div className="ak-toolrail" ref={railRef}>
+          {!fullscreen && <div className="ak-toolrail" ref={railRef}>
             <button className={"ak-rail-btn" + (activeTool === "draw" ? " on" : "")} onClick={() => setActiveTool(t => t === "draw" ? null : "draw")} title="Çizim"><PenTool size={16} /></button>
             <button className={"ak-rail-btn" + (activeTool === "strategy" ? " on" : "")} onClick={() => setActiveTool(t => t === "strategy" ? null : "strategy")} title="Strateji araçları"><Target size={16} /></button>
             <button className={"ak-rail-btn" + (activeTool === "indicators" ? " on" : "")} onClick={() => setActiveTool(t => t === "indicators" ? null : "indicators")} title="Göstergeler">
@@ -667,42 +712,58 @@ export default function Lab() {
                 <button className="ak-view-basic" onClick={() => chartRef.current?.goToBookmark()} title="Alt+tık ile sarı yer imi koy, buraya bas ya da işarete çift tıkla dön">◆ İşarete dön</button>
               </div>
             )}
-          </div>
+          </div>}
 
           <div className="ak-chart-main">
-            <div className="ak-cf-top">
-              {pairFor(symbol) && (
-                <div className="ak-tf">
-                  {TIMEFRAMES.map(([k, l]) => (
-                    <button key={k} className={tf === k ? "on" : ""} onClick={() => setTf(k)}>{l}</button>
-                  ))}
+            {!fullscreen && (
+              <div className="ak-cf-top">
+                {pairFor(symbol) && (
+                  <div className="ak-tf">
+                    {TIMEFRAMES.map(([k, l]) => (
+                      <button key={k} className={tf === k ? "on" : ""} onClick={() => setTf(k)}>{l}</button>
+                    ))}
+                  </div>
+                )}
+                <span className={"ak-datasrc" + (isReal(symbol) ? " real" : "")}>
+                  {isReal(symbol) ? `● GERÇEK VERİ · Binance ${(TIMEFRAMES.find(x => x[0] === tfOf(symbol)) || ["", "4s"])[1]}` : "○ örnek veri"}
+                </span>
+              </div>
+            )}
+            {!fullscreen && stats24 && (
+              <div className="ak-24h">
+                <span>24s Y: <b>{fmtP(stats24.high)}</b></span>
+                <span>D: <b>{fmtP(stats24.low)}</b></span>
+                <span>Hacim: <b>{fmtVol(stats24.volSum)}</b></span>
+              </div>
+            )}
+            {/* AK-092: tam ekranda TEK Chart aynı yerde kalır, yalnız sarmalayıcının class'ı
+                (position:fixed overlay) değişir — Chart hiç unmount olmaz, iç state (çizim/zoom/pan) korunur. */}
+            <div className={"ak-chart-viewport" + (fullscreen ? " ak-chart-fullscreen" : "")} ref={chartViewportRef}>
+              {!fullscreen && (
+                <button className="ak-chart-fs-btn" onClick={enterFullscreen} title="Tam ekran" aria-label="Tam ekran">
+                  <Maximize2 size={16} />
+                </button>
+              )}
+              {fullscreen && (
+                <button className="ak-chart-fs-exit" onClick={requestExitFullscreen} title="Çık (ESC)" aria-label="Tam ekrandan çık">
+                  <X size={18} />
+                </button>
+              )}
+              {!dataOk && (
+                <div className="ak-nodata">
+                  <b>{symbol}</b> için veri bekleniyor… Binance'te {symbol}USDT deneniyor; bulunamazsa burada açıkça söylenir — başka sembolün örnek verisi ASLA gösterilmez.
                 </div>
               )}
-              <span className={"ak-datasrc" + (isReal(symbol) ? " real" : "")}>
-                {isReal(symbol) ? `● GERÇEK VERİ · Binance ${(TIMEFRAMES.find(x => x[0] === tfOf(symbol)) || ["", "4s"])[1]}` : "○ örnek veri"}
-              </span>
+              {dataOk && <Chart ref={chartRef} bars={replay ? getBars(symbol) : (liveBars || getBars(symbol))} concepts={hypothesis?.tested && matchIncludesSweep ? [...chartConcepts, "sweep"] : chartConcepts} maList={maList} trades={replay ? null : res?.trades} logScale={logS} magnet={magnetOn} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} onDrawsChange={setDrawCount} showRsi={showRsi} onSandboxAdd={handleSandboxAdd}
+                indicators={legendIndicators} onIndicatorToggleShown={toggleIndShown} onIndicatorRemove={removeIndicator} onIndicatorSetParam={setIndParam}
+                lastRemovedIndicator={lastRemovedInd} onUndoRemoveIndicator={undoRemoveIndicator} onPushUndo={(action) => undoStackRef.current.push(action)}
+                onPositionDragEnd={handlePositionDragEnd} onInspectRange={handleInspectRange}
+                onIndicatorsClear={disableAllIndicators} onOpenViewSettings={() => setActiveTool("view")} />}
+              {paperMsg && <p className="ak-paper-toast">{paperMsg}</p>}
             </div>
-        {stats24 && (
-          <div className="ak-24h">
-            <span>24s Y: <b>{fmtP(stats24.high)}</b></span>
-            <span>D: <b>{fmtP(stats24.low)}</b></span>
-            <span>Hacim: <b>{fmtVol(stats24.volSum)}</b></span>
-          </div>
-        )}
-        {!dataOk && (
-          <div className="ak-nodata">
-            <b>{symbol}</b> için veri bekleniyor… Binance'te {symbol}USDT deneniyor; bulunamazsa burada açıkça söylenir — başka sembolün örnek verisi ASLA gösterilmez.
-          </div>
-        )}
-        {dataOk && <Chart ref={chartRef} bars={replay ? getBars(symbol) : (liveBars || getBars(symbol))} concepts={hypothesis?.tested && matchIncludesSweep ? [...chartConcepts, "sweep"] : chartConcepts} maList={maList} trades={replay ? null : res?.trades} logScale={logS} magnet={magnetOn} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} onDrawsChange={setDrawCount} showRsi={showRsi} onSandboxAdd={handleSandboxAdd}
-          indicators={legendIndicators} onIndicatorToggleShown={toggleIndShown} onIndicatorRemove={removeIndicator} onIndicatorSetParam={setIndParam}
-          lastRemovedIndicator={lastRemovedInd} onUndoRemoveIndicator={undoRemoveIndicator} onPushUndo={(action) => undoStackRef.current.push(action)}
-          onPositionDragEnd={handlePositionDragEnd} onInspectRange={handleInspectRange}
-          onIndicatorsClear={disableAllIndicators} onOpenViewSettings={() => setActiveTool("view")} />}
-            {paperMsg && <p className="ak-paper-toast">{paperMsg}</p>}
           </div>
         </div>
-        {replay && (
+        {!fullscreen && replay && (
           <div className="ak-replay">
             <button className="ak-rp" onClick={() => setCursor(c => Math.max(winStart + 4, c - 1))} title="Geri"><SkipBack size={15} /></button>
             <button className="ak-rp play" onClick={() => setPlaying(p => !p)}>{playing ? <Pause size={16} /> : <Play size={16} />}</button>
@@ -712,7 +773,7 @@ export default function Lab() {
             <button className="ak-rp txt" onClick={() => { setCursor(winStart + Math.min(30, Math.floor((winEnd - winStart) / 3))); setPlaying(false); }}><RotateCcw size={13} /> Sıfırla</button>
           </div>
         )}
-        {replay && (
+        {!fullscreen && replay && (
           <div className="ak-pred">
             <span className="ak-pred-t"><Target size={13} /> Tahmin modu <em>pratik — sicile sayılmaz · sabit 1:2</em></span>
             {!pred ? (
@@ -727,20 +788,22 @@ export default function Lab() {
             {tally.n > 0 && <span className="ak-pred-score">{tally.n} tahmin · {tally.win} isabet · {tally.netR >= 0 ? "+" : ""}{tally.netR}R</span>}
           </div>
         )}
-        <div className="ak-ranges">
-          <button className={logS ? "on" : ""} title="Logaritmik fiyat ölçeği" onClick={() => setLogS(v => !v)}>Log</button>
-          <button className={magnetOn ? "on" : ""} title="Mıknatıs — imleci en yakın O/Y/D/K'ya yasla" onClick={() => setMagnetOn(v => !v)}>Mıknatıs</button>
-          <span className="ak-ranges-sep" />
-          <button title="Uzaklaş (daha çok bar)" onClick={() => setWin(w => { const sp = Math.min(1, (w.e - w.s) * 1.5); return { s: Math.max(0, w.e - sp), e: w.e }; })}>−</button>
-          <button title="Yakınlaş (daha az bar)" onClick={() => setWin(w => { const sp = Math.max(0.04, (w.e - w.s) / 1.5); return { s: Math.max(0, w.e - sp), e: w.e }; })}>+</button>
-          <span className="ak-ranges-sep" />
-          {[["14G", 84], ["1A", 180], ["3A", 540], ["Tümü", 900]].map(([lb, nb]) => (
-            <button key={lb} onClick={() => { setWin({ s: Math.max(0, 1 - nb / 900), e: 1 }); }}>{lb}</button>
-          ))}
-          <span className="ak-ranges-sep" />
-          <button title="Grafiği PNG olarak indir" onClick={downloadChartPNG}><Download size={12} /> PNG</button>
-        </div>
-        {lay.timeline && <Timeline bars={getBars(symbol)} win={win} onChange={setWin}
+        {!fullscreen && (
+          <div className="ak-ranges">
+            <button className={logS ? "on" : ""} title="Logaritmik fiyat ölçeği" onClick={() => setLogS(v => !v)}>Log</button>
+            <button className={magnetOn ? "on" : ""} title="Mıknatıs — imleci en yakın O/Y/D/K'ya yasla" onClick={() => setMagnetOn(v => !v)}>Mıknatıs</button>
+            <span className="ak-ranges-sep" />
+            <button title="Uzaklaş (daha çok bar)" onClick={() => setWin(w => { const sp = Math.min(1, (w.e - w.s) * 1.5); return { s: Math.max(0, w.e - sp), e: w.e }; })}>−</button>
+            <button title="Yakınlaş (daha az bar)" onClick={() => setWin(w => { const sp = Math.max(0.04, (w.e - w.s) / 1.5); return { s: Math.max(0, w.e - sp), e: w.e }; })}>+</button>
+            <span className="ak-ranges-sep" />
+            {[["14G", 84], ["1A", 180], ["3A", 540], ["Tümü", 900]].map(([lb, nb]) => (
+              <button key={lb} onClick={() => { setWin({ s: Math.max(0, 1 - nb / 900), e: 1 }); }}>{lb}</button>
+            ))}
+            <span className="ak-ranges-sep" />
+            <button title="Grafiği PNG olarak indir" onClick={downloadChartPNG}><Download size={12} /> PNG</button>
+          </div>
+        )}
+        {!fullscreen && lay.timeline && <Timeline bars={getBars(symbol)} win={win} onChange={setWin}
           lanes={lanes} lanesOn={lanesOn}
           onToggleLane={(k) => setLanes(l => l.includes(k) ? l.filter(z => z !== k) : [...l, k])} />}
       </div>
