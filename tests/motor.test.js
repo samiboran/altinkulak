@@ -1893,4 +1893,67 @@ console.log("Tahmin Ligi — sezon/haftalık geçmiş için tarihli satırlar (A
   });
 }
 
+console.log("Grafik boş-alan bağlam menüsü — sınır kontrolü (AK-085-TAMAMLAMA/C2)");
+{
+  const { inPlotArea } = await import("../src/lib/chartGeometry.js");
+  const b = { pL: 6, pR: 52, pT: 12, pB: 26, W: 1000, H: 480 };
+
+  test("inPlotArea: çizim alanının tam ortası içeride", () => {
+    assert.equal(inPlotArea(500, 240, b), true);
+  });
+  test("inPlotArea: sol/üst/alt kenarlar dahil (>=), sağ eksen dahil değil (fiyat ekseni)", () => {
+    assert.equal(inPlotArea(b.pL, b.pT, b), true);
+    assert.equal(inPlotArea(b.pL, b.H - b.pB, b), true);
+    assert.equal(inPlotArea(b.W - b.pR + 1, 240, b), false); // eksenin içinde — plot dışı
+  });
+  test("inPlotArea: RSI paneli (H'nin altı) ve üst boşluk dışarıda sayılır", () => {
+    assert.equal(inPlotArea(500, b.H + 10, b), false); // RSI paneli varsa buradadır
+    assert.equal(inPlotArea(500, 2, b), false); // pT'den önce (zaman ekseni üstü boşluk)
+  });
+}
+
+console.log("rafThrottle — pan/zoom/crosshair kare-başına-bir-kez (AK-085-TAMAMLAMA/C4)");
+{
+  const { rafThrottle } = await import("../src/lib/rafThrottle.js");
+
+  test("art arda çağrılar tek 'kareye' birleşir, yalnız SONUNCU argümanlarla çalışır", () => {
+    const calls = [];
+    let scheduled = null;
+    const schedule = (cb) => { scheduled = cb; return 1; };
+    const cancel = () => { scheduled = null; };
+    const throttled = rafThrottle((...args) => calls.push(args), schedule, cancel);
+    throttled(1); throttled(2); throttled(3);
+    assert.equal(calls.length, 0, "kare gelmeden fn hiç çalışmamalı");
+    scheduled();
+    assert.deepEqual(calls, [[3]], "yalnız en son çağrının argümanları");
+  });
+  test("kare tetiklendikten sonra yeni bir çağrı yeni bir kare planlar", () => {
+    const calls = [];
+    let scheduled = null;
+    const schedule = (cb) => { scheduled = cb; return 1; };
+    const throttled = rafThrottle((...args) => calls.push(args), schedule, () => {});
+    throttled("a");
+    scheduled();
+    throttled("b");
+    scheduled();
+    assert.deepEqual(calls, [["a"], ["b"]]);
+  });
+  test("cancel: bekleyen kareyi iptal eder, fn hiç çağrılmaz", () => {
+    const calls = [];
+    let scheduled = null, cancelled = false;
+    const schedule = (cb) => { scheduled = cb; return 1; };
+    const cancel = () => { cancelled = true; scheduled = null; };
+    const throttled = rafThrottle((...args) => calls.push(args), schedule, cancel);
+    throttled(1);
+    throttled.cancel();
+    assert.equal(cancelled, true);
+    assert.equal(calls.length, 0);
+  });
+  test("varsayılan schedule/cancel parametreleri olmadan da (rAF gerçek ortamda) çökmeden kurulur", () => {
+    // Node'da requestAnimationFrame yok — yalnız throttled fonksiyonun OLUŞTURULABİLDİĞİNİ doğrular,
+    // çağırmaz (çağırsaydı gerçek rAF arar, tarayıcı dışı ortamda patlar).
+    assert.equal(typeof rafThrottle(() => {}), "function");
+  });
+}
+
 console.log(`\n${pass} test geçti${process.exitCode ? " (HATALAR VAR)" : " — motor sağlam."}`);
