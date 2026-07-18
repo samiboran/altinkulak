@@ -1333,10 +1333,7 @@ console.log("kimlik kartı / başarım / rozet stats türetme (AK-086 UI)");
   });
 }
 
-console.log("Strateji Çıkarıcı — İncele/oluşum paneli/dürüstlük kapısı (AK-084+087 UI): SKIP — src/lib/strategyExtractor.js henüz yok, implementasyonla birlikte (aynı commit'te) geri gelecek");
-// GEÇİCİ SKIP: src/lib/strategyExtractor.js implementasyonu henüz yazılmadı.
-// Bu blok o dosyayla AYNI commit'te geri açılacak (test+implementasyon ayrı push'lanmaz kuralı).
-/*
+console.log("Strateji Çıkarıcı — İncele/oluşum paneli/dürüstlük kapısı (AK-084+087 UI)");
 {
   const { rangeFromIndices, mapOccurrenceToBlockKey, analyzeRange, hypothesisStatus } = await import("../src/lib/strategyExtractor.js");
   const { generateSignalCode } = await import("../src/lib/codegen.js");
@@ -1444,6 +1441,5 @@ console.log("Strateji Çıkarıcı — İncele/oluşum paneli/dürüstlük kapı
     assert.equal(params.tpR, 4);
   });
 }
-*/
 
 console.log(`\n${pass} test geçti${process.exitCode ? " (HATALAR VAR)" : " — motor sağlam."}`);
