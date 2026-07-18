@@ -1,6 +1,8 @@
 import { useMemo, useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
 import { Lock, Unlock, Copy, Trash2 } from "lucide-react";
 import { findFVG, findOrderBlocks, findBOS, ema, rsi, findMitigation, orderFlowArr, findFib, findSweep } from "../lib/detectors.js";
+import { inPlotArea } from "../lib/chartGeometry.js";
+import { rafThrottle } from "../lib/rafThrottle.js";
 import ChartLegend from "./ChartLegend.jsx";
 
 // AK-069: çizimlere kalıcı id — sicil/sandbox'takiyle aynı desen (crypto.randomUUID, yoksa yedek)
@@ -35,7 +37,7 @@ const EMPTY_MA_LIST = [];
 // props: bars, concepts(array), showEma(bool), maList([{period,color}]), maxView(son N bar)
 // AK-050: maList verilirse çoklu MA (her biri kendi periyot+rengiyle) çizilir; verilmezse
 // showEma(bool) eski tek-EMA20 davranışını birebir korur (geriye uyumluluk).
-const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = true, maList = null, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false, magnet = true, chartType = "candle", symbol = "", drawMode = null, compareBars = null, onDrawsChange = null, showRsi = false, onSandboxAdd = null, indicators = [], onIndicatorToggleShown = null, onIndicatorRemove = null, onIndicatorSetParam = null, lastRemovedIndicator = null, onUndoRemoveIndicator = null, onPushUndo = null, onPositionDragEnd = null, onInspectRange = null }, ref) {
+const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = true, maList = null, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false, magnet = true, chartType = "candle", symbol = "", drawMode = null, compareBars = null, onDrawsChange = null, showRsi = false, onSandboxAdd = null, indicators = [], onIndicatorToggleShown = null, onIndicatorRemove = null, onIndicatorSetParam = null, lastRemovedIndicator = null, onUndoRemoveIndicator = null, onPushUndo = null, onPositionDragEnd = null, onInspectRange = null, onIndicatorsClear = null, onOpenViewSettings = null }, ref) {
   const hasR = range && range.start != null;
   const FUT = 120; // sağda gelecek boşluğu (fib/projeksiyon) — pencere son barı bu kadar aşabilir
   const rawEnd = hasR ? range.end : bars.length - 1;
@@ -115,11 +117,15 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
   // Crosshair (AK-026): imleç -> bar/fiyat eşlemesi
   const [hov, setHov] = useState(null); // {i(view), px, py, price}
   useEffect(() => { setHov(null); }, [off, view.length]); // zoom/pan sonrası bayat indeks kalmasın
-  function onMove(e) {
-    const r = e.currentTarget.getBoundingClientRect();
-    const px = ((e.clientX - r.left) / r.width) * W;
-    const py = ((e.clientY - r.top) / r.height) * H;
-    if (px < pL || px > W - pR || py < pT || py > H - pB) { setHov(null); return; }
+  // AK-085-TAMAMLAMA/C4: fare mousemove native olay hızında ateşlenir (bazı sistemlerde 60fps'in
+  // çok üstünde) — her olayda setHov çağırmak gereksiz re-render'a yol açar. rafThrottle (paylaşılan
+  // yardımcı, src/lib/rafThrottle.js) bir karede birden fazla olay gelirse yalnız SONUNCUSUNU işler.
+  // Render'da her seferinde yeniden oluşturulur (view/magnet/x/y güncel kalsın), bu güvenlidir:
+  // yeni bir re-render zaten yalnız fn() (setHov) tetiklendiğinde olur — o an "pending" hep boşalmış olur.
+  const onMoveThrottled = rafThrottle((clientX, clientY, r) => {
+    const px = ((clientX - r.left) / r.width) * W;
+    const py = ((clientY - r.top) / r.height) * H;
+    if (!inPlotArea(px, py, { pL, pR, pT, pB, W, H })) { setHov(null); return; }
     const i = Math.max(0, Math.min(slots - 1, Math.round(((px - pL) / (W - pL - pR)) * (slots - 1))));
     let price = priceAt(py), snapPy = py;
     if (magnet) {
@@ -132,7 +138,23 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
     }
     setHov({ i, px: x(i), py: snapPy, price });
     if (dragRef.current?.mode === "sel") setSel(sl => (sl ? { ...sl, b: i, yb: py } : sl)); // taze i+py — kutu fareyi iki eksende izler
+  });
+  const onMoveThrottledRef = useRef(null);
+  onMoveThrottledRef.current = onMoveThrottled;
+  useEffect(() => () => onMoveThrottledRef.current?.cancel(), []);
+  function onMove(e) {
+    const r = e.currentTarget.getBoundingClientRect();
+    onMoveThrottled(e.clientX, e.clientY, r);
   }
+  // AK-085-TAMAMLAMA/C4: pan/zoom sırasında onRangeSelect Lab.jsx'te state güncelleyip Chart'a
+  // yeni props olarak geri döner (tam bir parent+child re-render turu) — wheel/touchmove ham olay
+  // hızında (bazı fare/trackpad'lerde 60fps'in üstünde) her seferinde çağırmak yerine AYNI
+  // rafThrottle ile bir karede en fazla bir kez tetiklenir. Hesabın kendisi (span/anchor/sınır
+  // mantığı, çağrı yerlerinde) değişmedi, yalnız kaç kez tetiklendiği.
+  const throttledRangeSelect = rafThrottle((gs, ge) => onRangeSelect && onRangeSelect(gs, ge));
+  const throttledRangeSelectRef = useRef(null);
+  throttledRangeSelectRef.current = throttledRangeSelect;
+  useEffect(() => () => throttledRangeSelectRef.current?.cancel(), []);
   // AK-028b: imleç odaklı tekerlek zoom (native listener; passive:false şart)
   const svgRef = useRef(null);
   const zoomRef = useRef(null);
@@ -149,7 +171,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
       const maxEnd = total - 1 + 120; // geleceğe taşma payı (Chart.FUT ile aynı)
       let gs = Math.round(anchorG - anchorFrac * span);
       gs = Math.max(0, Math.min(maxEnd - span + 1, gs));
-      onRangeSelect(gs, gs + span - 1);
+      throttledRangeSelect(gs, gs + span - 1);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -158,35 +180,63 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
   // AK-044: dokunmatik pan (tek parmak) + pinch-zoom (iki parmak)
   const touchRef = useRef(null);
   const touchDist = (t0, t1) => Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
+  // AK-085-TAMAMLAMA/C2: mobil "uzun-bas" — masaüstü sağ-tıkla AYNI boş-alan menüsünü açar.
+  // Parmak LONG_PRESS_MS boyunca LONG_PRESS_TOL px'ten fazla hareket etmezse tetiklenir;
+  // hareket ederse (pan/pinch niyeti) ya da parmak kalkarsa iptal edilir.
+  const LONG_PRESS_MS = 500, LONG_PRESS_TOL = 10;
+  const longPressRef = useRef(null); // {timer, x0, y0}
+  function clearLongPress() {
+    if (longPressRef.current?.timer) clearTimeout(longPressRef.current.timer);
+    longPressRef.current = null;
+  }
   function onTouchStart(e) {
     const r = e.currentTarget.getBoundingClientRect();
     if (e.touches.length === 2) {
+      clearLongPress();
       touchRef.current = { mode: "pinch", d0: touchDist(e.touches[0], e.touches[1]), off0: off, len0: view.length, total: bars.length };
       setHov(null);
     } else if (e.touches.length === 1) {
       const t = e.touches[0];
       touchRef.current = { mode: "pan", x0: t.clientX, off0: off, len0: view.length, total: bars.length, pxPerBar: r.width * ((W - pL - pR) / W) / view.length };
       const px = ((t.clientX - r.left) / r.width) * W, py = ((t.clientY - r.top) / r.height) * H;
-      if (px >= pL && px <= W - pR && py >= pT && py <= H - pB) {
-        const i = Math.max(0, Math.min(slots - 1, Math.round(((px - pL) / (W - pL - pR)) * (slots - 1))));
+      const inPlot = inPlotArea(px, py, { pL, pR, pT, pB, W, H });
+      const i0 = Math.max(0, Math.min(slots - 1, Math.round(((px - pL) / (W - pL - pR)) * (slots - 1))));
+      if (inPlot) {
         let price = priceAt(py), snapPy = py;
         if (magnet) {
-          const b = view[Math.min(i, view.length - 1)];
+          const b = view[Math.min(i0, view.length - 1)];
           if (b) { const cands = [b.o, b.h, b.l, b.c]; price = cands.reduce((best, v) => Math.abs(v - price) < Math.abs(best - price) ? v : best, cands[0]); snapPy = y(price); }
         }
-        setHov({ i, px: x(i), py: snapPy, price });
+        setHov({ i: i0, px: x(i0), py: snapPy, price });
       }
+      clearLongPress();
+      longPressRef.current = {
+        x0: t.clientX, y0: t.clientY,
+        timer: setTimeout(() => {
+          longPressRef.current = null;
+          touchRef.current = null; // uzun-bas menüye dönüştü — pan olarak devam etmesin
+          if (!inPlot) return;
+          setCtxMenu(null);
+          setEmptyCtxMenu({ leftPct: ((t.clientX - r.left) / r.width) * 100, topPct: ((t.clientY - r.top) / r.height) * 100, i: off + i0, price: priceAt(py) });
+        }, LONG_PRESS_MS),
+      };
     }
   }
   function onTouchEnd(e) {
+    clearLongPress();
     if (e.touches.length === 0) { touchRef.current = null; setHov(null); }
   }
   useEffect(() => {
     const el = svgRef.current;
-    if (!el || !onRangeSelect) return;
+    if (!el) return;
     const onTouchMoveNative = (e) => {
+      const lp = longPressRef.current;
+      if (lp && e.touches.length === 1) {
+        const t = e.touches[0];
+        if (Math.hypot(t.clientX - lp.x0, t.clientY - lp.y0) > LONG_PRESS_TOL) clearLongPress();
+      }
       const d = touchRef.current;
-      if (!d) return;
+      if (!d || !onRangeSelect) return;
       e.preventDefault();
       if (d.mode === "pinch" && e.touches.length === 2) {
         const d1 = touchDist(e.touches[0], e.touches[1]);
@@ -196,13 +246,13 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
         const mid = d.off0 + d.len0 / 2;
         let gs = Math.round(mid - span / 2);
         gs = Math.max(0, Math.min(maxEnd - span + 1, gs));
-        onRangeSelect(gs, gs + span - 1);
+        throttledRangeSelect(gs, gs + span - 1);
       } else if (d.mode === "pan" && e.touches.length === 1) {
         const t = e.touches[0];
         const db = Math.round((d.x0 - t.clientX) / Math.max(0.5, d.pxPerBar));
         const maxEnd = d.total - 1 + 120;
         let gs = Math.max(0, Math.min(maxEnd - d.len0 + 1, d.off0 + db));
-        onRangeSelect(gs, gs + d.len0 - 1);
+        throttledRangeSelect(gs, gs + d.len0 - 1);
       }
     };
     el.addEventListener("touchmove", onTouchMoveNative, { passive: false });
@@ -265,7 +315,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
   }
   useImperativeHandle(ref, () => ({
     goToBookmark,
-    clearDraws: () => { setDraws([]); setSelectedDrawId(null); setCtxMenu(null); },
+    clearDraws: () => clearAllDraws(),
     // AK-084/S1: kod→grafik senkronu — seçili pozisyon kutusu varsa onu, yoksa en son eklenen
     // pozisyon kutusunu günceller. Hiç pozisyon kutusu yoksa sessizce hiçbir şey yapmaz.
     // YALNIZ tpR taşınır: giriş/SL sabit kalır, TP = giriş + yön×risk×tpR yeniden hesaplanır.
@@ -357,7 +407,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
         const db = Math.round((d.x0 - e.clientX) / Math.max(0.5, d.pxPerBar));
         const maxEnd = bars.length - 1 + 120;
         let gs = Math.max(0, Math.min(maxEnd - d.len0 + 1, d.off0 + db));
-        onRangeSelect(gs, gs + d.len0 - 1);
+        throttledRangeSelect(gs, gs + d.len0 - 1);
       }
       const dy = e.clientY - d.y0;
       const pricePerPixel = (d.h0 * 2) / (H - pT - pB);
@@ -392,7 +442,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
       const db = Math.round((d.x0 - e.clientX) / Math.max(0.5, d.pxPerBar));
       const maxEnd = bars.length - 1 + 120;
       let gs = Math.max(0, Math.min(maxEnd - d.len0 + 1, d.off0 + db));
-      onRangeSelect(gs, gs + d.len0 - 1);
+      throttledRangeSelect(gs, gs + d.len0 - 1);
     }
   }
   function onUpSel() {
@@ -434,6 +484,19 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
     if (px > W - pR) { setVView(null); return; } // eksene çift tık = oto-sığdır
     setVView(null);
     onRangeSelect && onRangeSelect(null);
+  }
+  // AK-085-TAMAMLAMA/C2: BOŞ ALAN bağlam menüsü (masaüstü sağ-tık). Bir çizimin üstündeyse bu
+  // handler'a hiç ulaşılmaz (openCtxMenu zaten stopPropagation çağırıyor) — iki menü karışmaz.
+  // Eksen/RSI panelinde (fiyat eşlemesi anlamsız) menü açılmaz.
+  function onCanvasContextMenu(e) {
+    e.preventDefault();
+    const r = e.currentTarget.getBoundingClientRect();
+    const px = ((e.clientX - r.left) / r.width) * W;
+    const py = ((e.clientY - r.top) / r.height) * H;
+    if (!inPlotArea(px, py, { pL, pR, pT, pB, W, H })) return;
+    const i = Math.max(0, Math.min(slots - 1, Math.round(((px - pL) / (W - pL - pR)) * (slots - 1))));
+    setCtxMenu(null);
+    setEmptyCtxMenu({ leftPct: ((e.clientX - r.left) / r.width) * 100, topPct: ((e.clientY - r.top) / r.height) * 100, i: off + i, price: priceAt(py) });
   }
 
   const lastB = view[view.length - 1];
@@ -477,6 +540,10 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
   const [drawGhost, setDrawGhost] = useState(null);
   const [selectedDrawId, setSelectedDrawId] = useState(null);
   const [ctxMenu, setCtxMenu] = useState(null); // {id, leftPct, topPct} — sağ-tık context menu
+  // AK-085-TAMAMLAMA/C2: BOŞ ALAN bağlam menüsü — ctxMenu'den (çizim üstü) AYRI. Çizimlerin kendi
+  // onContextMenu'sü (openCtxMenu, satır ~578/621) e.stopPropagation() çağırıyor, o yüzden bir
+  // çizimin üstüne sağ-tıklanınca bu handler'a hiç ulaşmaz — iki menü doğal olarak çakışmaz.
+  const [emptyCtxMenu, setEmptyCtxMenu] = useState(null); // {leftPct, topPct, i(global), price}
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(`ak_draw_${symbol}`)) || [];
@@ -516,6 +583,14 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
     return () => document.removeEventListener("mousedown", onDoc);
   }, [ctxMenu]);
 
+  // AK-085-TAMAMLAMA/C2: boş-alan menüsü dışına tıklanınca/dokununca kapansın — aynı desen.
+  useEffect(() => {
+    if (!emptyCtxMenu) return;
+    function onDoc(e) { if (!e.target.closest?.(".ak-chart-ctxmenu")) setEmptyCtxMenu(null); }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [emptyCtxMenu]);
+
   function removeDraw(id) {
     const idx = draws.findIndex(d => d.id === id);
     if (idx === -1) return;
@@ -541,6 +616,20 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
   }
   function toggleLock(id) { setDraws(ds => ds.map(d => d.id === id ? { ...d, locked: !d.locked } : d)); }
   function updateDraw(id, patch) { setDraws(ds => ds.map(d => d.id === id ? { ...d, ...patch } : d)); }
+  // AK-085-TAMAMLAMA/C2: tüm çizimleri temizle — useImperativeHandle.clearDraws VE boş-alan
+  // menüsünün "Çizimleri Temizle" kalemi AYNI fonksiyonu çağırır (yeniden yazılmaz, tek yerden).
+  function clearAllDraws() { setDraws([]); setSelectedDrawId(null); setCtxMenu(null); setEmptyCtxMenu(null); }
+  // Boş-alan menüsü kalemleri — hepsi ya var olan yeteneği (setDraws/setVView/onRangeSelect) ya da
+  // parent'tan gelen (Lab.jsx sahipli) bir callback'i çağırır, yeni bir mantık icat edilmez.
+  function resetChartView() { setVView(null); onRangeSelect && onRangeSelect(null); setEmptyCtxMenu(null); }
+  function addHLineAt(price) { setDraws(ds => [...ds, { id: uid(), locked: false, type: "hline", price }]); setEmptyCtxMenu(null); }
+  function addPositionAt(i, price) {
+    const span = rg * 0.1;
+    const newId = uid();
+    setDraws(ds => [...ds, { id: newId, locked: false, type: "position", i, entry: price, tp: price + span * 2, sl: price - span }]);
+    setSelectedDrawId(newId);
+    setEmptyCtxMenu(null);
+  }
   function drawStyle(d) {
     const s = { pointerEvents: "none" };
     if (d.color) s.stroke = d.color;
@@ -676,7 +765,8 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
       onMouseEnter={() => { overRef.current = true; }}
       onMouseMove={(e) => { onMove(e); onDrag(e); }}
       onMouseLeave={() => { overRef.current = false; setHov(null); setSel(null); dragRef.current = null; setHandDragging(false); }}
-      onMouseDown={onDown} onMouseUp={onUpSel} onDoubleClick={onDbl} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
+      onMouseDown={onDown} onMouseUp={onUpSel} onDoubleClick={onDbl} onContextMenu={onCanvasContextMenu}
+      onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
       {[0, .2, .4, .6, .8, 1].map((f, i) => {
         const py = pT + f * (H - pT - pB), pv = logScale ? Math.exp(lnHi - f * (lnHi - lnLo)) : ehi - f * erg;
         return <g key={i}><line x1={pL} y1={py} x2={W - pR} y2={py} className="ak-c-grid" /><text x={W - pR + 5} y={py + 3} className="ak-c-axis">{fmtP(pv)}</text></g>;
@@ -897,6 +987,17 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
         </div>
       );
     })()}
+    {/* AK-085-TAMAMLAMA/C2: boş-alan bağlam menüsü — genel grafik aksiyonları */}
+    {emptyCtxMenu && (
+      <div className="ak-chart-ctxmenu" style={{ left: emptyCtxMenu.leftPct + "%", top: emptyCtxMenu.topPct + "%" }} onClick={(e) => e.stopPropagation()}>
+        <button onClick={resetChartView}>Grafiği Sıfırla</button>
+        <button onClick={clearAllDraws}>Çizimleri Temizle</button>
+        <button onClick={() => { onIndicatorsClear && onIndicatorsClear(); setEmptyCtxMenu(null); }}>Göstergeleri Kaldır</button>
+        <button onClick={() => addHLineAt(emptyCtxMenu.price)}>Buraya Yatay Çizgi</button>
+        <button onClick={() => addPositionAt(emptyCtxMenu.i, emptyCtxMenu.price)}>Buraya Pozisyon</button>
+        <button onClick={() => { onOpenViewSettings && onOpenViewSettings(); setEmptyCtxMenu(null); }}>Görünüm Ayarları</button>
+      </div>
+    )}
     {/* AK-069: seçili çizim üstünde floating toolbar — renk, kalınlık, kilit, klon, çöp */}
     {selectedDrawObj && selectedAnchor && (
       <div className="ak-draw-toolbar" style={{ left: (selectedAnchor.vx / W) * 100 + "%", top: (selectedAnchor.vy / svgH) * 100 + "%" }} onClick={(e) => e.stopPropagation()}>

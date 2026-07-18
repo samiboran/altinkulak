@@ -161,6 +161,11 @@ a.ak-cchip{display:inline-flex;align-items:center;gap:6px;text-decoration:none;}
 .ak-draw-ctxmenu button:hover:not(:disabled){background:var(--panel2);}
 .ak-draw-ctxmenu button:disabled{opacity:.4;cursor:not-allowed;}
 
+/* AK-085-TAMAMLAMA/C2: boş-alan bağlam menüsü — .ak-draw-ctxmenu ile aynı görsel dil, min-width biraz geniş (daha uzun etiketler) */
+.ak-chart-ctxmenu{position:absolute;z-index:20;display:flex;flex-direction:column;background:#121C1A;border:1px solid var(--line);border-radius:9px;padding:5px;box-shadow:0 8px 24px rgba(0,0,0,.45);min-width:172px;}
+.ak-chart-ctxmenu button{border:none;background:transparent;color:var(--txt);text-align:left;padding:7px 10px;font-size:12.5px;border-radius:6px;cursor:pointer;font-family:'Inter';}
+.ak-chart-ctxmenu button:hover{background:var(--panel2);}
+
 /* AK-069: seçili çizimin üstünde floating toolbar — renk, kalınlık, kilit, klon, çöp */
 .ak-draw-toolbar{position:absolute;z-index:20;display:flex;align-items:center;gap:4px;background:#121C1A;border:1px solid var(--line);border-radius:9px;padding:5px 6px;box-shadow:0 8px 24px rgba(0,0,0,.45);}
 .ak-draw-toolbar-sep{width:1px;align-self:stretch;background:var(--line);margin:0 2px;}

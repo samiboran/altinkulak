@@ -173,6 +173,9 @@ export default function Lab() {
     setIndicators(arr => arr.map(x => x.id === id ? { ...x, enabled: val, shown: val ? true : x.shown } : x));
   }
   function toggleIndEnabled(id) { setIndEnabled(id, !indById[id]?.enabled); }
+  // AK-085-TAMAMLAMA/C2: boş-alan menüsünün "Göstergeleri Kaldır" kalemi — setIndEnabled zaten
+  // var, yalnız hepsine uygulanır (yeni bir mantık değil, mevcut fonksiyonun toplu çağrısı).
+  function disableAllIndicators() { setIndicators(arr => arr.map(x => x.enabled ? { ...x, enabled: false } : x)); }
   function toggleIndShown(id) { setIndicators(arr => arr.map(x => x.id === id ? { ...x, shown: !x.shown } : x)); }
   function setIndParam(id, patch) { setIndicators(arr => arr.map(x => x.id === id ? { ...x, params: { ...x.params, ...patch } } : x)); }
   const [lastRemovedInd, setLastRemovedInd] = useState(null); // {id,label} — AK-068 basit tek-adım geri al (toast)
@@ -694,7 +697,8 @@ export default function Lab() {
         {dataOk && <Chart ref={chartRef} bars={replay ? getBars(symbol) : (liveBars || getBars(symbol))} concepts={hypothesis?.tested && matchIncludesSweep ? [...chartConcepts, "sweep"] : chartConcepts} maList={maList} trades={replay ? null : res?.trades} logScale={logS} magnet={magnetOn} range={chartRange} onRangeSelect={replay ? null : ((gs, ge) => { const N = getBars(symbol).length; if (gs == null) { setWin({ s: 0, e: 1 }); } else { setWin({ s: gs / (N - 1), e: ge / (N - 1) }); } })} chartType={chartType} symbol={symbol} drawMode={drawMode} compareBars={compareOn && compareSymbol && hasData(compareSymbol) ? getBars(compareSymbol) : null} onDrawsChange={setDrawCount} showRsi={showRsi} onSandboxAdd={handleSandboxAdd}
           indicators={legendIndicators} onIndicatorToggleShown={toggleIndShown} onIndicatorRemove={removeIndicator} onIndicatorSetParam={setIndParam}
           lastRemovedIndicator={lastRemovedInd} onUndoRemoveIndicator={undoRemoveIndicator} onPushUndo={(action) => undoStackRef.current.push(action)}
-          onPositionDragEnd={handlePositionDragEnd} onInspectRange={handleInspectRange} />}
+          onPositionDragEnd={handlePositionDragEnd} onInspectRange={handleInspectRange}
+          onIndicatorsClear={disableAllIndicators} onOpenViewSettings={() => setActiveTool("view")} />}
             {paperMsg && <p className="ak-paper-toast">{paperMsg}</p>}
           </div>
         </div>
