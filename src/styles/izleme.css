@@ -77,3 +77,17 @@
 .ak-alarm-status.open{color:var(--muted);background:#101A18;border:1px solid var(--line);}
 .ak-alarm-status.won{color:var(--good);background:#10241F;border:1px solid #1f5249;}
 .ak-alarm-status.lost{color:var(--bad);background:#2A1714;border:1px solid #4a2a24;}
+
+/* ===== Mobil düzen (AK-fix): satırlar ekrana sığar, taşma yok ===== */
+@media(max-width:700px){
+  .ak-izle-list{gap:8px;}
+  .ak-wrow{grid-template-columns:20px minmax(0,1fr) auto auto 26px;gap:8px;padding:10px 10px;}
+  .ak-wrow .ak-wspark{display:none;}
+  .ak-wrow .edge{display:none;}
+  .ak-wrow.bad{grid-template-columns:20px minmax(0,1fr) 1fr 26px;}
+  .ak-wid .sy,.ak-wrow .sy{font-size:14px;}
+  .ak-wid .nm,.ak-wrow .nm{font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;max-width:100%;}
+  .ak-wrow .last{font-size:13px;}
+  .ak-wrow .chg{font-size:12px;}
+  .ak-del{padding:4px;}
+}
