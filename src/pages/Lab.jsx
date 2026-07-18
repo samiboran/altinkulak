@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { FlaskConical, Code2, Activity, Play, Pause, SkipBack, SkipForward, RotateCcw, ShieldCheck, ShieldAlert, Search, SlidersHorizontal, Monitor, Dices, Calculator, LayoutGrid, Target, Download, PenTool, ChevronLeft, ChevronRight } from "lucide-react";
+import { Link } from "react-router-dom";
+import { FlaskConical, Code2, Activity, Play, Pause, SkipBack, SkipForward, RotateCcw, ShieldCheck, ShieldAlert, Search, SlidersHorizontal, Monitor, Dices, Calculator, LayoutGrid, Target, Download, PenTool, ChevronLeft, ChevronRight, Film } from "lucide-react";
 import { getBars, MARKET_GROUPS, ALL_SYMBOLS, loadReal, isReal, hasData, pairFor, tfOf, TIMEFRAMES, stats24h } from "../lib/data.js";
 import { atr } from "../lib/detectors.js";
 import { subscribe as subscribeLive } from "../lib/liveData.js";
@@ -603,6 +604,7 @@ export default function Lab() {
                 <button className={"ak-cchip teal" + (replay ? " on" : "")} onClick={toggleReplay}>Replay{replay ? " (açık)" : ""}</button>
                 <button className={"ak-cchip" + (lay.risk ? " on" : "")} onClick={() => setPanel("risk", !lay.risk)}><Calculator size={12} /> Pozisyon & Risk Hesaplayıcı {lay.risk ? "▲" : "▼"}</button>
                 <button className={"ak-cchip" + (drawMode === "inspect" ? " on" : "")} onClick={() => setDrawMode(m => m === "inspect" ? null : "inspect")} title="Grafikte bir bölge seç — o aralıktaki oluşumlardan strateji kur"><Search size={12} /> İncele</button>
+                <Link className="ak-cchip" to="/senaryo" title="Küratörlü senaryolarda giriş/çıkış pratiği — R skoru, sicile yazılmaz"><Film size={12} /> Senaryo</Link>
               </div>
             )}
             {activeTool === "indicators" && (

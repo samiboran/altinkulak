@@ -21,6 +21,7 @@
 .ak-rail-badge{position:absolute;top:-3px;right:-3px;background:var(--gold);color:#1a1305;font-family:'JetBrains Mono';font-size:9px;font-weight:600;border-radius:8px;min-width:14px;height:14px;line-height:14px;padding:0 3px;}
 .ak-rail-panel{position:absolute;top:0;left:calc(100% + 8px);z-index:25;background:#121C1A;border:1px solid var(--line);border-radius:12px;padding:12px;width:230px;box-shadow:0 8px 24px rgba(0,0,0,.45);display:flex;flex-direction:column;gap:8px;}
 .ak-rail-panel .ak-cchip{width:100%;text-align:left;border-radius:9px;}
+a.ak-cchip{display:inline-flex;align-items:center;gap:6px;text-decoration:none;}
 .ak-rail-panel-head{font-family:'JetBrains Mono';font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:4px;}
 .ak-rail-panel-head:first-child{margin-top:0;}
 .ak-rail-panel-row{display:flex;gap:6px;}

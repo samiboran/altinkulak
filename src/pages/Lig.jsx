@@ -1,13 +1,14 @@
 import { useState, useEffect } from "react";
-import { Target, Lock, TrendingUp, TrendingDown, Award, Brain } from "lucide-react";
+import { Target, Lock, TrendingUp, TrendingDown, Award, Brain, CheckCircle2, XCircle } from "lucide-react";
 import { useAuth } from "../lib/AuthProvider.jsx";
 import { useAuthGate } from "../lib/AuthGate.jsx";
 import { fetchProfilesByIds } from "../lib/supabase.js";
 import {
   fetchActiveQuestion, fetchMyPrediction, lockPrediction,
   fetchResolvedPredictions, fetchMyResolvedPredictions, groupByUser,
+  fetchMyLastResolvedResult, fetchMyResolvedPredictionsWithDates,
 } from "../lib/predictions.js";
-import { leaderboard, calibrationCurve, overconfidence } from "../lib/brier.js";
+import { leaderboard, calibrationCurve, overconfidence, brierScore } from "../lib/brier.js";
 import "../styles/lig.css";
 
 // AK-083: Tahmin Ligi v1. Skorlama brier.js'te (buraya kopyalanmaz). Guest aktif soruyu görür,
@@ -32,8 +33,11 @@ export default function Lig() {
   const [board, setBoard] = useState([]);
   const [handles, setHandles] = useState({});
   const [boardLoading, setBoardLoading] = useState(true);
+  const [globalCurve, setGlobalCurve] = useState(null); // "son sonuç" zorunlu dersi için (D6: HERKESİN verisi)
   const [myCurve, setMyCurve] = useState(null);
   const [myOver, setMyOver] = useState(null);
+  const [lastResult, setLastResult] = useState(undefined); // undefined=yükleniyor, null=yok
+  const [weeklyHistory, setWeeklyHistory] = useState([]);
 
   useEffect(() => {
     let on = true;
@@ -49,12 +53,15 @@ export default function Lig() {
     return () => { on = false; };
   }, [user, question]);
 
-  // Lig tablosu (herkese açık — çözülmüş sorulardan) + handle çözümü
+  // Lig tablosu (herkese açık — çözülmüş sorulardan) + handle çözümü + HERKESİN kalibrasyon
+  // eğrisi (globalCurve) — "son sonuç" zorunlu dersi (C4) kendi güven aralığında herkes ne
+  // kadar tuttu diye sorar, o yüzden burada (yalnız kendi rows'unda değil) hesaplanır.
   useEffect(() => {
     let on = true;
     setBoardLoading(true);
     fetchResolvedPredictions().then(async (rows) => {
       if (!on) return;
+      setGlobalCurve(calibrationCurve(rows));
       const rows2 = leaderboard(groupByUser(rows));
       setBoard(rows2);
       const map = await fetchProfilesByIds(rows2.map((r) => r.userId));
@@ -62,6 +69,28 @@ export default function Lig() {
     });
     return () => { on = false; };
   }, []);
+
+  // AK-083-TAMAMLAMA/C4: en son çözülen sorudaki sonucun — atlanamaz kalibrasyon dersi.
+  useEffect(() => {
+    let on = true;
+    if (!user) { setLastResult(null); return; }
+    setLastResult(undefined);
+    fetchMyLastResolvedResult(user.id).then((r) => { if (on) setLastResult(r); });
+    return () => { on = false; };
+  }, [user]);
+
+  // AK-083-TAMAMLAMA/C2: geçmiş haftaların Brier dağılımı (en yeni 8 hafta).
+  useEffect(() => {
+    let on = true;
+    if (!user) { setWeeklyHistory([]); return; }
+    fetchMyResolvedPredictionsWithDates(user.id).then((rows) => {
+      if (!on) return;
+      const sorted = [...(rows || [])].sort((a, b) => new Date(a.closesAt) - new Date(b.closesAt));
+      const withBrier = sorted.map((r) => ({ ...r, brier: brierScore(r.confidence, r.hit) }));
+      setWeeklyHistory(withBrier.slice(-8));
+    });
+    return () => { on = false; };
+  }, [user]);
 
   // Kişisel kalibrasyon eğrisi + aşırı özgüven dersi — yalnız kendi geçmişin (D6: başkasının
   // tahmini bu cihazdan fabrike edilip "senin" gibi gösterilemez)
@@ -134,6 +163,43 @@ export default function Lig() {
         )}
       </section>
 
+      {user && (
+        <section className="ak-lig-sec">
+          <h2><CheckCircle2 size={16} /> Son sonuç</h2>
+          {lastResult === undefined ? (
+            <p className="ak-lig-note">Yükleniyor…</p>
+          ) : !lastResult ? (
+            <div className="ak-lig-empty"><CheckCircle2 size={24} /><p>Henüz çözülmüş bir tahminin yok — ilk sonuç geldiğinde burada görünecek.</p></div>
+          ) : (() => {
+            const q = lastResult.question;
+            const hit = lastResult.direction === q.outcome;
+            const myBrier = brierScore(lastResult.confidence, hit);
+            const bucket = (globalCurve || []).find((b) => lastResult.confidence >= b.lo && lastResult.confidence < b.hi);
+            return (
+              <div className={"ak-lig-result" + (hit ? " hit" : " miss")}>
+                <div className="ak-lig-result-head">
+                  <span className="ak-lig-sym">{q.sym}</span>
+                  {hit
+                    ? <span className="ak-lig-verdict hit"><CheckCircle2 size={15} /> Doğru</span>
+                    : <span className="ak-lig-verdict miss"><XCircle size={15} /> Yanlış</span>}
+                </div>
+                <p>{q.question_text}</p>
+                <div className="ak-lig-result-stats">
+                  <span>Senin yönün: <b>{lastResult.direction === "up" ? "Yukarı" : "Aşağı"}</b></span>
+                  <span>Gerçekleşen: <b>{q.outcome === "up" ? "Yukarı" : "Aşağı"}</b></span>
+                  <span>Brier skorun: <b className="mono">{myBrier.toFixed(3)}</b></span>
+                </div>
+                <p className="ak-lig-lesson">
+                  {bucket && bucket.n >= 4
+                    ? <>Bu ligde %{Math.round(lastResult.confidence * 100)} diyenlerin %{Math.round(bucket.hitRate * 100)}'i tuttu (n={bucket.n}) — kalibrasyonunu buna göre değerlendir.</>
+                    : <>Bu güven aralığında henüz kıyaslanacak yeterli veri yok — ligde katılım arttıkça burası dolacak.</>}
+                </p>
+              </div>
+            );
+          })()}
+        </section>
+      )}
+
       <section className="ak-lig-sec">
         <h2><Award size={16} /> Lig tablosu <span className="ak-soon">çözülmüş sorular</span></h2>
         {boardLoading ? (
@@ -188,6 +254,21 @@ export default function Lig() {
                     ? <>Ortalamada isabetin güveninden <b>%{Math.round(-myOver * 100)}</b> daha yüksek — olduğundan az güveniyorsun, daha cesur tahmin edebilirsin.</>
                     : <>Güvenin ve isabetin birbirine oldukça yakın — iyi kalibre edilmişsin.</>}
               </p>
+            )}
+            {weeklyHistory.length > 1 && (
+              <div className="ak-lig-weekly">
+                <span className="ak-lig-weekly-lbl">Son {weeklyHistory.length} haftanın Brier skorların <span className="ak-soon">düşük iyi</span></span>
+                <div className="ak-lig-weekly-bars">
+                  {weeklyHistory.map((w, i) => {
+                    const pct = Math.max(4, Math.min(100, Math.round((1 - w.brier / 0.5) * 100)));
+                    return (
+                      <div className="ak-lig-weekly-bar" key={i} title={`${w.brier.toFixed(3)}`}>
+                        <div className={"ak-lig-weekly-fill" + (w.hit ? " hit" : " miss")} style={{ height: `${pct}%` }} />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             )}
           </>
         )}

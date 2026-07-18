@@ -1442,4 +1442,142 @@ console.log("Strateji Çıkarıcı — İncele/oluşum paneli/dürüstlük kapı
   });
 }
 
+console.log("Replay Ligi — senaryo verisi (AK-083-TAMAMLAMA/C5)");
+{
+  const { SCENARIOS, scenarioBars, scenarioById } = await import("../src/lib/scenarios.js");
+
+  test("scenarioBars: aynı senaryo her çağrıda BİREBİR aynı mumları üretir (deterministik seed — adil percentile için şart)", () => {
+    const s = SCENARIOS[0];
+    const a = scenarioBars(s);
+    const b = scenarioBars(s);
+    assert.deepEqual(a, b);
+  });
+  test("scenarioBars: bar sayısı fazların toplamına eşit, her bar o/h/l/c sayısal ve h>=l", () => {
+    for (const s of SCENARIOS) {
+      const bars = scenarioBars(s);
+      const total = s.phases.reduce((a, p) => a + p.n, 0);
+      assert.equal(bars.length, total);
+      for (const b of bars) {
+        assert.ok(Number.isFinite(b.o) && Number.isFinite(b.h) && Number.isFinite(b.l) && Number.isFinite(b.c));
+        assert.ok(b.h >= b.l);
+      }
+    }
+  });
+  test("scenarioById: bilinen id'yi bulur, bilinmeyende null döner (çökmez)", () => {
+    assert.equal(scenarioById(SCENARIOS[0].id).id, SCENARIOS[0].id);
+    assert.equal(scenarioById("yok-boyle-bir-sey"), null);
+  });
+}
+
+console.log("Replay Ligi — skorlama + percentile (AK-083-TAMAMLAMA/C5/C6)");
+{
+  const { entryPlan, resolveAttempt, resolveAttemptDetailed, percentileOf,
+    fetchScenarioScores, fetchMyScenarioScore, submitScenarioScore, fetchMyScenarioCount } = await import("../src/lib/replay.js");
+  const { scenarioBars, SCENARIOS } = await import("../src/lib/scenarios.js");
+  const bars = scenarioBars(SCENARIOS[0]);
+  const entryIdx = SCENARIOS[0].revealStart;
+
+  test("entryPlan: long'da stop entry'nin altında, hedef üstünde (1:2)", () => {
+    const p = entryPlan(bars, entryIdx, 1);
+    assert.ok(p.stop < p.entry);
+    assert.ok(p.target > p.entry);
+    assert.ok(Math.abs((p.target - p.entry) - 2 * (p.entry - p.stop)) < 1e-6);
+  });
+  test("entryPlan: short'ta stop entry'nin üstünde, hedef altında", () => {
+    const p = entryPlan(bars, entryIdx, -1);
+    assert.ok(p.stop > p.entry);
+    assert.ok(p.target < p.entry);
+  });
+  test("entryPlan: geçersiz yön/aralık dışı index'te null (çökmez)", () => {
+    assert.equal(entryPlan(bars, entryIdx, 0), null);
+    assert.equal(entryPlan(bars, bars.length - 1, 1), null);
+    assert.equal(entryPlan(null, 0, 1), null);
+  });
+  test("resolveAttemptDetailed: hedef/stop tetiklenirse rScore -1 ya da rr, exitIdx döner", () => {
+    const r = resolveAttemptDetailed(bars, entryIdx, 1);
+    assert.ok(r == null || (Number.isFinite(r.rScore) && Number.isInteger(r.exitIdx)));
+  });
+  test("resolveAttempt: resolveAttemptDetailed'in rScore'unu döner (aynı sonuç)", () => {
+    const detail = resolveAttemptDetailed(bars, entryIdx, 1);
+    const scalar = resolveAttempt(bars, entryIdx, 1);
+    assert.equal(scalar, detail?.rScore ?? null);
+  });
+
+  test("percentileOf: az kayıtta (minN altı) dürüst null döner, sahte yüzdelik üretilmez (D6)", () => {
+    assert.equal(percentileOf([1, 2, 3], 2), null);
+  });
+  test("percentileOf: yeterli kayıtta doğru yüzdelik hesaplanır", () => {
+    assert.equal(percentileOf([1, 2, 3, 4, 5], 3), 40); // 2/5 değer (1,2) 3'ün altında
+  });
+  test("percentileOf: boş/geçersiz girdide çökmez", () => {
+    assert.equal(percentileOf([], 1), null);
+    assert.equal(percentileOf([1, 2, 3, 4, 5], null), null);
+  });
+
+  const scores = await fetchScenarioScores("sert-cokus");
+  const myScore = await fetchMyScenarioScore("sert-cokus", "u1");
+  const submitRes = await submitScenarioScore("sert-cokus", "u1", 2);
+  const count = await fetchMyScenarioCount("u1");
+  test("Supabase yapılandırılmamışken replay skor sorguları dürüst boş değer döner (D6)", () => {
+    assert.deepEqual(scores, []);
+    assert.equal(myScore, null);
+    assert.equal(submitRes.ok, false);
+    assert.equal(count, 0);
+  });
+}
+
+console.log("Sezon iskeleti (AK-083-TAMAMLAMA/C7)");
+{
+  const { computeSeasonBrier, fetchActiveSeason } = await import("../src/lib/seasons.js");
+
+  test("computeSeasonBrier: sezon yoksa dürüst null", () => {
+    assert.equal(computeSeasonBrier([{ confidence: 0.8, hit: true, closesAt: "2026-07-01" }], null), null);
+  });
+  test("computeSeasonBrier: pencere dışındaki tahminler sayılmaz, avg/weeks doğru hesaplanır", () => {
+    const season = { starts_at: "2026-07-01T00:00:00Z", ends_at: "2026-07-31T23:59:59Z" };
+    const rows = [
+      { confidence: 0.8, hit: true, closesAt: "2026-07-10T00:00:00Z" },  // içeride
+      { confidence: 0.6, hit: false, closesAt: "2026-07-20T00:00:00Z" }, // içeride
+      { confidence: 0.9, hit: true, closesAt: "2026-08-05T00:00:00Z" },  // DIŞARIDA — sayılmaz
+    ];
+    const r = computeSeasonBrier(rows, season);
+    assert.equal(r.weeks, 2);
+    assert.ok(r.avg > 0);
+  });
+  test("computeSeasonBrier: pencerede hiç tahmin yoksa dürüst null (fabrike ortalama yok, D6)", () => {
+    const season = { starts_at: "2026-07-01T00:00:00Z", ends_at: "2026-07-31T23:59:59Z" };
+    assert.equal(computeSeasonBrier([{ confidence: 0.8, hit: true, closesAt: "2026-01-01" }], season), null);
+  });
+
+  const active = await fetchActiveSeason();
+  test("Supabase yapılandırılmamışken aktif sezon sorgusu dürüst null döner", () => {
+    assert.equal(active, null);
+  });
+}
+
+console.log("Tahmin Ligi — sezon/haftalık geçmiş için tarihli satırlar (AK-083-TAMAMLAMA/C2/C4)");
+{
+  const { toBrierRowsWithDate, fetchMyResolvedPredictionsWithDates, fetchMyLastResolvedResult } = await import("../src/lib/predictions.js");
+
+  test("toBrierRowsWithDate: toBrierRows ile AYNI filtre + closesAt taşınır", () => {
+    const raw = [
+      { user_id: "u1", direction: "up", confidence: 0.8, question: { resolved: true, outcome: "up", closes_at: "2026-07-10" } },
+      { user_id: "u1", direction: "up", confidence: 0.7, question: { resolved: false, outcome: null, closes_at: "2026-07-17" } },
+    ];
+    const rows = toBrierRowsWithDate(raw);
+    assert.equal(rows.length, 1);
+    assert.deepEqual(rows[0], { userId: "u1", confidence: 0.8, hit: true, closesAt: "2026-07-10" });
+  });
+  test("toBrierRowsWithDate: boş/eksik girdide çökmez", () => {
+    assert.deepEqual(toBrierRowsWithDate(null), []);
+  });
+
+  const withDates = await fetchMyResolvedPredictionsWithDates("u1");
+  const lastResult = await fetchMyLastResolvedResult("u1");
+  test("Supabase yapılandırılmamışken yeni tarihli sorgular dürüst boş değer döner (D6)", () => {
+    assert.deepEqual(withDates, []);
+    assert.equal(lastResult, null);
+  });
+}
+
 console.log(`\n${pass} test geçti${process.exitCode ? " (HATALAR VAR)" : " — motor sağlam."}`);
