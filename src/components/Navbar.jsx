@@ -61,7 +61,7 @@ export default function Navbar() {
           <>
             <Link className="ak-signin" to="/ben">Ben</Link>
             <div className="ak-usermenu">
-              <button className="ak-userbtn" onClick={() => setOpen((v) => !v)}><User size={14} /> @{handle}</button>
+              <button className="ak-userbtn" onClick={() => setOpen((v) => !v)}><User size={14} /> <span className="ak-handle">@{handle}</span></button>
               {open && (
                 <div className="ak-usermenu-pop">
                   <button onClick={handleSignOut}><LogOut size={14} /> Çıkış yap</button>

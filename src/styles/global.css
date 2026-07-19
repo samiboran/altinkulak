@@ -25,6 +25,8 @@ main{min-height:60vh;}
 
 /* ---- navbar ---- */
 .ak-top{display:flex;align-items:center;gap:24px;padding:16px 28px;border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(14,20,22,.82);backdrop-filter:blur(8px);z-index:20;}
+/* AK-096: mobil navbar taşması — flex item'lar min-width:0 olmadan içerik genişliğine göre taşar */
+.ak-top{min-width:0;}
 .ak-brand{display:flex;align-items:center;gap:9px;}
 .ak-mark{display:grid;place-items:center;width:30px;height:30px;border-radius:8px;
   background:radial-gradient(circle at 30% 30%, #2a2a16, #0E1416);color:var(--gold);
@@ -36,6 +38,7 @@ main{min-height:60vh;}
 .ak-nav a{color:var(--muted);font-size:14px;font-weight:500;transition:color .15s;}
 .ak-nav a:hover,.ak-nav a.active{color:var(--txt);}
 .ak-tools{margin-left:auto;display:flex;align-items:center;gap:8px;}
+.ak-tools{min-width:0;flex-shrink:1;}
 .ak-icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;color:var(--muted);transition:.15s;}
 .ak-icon:hover{background:var(--panel);color:var(--txt);}
 .ak-signin{height:36px;padding:0 16px;display:inline-flex;align-items:center;border-radius:10px;font-weight:600;font-size:14px;border:1px solid var(--line);transition:.15s;}
@@ -48,6 +51,7 @@ main{min-height:60vh;}
 .ak-navmore-pop a:hover,.ak-navmore-pop a.active{background:var(--panel2);color:var(--txt);}
 .ak-usermenu{position:relative;}
 .ak-userbtn{gap:7px;font-family:'JetBrains Mono';}
+.ak-userbtn{max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .ak-usermenu-pop{position:absolute;top:calc(100% + 6px);right:0;z-index:30;background:#121C1A;border:1px solid var(--line);border-radius:11px;padding:6px;min-width:150px;box-shadow:0 8px 24px rgba(0,0,0,.4);}
 .ak-usermenu-pop button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:9px 10px;border-radius:8px;font-size:13px;color:var(--muted);}
 .ak-usermenu-pop button:hover{background:var(--panel2);color:var(--bad);}
@@ -108,6 +112,9 @@ main{min-height:60vh;}
 .ak-soon{font-family:'JetBrains Mono';font-size:10.5px;color:var(--gold-2);background:#241E10;border:1px solid #473c1c;padding:1px 7px;border-radius:6px;}
 
 @media(max-width:860px){ .ak-nav{display:none;} }
+/* AK-096: mobil navbar taşması — dar ekranda logo/arama/kullanıcı butonu sıkışıp taşıyordu */
+@media(max-width:860px){ .ak-top{padding:14px 14px;gap:12px;} }
+@media(max-width:480px){ .ak-userbtn span.ak-handle{display:none;} }
 @media(prefers-reduced-motion:reduce){ .ak-btn-primary:hover{transform:none;} }
 
 /* ================= AK-081/C2: Mobil alt tab bar ================= */
