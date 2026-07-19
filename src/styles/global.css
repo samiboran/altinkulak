@@ -158,3 +158,25 @@ main{min-height:60vh;}
   .ak-drawer-item:active{opacity:.75;}
 }
 @media(prefers-reduced-motion:reduce){ .ak-drawer{animation:none;} }
+
+/* ===== AK-fix: "Daha fazla" dropdown stili (ak-navmore) — JSX vardı, CSS unutulmuştu ===== */
+.ak-navmore{position:relative;}
+.ak-navmore-btn{
+  display:inline-flex;align-items:center;gap:4px;
+  background:none;border:none;cursor:pointer;
+  color:var(--muted);font-size:14px;font-weight:500;font-family:inherit;
+  padding:0;transition:color .15s;
+}
+.ak-navmore-btn:hover{color:var(--txt);}
+.ak-navmore-pop{
+  position:absolute;top:calc(100% + 10px);left:-8px;z-index:75;
+  min-width:180px;padding:8px;
+  background:#111A1D;border:1px solid var(--line);border-radius:12px;
+  box-shadow:0 12px 32px rgba(0,0,0,.5);
+  display:flex;flex-direction:column;gap:2px;
+}
+.ak-navmore-pop a{
+  padding:9px 12px;border-radius:8px;
+  color:var(--muted);font-size:14px;
+}
+.ak-navmore-pop a:hover,.ak-navmore-pop a.active{color:var(--txt);background:rgba(255,255,255,.05);}
