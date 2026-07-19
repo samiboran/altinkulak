@@ -7,7 +7,10 @@
 .ak-cchip:hover{color:var(--txt);}
 .ak-cchip.on{border-color:#473c1c;background:#241E10;color:var(--gold-2);}
 .ak-cchip.teal.on{border-color:#1f5249;background:#10241F;color:var(--teal-soft);}
-.ak-chart{width:100%;height:340px;background:linear-gradient(180deg,#11181A,#0E1416);border:1px solid var(--line);border-radius:14px;touch-action:none;}
+/* AK-097: display:block şart — svg varsayılan display:inline'da kalırsa ResizeObserver
+   contentRect'i 0×0 rapor edebiliyor (inline kutu modeli net tanımlı değil), viewBox dinamik
+   hale gelince bu net bir çökmeye dönüşürdü (negatif rect genişliği). */
+.ak-chart{display:block;width:100%;height:340px;background:linear-gradient(180deg,#11181A,#0E1416);border:1px solid var(--line);border-radius:14px;touch-action:none;}
 
 /* AK-082 C1/C3: Binance modeli dikey side toolbar — masaüstünde grafiğin solunda ince ikon şeridi,
    tıklayınca yanında flyout panel açılır. Chart.jsx dokunulmadı: bu yalnız onu saran düzen. */

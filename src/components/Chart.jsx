@@ -38,6 +38,9 @@ const EMPTY_MA_LIST = [];
 // AK-050: maList verilirse çoklu MA (her biri kendi periyot+rengiyle) çizilir; verilmezse
 // showEma(bool) eski tek-EMA20 davranışını birebir korur (geriye uyumluluk).
 const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = true, maList = null, maxView = 120, trades = null, range = null, onRangeSelect = null, logScale = false, magnet = true, chartType = "candle", symbol = "", drawMode = null, compareBars = null, onDrawsChange = null, showRsi = false, onSandboxAdd = null, indicators = [], onIndicatorToggleShown = null, onIndicatorRemove = null, onIndicatorSetParam = null, lastRemovedIndicator = null, onUndoRemoveIndicator = null, onPushUndo = null, onPositionDragEnd = null, onInspectRange = null, onIndicatorsClear = null, onOpenViewSettings = null }, ref) {
+  // AK-097: sabit 1000×480 yerine konteynerin gerçek px boyutu — bkz. svgRef'in ResizeObserver
+  // effect'i. null = henüz ölçülmedi (ilk render).
+  const [size, setSize] = useState(null);
   const hasR = range && range.start != null;
   const FUT = 120; // sağda gelecek boşluğu (fib/projeksiyon) — pencere son barı bu kadar aşabilir
   const rawEnd = hasR ? range.end : bars.length - 1;
@@ -71,11 +74,18 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
   const rsiArr = useMemo(() => showRsi ? rsi(bars, 14) : null, [bars, showRsi]);
   const rsiView = rsiArr ? rsiArr.slice(off, off + view.length) : null;
 
-  const W = 1000, H = 480, pL = 6, pT = 12, pB = 26;
+  // AK-097: sabit W=1000/H=480 yerine konteynerin GERÇEK px boyutu (ResizeObserver ile ölçülür,
+  // bkz. svgRef'in bağlandığı yerdeki effect). size=null iken (ilk render, ölçüm henüz gelmedi)
+  // W/svgH/H sıfıra düşer — bu durumda aşağıdaki `ready` bayrağı JSX'in gövdesini hiç ÇİZMEZ,
+  // sadece boş <svg ref=...> döner (ResizeObserver'ın gözlemleyeceği eleman mevcut olsun diye).
+  // x()/y()/step gibi tüm türetilmiş hesaplar DEĞİŞMEDİ — yalnız W/H'nin kaynağı reaktif oldu.
+  const pL = 6, pT = 12, pB = 26;
   const RSI_H = 80, RSI_PAD_T = 10, RSI_PAD_B = 14;
+  const W = size ? size.w : 0;
+  const svgH = size ? size.h : 0;
+  const H = Math.max(0, svgH - (showRsi ? RSI_H : 0));
   const rsiTop = H + RSI_PAD_T, rsiBottom = H + RSI_H - RSI_PAD_B;
   const yRsi = (v) => rsiBottom - (v / 100) * (rsiBottom - rsiTop);
-  const svgH = H + (showRsi ? RSI_H : 0);
   const lo = Math.min(...view.map(b => b.l)), hi = Math.max(...view.map(b => b.h)), rg = hi - lo || 1;
   // Fiyat büyüklüğüne göre ondalık (AK-027): 104,230 · 1,043 · 84.2 · 1.04 · 0.0432
   const fmtP = (p) => {
@@ -163,6 +173,23 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
   useEffect(() => () => throttledRangeSelectRef.current?.cancel(), []);
   // AK-028b: imleç odaklı tekerlek zoom (native listener; passive:false şart)
   const svgRef = useRef(null);
+  // AK-097: svg'nin GERÇEK CSS kutu boyutu (width/height CSS'ten gelir — bkz. chart.css .ak-chart)
+  // ResizeObserver ile ölçülüp size state'ine yazılır; ardı ardına gelen resize olayları rafThrottle
+  // ile bir karede en fazla bir kez state güncellemesine dönüşür (pan/zoom'daki AYNI desen).
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const applySize = rafThrottle((w, h) => {
+      setSize((prev) => (prev && prev.w === w && prev.h === h) ? prev : { w, h });
+    });
+    const ro = new ResizeObserver((entries) => {
+      const cr = entries[0]?.contentRect;
+      if (!cr) return;
+      applySize(Math.round(cr.width), Math.round(cr.height));
+    });
+    ro.observe(el);
+    return () => { ro.disconnect(); applySize.cancel(); };
+  }, []);
   const zoomRef = useRef(null);
   zoomRef.current = { off, len: slots, total: bars.length, hov };
   useEffect(() => {
@@ -768,17 +795,25 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
   const selectedDrawObj = draws.find(d => d.id === selectedDrawId) || null;
   const selectedAnchor = selectedDrawObj && ["trendline", "rect", "hline", "hray"].includes(selectedDrawObj.type) ? getDrawAnchor(selectedDrawObj) : null;
 
-  if (!view || view.length < 2) return <svg className="ak-chart" viewBox={`0 0 1000 480`} />;
-
   const cursorClass = spaceDown ? (handDragging ? " ak-c-grabbing" : " ak-c-grab") : "";
+  // AK-097: size null iken (henüz ölçülmedi, bkz. ResizeObserver effect) ya da yetersiz veri
+  // varken hiçbir şey ÇİZİLMEZ (W/H sıfır/negatif olabileceği için x()/y() güvenilmez olurdu).
+  // ÖNEMLİ: <svg ref={svgRef}> HER ZAMAN aynı ağaç şeklinde (aynı .ak-c-outer > svg konumunda)
+  // render edilir — ready false iken sadece İÇİNDEKİLER atlanır. Eskiden !ready durumunda ayrı/
+  // daha sığ bir JSX döndürülüyordu (çıplak <svg>, .ak-c-outer sarmalayıcısı olmadan); React bunu
+  // FARKLI bir ağaç sanıp eski svg DOM node'unu unmount edip yenisini mount ediyordu — bu da
+  // ResizeObserver'ın (yalnızca mount anındaki node'u gözlemleyen) KOPMASINA yol açıyordu: ilk
+  // (genelde 0×0 gelen) ölçüm sonrası bir daha asla tetiklenmiyordu. Tek/sabit ağaç bu kökten çözer.
+  const ready = !!size && !!view && view.length >= 2;
   return (
     <div className="ak-c-outer">
-    <svg id="ak-main-chart" ref={svgRef} className={"ak-chart" + cursorClass + (showRsi ? " has-rsi" : "")} viewBox={`0 0 ${W} ${svgH}`} preserveAspectRatio="none" role="img" aria-label="Fiyat grafiği"
+    <svg id="ak-main-chart" ref={svgRef} className={"ak-chart" + cursorClass + (showRsi ? " has-rsi" : "")} viewBox={ready ? `0 0 ${W} ${svgH}` : "0 0 1 1"} role="img" aria-label="Fiyat grafiği"
       onMouseEnter={() => { overRef.current = true; }}
       onMouseMove={(e) => { onMove(e); onDrag(e); }}
       onMouseLeave={() => { overRef.current = false; setHov(null); setSel(null); if (dragRef.current?.mode === "pan") vFreezeRef.current = null; dragRef.current = null; setHandDragging(false); }}
       onMouseDown={onDown} onMouseUp={onUpSel} onDoubleClick={onDbl} onContextMenu={onCanvasContextMenu}
       onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
+      {ready && <>
       {[0, .2, .4, .6, .8, 1].map((f, i) => {
         const py = pT + f * (H - pT - pB), pv = logScale ? Math.exp(lnHi - f * (lnHi - lnLo)) : ehi - f * erg;
         // AK-094 C4: mobilde 6 yerine 4 etiket — sıklığı azalt, tamamen kaldırma (i===1/.2 ve i===3/.6 gizlenir)
@@ -965,7 +1000,9 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
           />
         </g>
       )}
+      </>}
     </svg>
+    {ready && <>
     {/* AK-068: TradingView tarzı gösterge legend'ı — sol üst, OHLC künyesinin altında */}
     <ChartLegend
       indicators={indicators}
@@ -1032,6 +1069,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
         <button title="Kaldır" disabled={selectedDrawObj.locked} onClick={() => removeDraw(selectedDrawObj.id)}><Trash2 size={12} /></button>
       </div>
     )}
+    </>}
     </div>
   );
 });
