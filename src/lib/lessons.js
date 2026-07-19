@@ -76,6 +76,42 @@ export const LESSONS = [
     ],
     apply: { symbol: "RND", setup: "FVG", rr: 2 },
   },
+  {
+    slug: "hareketli-ortalamalar",
+    n: "05",
+    title: "Hareketli ortalamalar: 50 ve 200 günlük",
+    dur: "10:15",
+    summary: "Fiyatın gürültüsünü süzen çizgi — trend yönü ve 'golden cross' ne anlatır, ne anlatmaz.",
+    sections: [
+      { h: "Ortalama neden işe yarar", p: "50 günlük hareketli ortalama (MA50), son 50 günün kapanış fiyatlarının ortalamasıdır — her yeni gün eklenip en eskisi düşer, çizgi kayarak ilerler. Tek başına bir fiyat gürültülüdür: bir gün sert yukarı, ertesi gün sert aşağı gidebilir. Ortalama bu gürültüyü yumuşatır, geriye trendin kendisini bırakır. 200 günlük ortalama (MA200) aynı mantığı daha uzun vadede yapar — kısa dalgalanmaları değil, yılın genel yönünü gösterir." },
+      { h: "Golden cross ve death cross", p: "MA50, MA200'ün üstüne çıktığında buna 'golden cross' denir — kısa vadeli ortalama uzun vadelinin üstüne geçmiştir, piyasa dilinde 'momentum yukarı döndü' yorumu yapılır. Tersi (MA50 aşağı kesip geçerse) 'death cross'tur. Bu isimler kulağa büyülü gelse de aslında söyledikleri basit: kısa vadeli ortalama, uzun vadeliyi geçti. Kendinden bir kehanet gücü yoktur, sadece bir gecikme göstergesidir — çünkü ortalama, geçmiş fiyatların ortalamasıdır, geleceği görmez." },
+      { h: "Altınkulak'ın farkı: gecikme her zaman vardır", p: "MA50/MA200 kesişimi haber olduğunda, fiyat zaten günler önce o yönde hareket etmeye başlamıştır — ortalama by design geriden gelir. Bizim testlerimiz gösteriyor ki çıplak golden cross sinyali tek başına, geniş piyasalarda rastgeleden anlamlı şekilde ayrışmıyor (t-istatistiği zayıf kalıyor). İşe yaradığı yer: bir filtre olarak. Örneğin FVG girişini sadece MA50 üstündeyken (trend yönünde) almak, aşağı yönde almaktan farklı sonuç veriyor — MA burada tek başına sinyal değil, bağlam sağlıyor." },
+    ],
+    takeaways: [
+      "MA50/MA200 = son N günün ortalaması, gürültüyü süzer, trend yönünü gösterir.",
+      "Golden/death cross gecikmeli bir göstergedir — kehanet değil, geçmişin özeti.",
+      "Tek başına zayıf sinyal; trend filtresi olarak (örn. FVG ile birlikte) kullanınca değer katıyor.",
+    ],
+    apply: null,
+  },
+  {
+    slug: "fibonacci-ote",
+    n: "06",
+    title: "Fibonacci geri çekilme ve OTE bölgesi",
+    dur: "12:30",
+    summary: "%61.8 neden özel görünüyor; OTE (Optimal Trade Entry) bölgesi nasıl kullanılır, nasıl kullanılmaz.",
+    sections: [
+      { h: "Geri çekilme seviyeleri nereden geliyor", p: "Fiyat bir yönde güçlü hareket ettikten sonra genelde biraz geri çekilir, sonra devam eder ya da tersine döner. Fibonacci geri çekilme araçları bu hareketin başından sonuna bir çizgi çeker, aradaki mesafeyi belirli oranlara (%23.6, %38.2, %50, %61.8, %78.6) böler. Bu oranlar Fibonacci dizisinden (her sayı bir öncekinin altın oranına yakın) türetilir — matematiksel olarak zarif ama piyasada 'sihirli' olduklarını gösteren bağımsız bir kanıt yok, sadece çok sayıda kişi aynı seviyelere baktığı için kendini gerçekleştiren bir beklenti oluşabiliyor." },
+      { h: "OTE bölgesi ne demek", p: "OTE (Optimal Trade Entry), genellikle %61.8 ile %78.6 arasındaki dar bandı işaret eder — fikir şu: fiyat bu bölgeye geri çekilirse, trend yönünde devam etme ihtimali diğer seviyelere göre biraz daha yüksek görülür. Altınkulak'ın motorunda OTE, tek başına bir giriş sebebi değil, bir 'bölge filtresi'dir — fiyatın bu aralığa girip girmediğini test eder, girdiyse diğer oluşumlarla (FVG, order block gibi) birleştirir." },
+      { h: "Altınkulak'ın farkı: seviye başına değil, kombinasyona bak", p: "Testlerimizde çıplak OTE dokunuşu (sadece fiyat o bölgeye girdi diye işlem açmak) tutarlı bir edge göstermiyor. Ama OTE + dar FVG + trend yönü birlikte kullanıldığında sonuçlar anlamlı şekilde değişiyor (Mod B v1.1'in temeli tam bu). Ders şu: Fibonacci seviyeleri tek başına bir strateji değil, bir bileşendir — Strateji Çıkarıcı'da bir bölge seçtiğinde OTE'yi diğer oluşumlarla birlikte gördüğünde, o kombinasyonun geçmişte gerçekten işe yarayıp yaramadığını OOS testiyle doğrulaman gerekiyor, sadece seviyeye güvenmek yeterli değil." },
+    ],
+    takeaways: [
+      "Fibonacci oranları matematiksel köken taşır ama piyasadaki gücü kısmen kendini gerçekleştiren beklentiden gelir.",
+      "OTE (%61.8-%78.6) tek başına giriş sebebi değil, bir bölge filtresidir.",
+      "Edge, OTE'nin diğer oluşumlarla (FVG, trend) birleştiği kombinasyonda yaşıyor — tek seviyede değil.",
+    ],
+    apply: null,
+  },
 ];
 
 export function getLesson(slug) {
