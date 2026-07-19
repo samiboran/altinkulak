@@ -122,6 +122,14 @@
 .ak-ranges button:hover{color:var(--teal-soft);background:#16211F;}
 .ak-ranges-sep{width:1px;background:var(--line);margin:2px 4px;}
 .ak-ranges button.on{color:var(--teal-soft);background:#16211F;}
+/* AK-094 C1/C2: mobilde satır taşıyor (Mıknatıs metni kesiliyor, tarih butonları sıkışıyor) —
+   sıkıştırmak/kırpmak yerine yatay kaydırma: hiçbir buton metni kesilmez, hepsi erişilebilir kalır. */
+@media(max-width:640px){
+  .ak-ranges{justify-content:flex-start;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:5px 8px 6px;}
+  .ak-ranges::-webkit-scrollbar{display:none;}
+  .ak-ranges button{flex:none;white-space:nowrap;}
+  .ak-ranges-sep{flex:none;}
+}
 
 /* Zaman dilimi seçici (AK-032) */
 .ak-tf{display:inline-flex;gap:2px;background:#101A18;border:1px solid var(--line);border-radius:9px;padding:2px;}

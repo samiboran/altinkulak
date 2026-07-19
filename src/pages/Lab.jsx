@@ -725,7 +725,7 @@ export default function Lab() {
                   </div>
                 )}
                 <span className={"ak-datasrc" + (isReal(symbol) ? " real" : "")}>
-                  {isReal(symbol) ? `● GERÇEK VERİ · Binance ${(TIMEFRAMES.find(x => x[0] === tfOf(symbol)) || ["", "4s"])[1]}` : "○ örnek veri"}
+                  {isReal(symbol) ? `● CANLI · Binance ${(TIMEFRAMES.find(x => x[0] === tfOf(symbol)) || ["", "4s"])[1]}` : "○ örnek veri"}
                 </span>
               </div>
             )}

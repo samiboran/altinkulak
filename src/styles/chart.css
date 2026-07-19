@@ -14,6 +14,12 @@
 .ak-chart-shell{display:flex;align-items:flex-start;gap:10px;}
 .ak-chart-main{flex:1;min-width:0;}
 .ak-cf-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+/* AK-094 C3: mobilde "CANLI" rozeti kendi satırına düşsün — .ak-tf ile aynı satırda sıkışıp
+   altındaki grafiğin (paperbox notu) hemen üstüne binmesin diye ekstra boşluk + tam genişlik satır. */
+@media(max-width:480px){
+  .ak-cf-top{margin-bottom:16px;}
+  .ak-datasrc{flex-basis:100%;text-align:center;margin-left:0;}
+}
 .ak-toolrail{position:relative;flex:none;display:flex;flex-direction:column;gap:3px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:5px;}
 .ak-rail-btn{position:relative;width:34px;height:34px;border:none;border-radius:8px;background:transparent;color:var(--muted);display:grid;place-items:center;cursor:pointer;transition:.13s;}
 .ak-rail-btn:hover{color:var(--txt);background:var(--panel2);}
@@ -64,9 +70,11 @@ a.ak-cchip{display:inline-flex;align-items:center;gap:6px;text-decoration:none;}
 
 .ak-chart-fs-btn{display:none;}
 @media(max-width:860px){
+  /* AK-094 C5: tam ekran ikonu sağ üstte TEK BAŞINA — .ak-paperbox (Long/Short) aynı köşeyi
+     paylaşmasın diye aşağıda kaydırılır, ikon kendi tıklanabilir alanıyla net görünür kalır. */
   .ak-chart-fs-btn{
     display:flex;align-items:center;justify-content:center;
-    position:absolute;top:10px;right:10px;z-index:5;
+    position:absolute;top:10px;right:10px;z-index:6;
     width:32px;height:32px;border-radius:8px;border:none;
     background:rgba(0,0,0,.5);color:#fff;cursor:pointer;
   }
@@ -90,7 +98,11 @@ a.ak-cchip{display:inline-flex;align-items:center;gap:6px;text-decoration:none;}
 .ak-paperbox-long:hover{filter:brightness(1.1);}
 .ak-paperbox-short{background:var(--bad);color:#1A0E0E;}
 .ak-paperbox-short:hover{filter:brightness(1.1);}
-@media(max-width:560px){ .ak-paperbox{top:8px;right:8px;} .ak-paperbox-row input{width:42px;} .ak-paperbox-long,.ak-paperbox-short{padding:5px 9px;font-size:11px;} }
+@media(max-width:560px){ .ak-paperbox{right:8px;} .ak-paperbox-row input{width:42px;} .ak-paperbox-long,.ak-paperbox-short{padding:5px 9px;font-size:11px;} }
+/* AK-094 C5: tam ekran ikonu (.ak-chart-fs-btn, top:10px + 32px yükseklik) ile çakışmasın diye
+   paperbox mobilde aşağı kaydırılır — bu kural her iki üstteki .ak-paperbox kuralından SONRA
+   geliyor ki cascade'de kazansın (aynı özgüllük, kaynak sırası belirleyici). */
+@media(max-width:860px){ .ak-paperbox{top:50px;} }
 
 /* AK-068: gösterge legend'ı — sol üst, OHLC künyesinin altında. Satır alanı içerik kadar (fit-content)
    ki chart'ın geri kalanında pan/crosshair engellenmesin (bkz. .ak-paperbox aynı desen). */
@@ -113,6 +125,8 @@ a.ak-cchip{display:inline-flex;align-items:center;gap:6px;text-decoration:none;}
 .ak-legend-undo:hover{background:rgba(230,180,80,.2);}
 .ak-c-grid{stroke:#1b2624;stroke-width:1;}
 .ak-c-axis{fill:#647974;font-size:9px;font-family:'JetBrains Mono';}
+/* AK-094 C4: mobilde y-ekseni etiket sıklığı azaltılır (6 → 4) — tamamen kaldırma değil */
+@media(max-width:860px){ .ak-c-grid-thin{ display:none; } }
 .ak-c-fvg.up{fill:rgba(230,180,80,.16);stroke:rgba(230,180,80,.4);stroke-width:.6;}
 .ak-c-fvg.dn{fill:rgba(230,180,80,.1);stroke:rgba(230,180,80,.3);stroke-width:.6;}
 .ak-c-ob{fill:rgba(124,140,240,.14);stroke:rgba(124,140,240,.45);stroke-width:.6;}

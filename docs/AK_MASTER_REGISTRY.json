@@ -10,54 +10,300 @@
   "son_dogrulama": "2026-07-18, taze codeload zip ile doğrulandı: BadgeStrip.jsx var, strategyExtractor.js yok (AK-084/087 için doğru şekilde bekliyor), D4 esinlenme sayacı Profil.jsx'te doğru uygulanmış (ak-pstrat-priv, sadece sahibine), MOBIL-FIX-1 ve MOBIL-FIX-2 ikisi de merge, docs/ klasörü henüz yok (bu registry ilk kez commit edilecek).",
   "test_durumu": "main yeşil (bu dalın kendi ölçümü): 274 motor + 16 render (AK-089 commit'i; 269→274, +5 test: priceChange.js). AK-090'ın 269+16'sı zaten main'deydi. AK-089 ayrıca gerçek bir Playwright oturumuyla canlı doğrulandı (fav/sil butonu satır tıklamasını TETİKLEMİYOR — stopPropagation doğru çalışıyor, satır gövdesi WatchDetailModal'ı açıyor/X kapatıyor, dönem seçeneklerinde YTD/1Y/5Y yok) — kalıcı test takımına eklenmedi (Playwright geçici kuruldu/kaldırıldı, AK-085/C2'deki gibi).",
   "numaralandirma_notu": "AK-093 handoff'u yanlışlıkla 'AK-092' olarak geldi — o numara zaten Lig admin paneli backlog kaydına aitti (D20). Registry'ye işlemeden fark edilip AK-093'e düzeltildi. AK-089 için TERSİ bir durum yaşandı: registry 'backlog, Code'a gitmedi' diyordu ama iş main'de zaten (eski AK-079/AK-078 adlarıyla) yapılmıştı — kod tarafı registry'ye körü körüne güvenmek yerine git merge-base --is-ancestor ile GERÇEK main geçmişini doğrulayıp durumu düzeltti. Ders (iki yönlü): registry hem yanlışlıkla 'yapıldı' hem yanlışlıkla 'yapılmadı' diyebiliyor — kod tarafı, özellikle 'eski taslak numarası' referansı olan görevlerde, uygulamaya başlamadan önce git log/merge-base ile fiili main durumunu teyit etmeli, registry'nin kendisini bile sorgusuz kaynak SAYMAMALI (dogrulama_kurali'nin ruhu).",
-  "siradaki_buyuk_kalemler": ["AK-089'un main'e merge edilmesi ve deploy (kod dalda hazır, 274 test+16 render yeşil)", "AK-083-TAMAMLAMA'nın Sami tarafı: docs/sql/lig_yeni_soru.sql + sezon_yeni.sql'i Dashboard'tan elle çalıştırmak (kod tarafı tamam, veri boş)", "AK-085/C3 (üst ikon barı — kapsam dışı bırakıldı, düşük öncelik)", "AK-091 (Eğitim içerikleri) — henüz spec yok", "chart_snapshot_ref için gerçek dosya yükleme (Supabase Storage kurulumu gerekir, v1'de bilerek atlandı)"],
-
+  "siradaki_buyuk_kalemler": [
+    "AK-089'un main'e merge edilmesi ve deploy (kod dalda hazır, 274 test+16 render yeşil)",
+    "AK-083-TAMAMLAMA'nın Sami tarafı: docs/sql/lig_yeni_soru.sql + sezon_yeni.sql'i Dashboard'tan elle çalıştırmak (kod tarafı tamam, veri boş)",
+    "AK-085/C3 (üst ikon barı — kapsam dışı bırakıldı, düşük öncelik)",
+    "AK-091 (Eğitim içerikleri) — henüz spec yok",
+    "chart_snapshot_ref için gerçek dosya yükleme (Supabase Storage kurulumu gerekir, v1'de bilerek atlandı)"
+  ],
   "gorevler": [
-    { "id": "AK-023-EXT", "ne": "Kulak Puanı ekonomisi — kazanım/harcama/enflasyon freni", "durum": "✅ motor yazıldı (points.js Supabase-first, /puanlar, Ben.jsx Enerji kartı)", "eski_adlar": [] },
-    { "id": "AK-065", "ne": "Profil.jsx — isOwner ayrımı, vitrin/mutfak, Supabase geçişi, strateji sonuç kartı, takip et", "durum": "✅ canlıda", "eski_adlar": ["Sonnet taslağı: AK-077"] },
-    { "id": "AK-067", "ne": "Portföy modülü — event sourcing, weighted average, USD normalize, gizlilik, BIST kapalı/ABD cache", "durum": "✅ canlıda", "eski_adlar": ["Sonnet taslağı: AK-078"] },
-    { "id": "AK-080", "ne": "Guest deneyimi — RequireAuth, login duvarı haritası", "durum": "✅ TAMAMLANDI (finali 17 Tem: davet kodu + bekleme listesi Supabase'e bağlandı, tüm duvarlar canlıda)", "eski_adlar": [] },
-    { "id": "AK-081", "ne": "Mobil navigasyon + oturum kalıcılığı", "durum": "✅ TAMAMLANDI (C1 oturum+OTP, C2 alt tab bar, C3 hamburger — çekmece arka planı Android backdrop-filter bug fix dahil, MOBIL-FIX-1 ile merge)", "eski_adlar": ["Sonnet taslağı: AK-082"] },
-    { "id": "AK-082", "ne": "Lab side toolbar + ölü buton fixleri (C2: Navbar zil kaldırma, Ara→/tarama, Hero CTA'lar) + mobil grafik paritesi", "durum": "✅ TAMAMLANDI (toolbar + C2 ölü buton temizliği merge'de, doğrulandı)", "eski_adlar": ["Sonnet taslağı: AK-083"] },
-    { "id": "AK-083", "ne": "Oyun katmanı v1 — Tahmin Ligi (Brier) + Replay Ligi + rozetler + sezon iskeleti", "durum": "🟢 AK-083-TAMAMLAMA ile kod tarafı bitti: /lig'e 'Son sonuç' zorunlu kalibrasyon dersi (C4) + haftalık Brier geçmişi (C2) eklendi; /senaryo (Replay Ligi, C5/C6) yeni sayfa, 3 temsili/sentetik senaryo, ATR-stop/2R skorlama, percentile (az veride dürüst mesaj, D6); sezon iskeleti (C7) seasons.js + badges.js/profileStats.js seasonBrier+scenariosDone wiring (achievements.js 'senaryo' kazanımı otomatik tetiklenir). D20: admin paneli YOK, soru/sezon açma+çözme docs/sql/ scriptleriyle Sami tarafından elle. KALAN: Sami'nin docs/sql/lig_yeni_soru.sql + sezon_yeni.sql'i Dashboard'ta çalıştırması (ilk canlı veri) + görsel doğrulama turu.", "eski_adlar": ["Sonnet taslağı: AK-084"] },
-    { "id": "AK-084", "ne": "Görsel↔kod çift yönlü senkron (PARAMS bloğu)", "durum": "✅ TAMAMLANDI (commit 6601fe9/bb134ca, main'de doğrulandı — bu kayıt daha önce güncellenmemişti, AK-085-TAMAMLAMA sırasında fark edilip düzeltildi). strategyExtractor.js canlı, motor.test.js skip bloğu açıldı, hypothesisStatus/dürüstlük kapısı (D19) yerinde.", "eski_adlar": ["Sonnet taslağı: AK-085"] },
-    { "id": "AK-085", "ne": "İzleme listesi gruplama + grafik sağ-tık menüsü + üst ikon barı + mum render optimizasyonu", "durum": "🟢 AK-085-TAMAMLAMA ile C2+C4 bitti: Chart.jsx'e YENİ boş-alan bağlam menüsü (emptyCtxMenu — mevcut çizim-üstü ctxMenu'den ayrı, stopPropagation sayesinde doğal olarak çakışmıyor) desktop sağ-tık + mobil uzun-bas (500ms/10px eşik) ile; 6 kalem (Sıfırla/Temizle/Göstergeleri Kaldır/Yatay Çizgi/Pozisyon/Görünüm Ayarları), Playwright ile canlı doğrulandı (menü açılıyor, doğru sırada 6 kalem, dışa tıkta kapanıyor, hover/wheel/pan çökmüyor). C4: crosshair/pan/zoom'un tetiklediği state güncellemeleri artık paylaşılan rafThrottle yardımcısıyla (src/lib/rafThrottle.js) kareye kıstırılıyor (kod okumasıyla doğrulandı: memoize edilmiş türetilmiş veriler zaten hov'dan bağımsızdı, asıl sorun ham olay sıklığıydı). C3 (üst ikon barı) kapsam dışı bırakıldı (AK-082 ile örtüşüyor, ayrı değerlendirilecek). C1 zaten canlıydı, dokunulmadı.", "eski_adlar": ["Sonnet taslağı: AK-086"] },
-    { "id": "AK-086", "ne": "Profil kimlik kartı istatistikleri + Achievement sistemi + davet-öncelikli onboarding", "durum": "✅ TAMAMLANDI (commit 7b70772: BadgeStrip.jsx, Ben/Profil kimlik şeridi + Başarımlar UI, doğrulandı repoda var). NOT: bu commit'e yanlışlıkla strategyExtractor TESTLERİ karıştı → main kırıldı, 09125e8 ile skip'lenerek düzeltildi (doğrulandı). Esinlenme sayacı (D4) doğrulandı: Profil.jsx'te 'ak-pstrat-priv' sınıfı, sadece sahibine özel, yorum satırında D4/D14 referansı var — doğru uygulanmış.", "eski_adlar": ["Sonnet taslağı: AK-087"] },
-    { "id": "AK-087", "ne": "Strateji Çıkarıcı — grafikte bölge seç, oluşumları tespit et, kodu üret", "durum": "✅ TAMAMLANDI (commit 6601fe9/bb134ca, main'de doğrulandı — bu kayıt daha önce güncellenmemişti, AK-085-TAMAMLAMA sırasında fark edilip düzeltildi). İncele modu/oluşum paneli/kural kurucu/dürüstlük kapısı canlı.", "eski_adlar": ["Sonnet taslağı: AK-088"] },
-    { "id": "MOBIL-FIX-LOG", "ne": "Küçük mobil düzeltmeler kaydı", "durum": "MOBIL-FIX-1: çekmece arka planı (Android backdrop-filter bug) ✅ merge (commit 79b6f56/998814f). MOBIL-FIX-2: izleme taşma CSS ✅ merge (commit f720253/24b6f13, 18 Tem) — Fable'ın deltasında 'doğrulanacak' deniyordu, Sonnet tarafında taze zip ile doğrulandı, tamamlanmış.", "eski_adlar": [] },
-    { "id": "pointsStore.js", "ne": "AK-023-EXT'in ilk taslağındaki localStorage katmanı", "durum": "❌ İPTAL EDİLDİ (kasıtlı) — rebase'de points.js'in Supabase-first versiyonu kazandı, pointsStore buna bağımlıydı, kaldırıldı. Fonksiyonel kayıp yok.", "eski_adlar": [] },
-    { "id": "AK-088", "ne": "Dedektör Faz 2 (geometri: çift tepe, OBO, üçgen) + Faz 3 (divergence)", "durum": "✅ TAMAMLANDI (commit 131b6cf, main'de doğrulandı — bu kayıt daha önce güncellenmemişti, AK-093 sırasında fark edilip düzeltildi). detectors.js/strategyExtractor.js/codegen.js'e eklendi, 238 test yeşildi o commit'te.", "eski_adlar": [] },
-    { "id": "AK-089", "ne": "Portföy/İzleme UI wireframe referansı (TradingView liste+detay ekranı görsel yön)", "durum": "✅ TAMAMLANDI. ÖNEMLİ KEŞİF: bu görev registry'de 'backlog, Code'a gitmedi' diye duruyordu ama gerçekte main'de ÇOKTAN YAPILMIŞTI — eski (kanonik olmayan) AK-079/AK-078 numaralarıyla (commit 3e89856/e4904b0, git merge-base --is-ancestor ile doğrulandı). PortfolioPanel.jsx:AssetDetailModal zaten ikon+sembol+rozet, büyük fiyat+bugün/hafta değişim satırları, 1G/1H/1A/3A/Tümü seçici (YTD/1Y/5Y BİLEREK yok — ~900 bar/150 gün veri derinliğiyle dürüst olmayan aralıklar, AK-031), Genel Bakış/Geçmiş/Maliyet-KZ sekmeleri, Alarm/Karşılaştır/'Teknikler' kapsam dışı — hepsi TAM istenen şekilde. Bu oturumda kalan TEK gerçek boşluk dolduruldu: Izleme.jsx'in salt izleme listesi satırları (Portföy'den ayrı, AK-085/C1 grupları) hiç tıklanamıyordu — artık PortfolioPanel'le AYNI ak-pf-detail-* CSS'ini paylaşan WatchDetailModal açılıyor (sekmesiz — izlenen sembol bir holding değil, Geçmiş/Maliyet'in karşılığı yok). periodChangePct/WEEK_BARS/DETAIL_PERIODS iki dosyada tekrar yazılmasın diye src/lib/priceChange.js'e taşındı (davranış değişmedi, PortfolioPanel.jsx da oradan import ediyor). Playwright ile doğrulandı (fav/sil butonları satır tıklamasını tetiklemiyor — stopPropagation, satır gövdesi modalı açıyor, X kapatıyor, dürüst dönem seçenekleri). 5 yeni test.", "eski_adlar": ["Sonnet taslağı: AK-079"] },
-    { "id": "AK-090", "ne": "Topluluk Fikirleri / Analiz Paylaşımı (TradingView 'Fikirler' modeli, sinyal değil serbest analiz)", "durum": "✅ TAMAMLANDI. Yeni /fikirler sayfası (Topluluk.jsx'e sekme DEĞİL — orada tab altyapısı yoktu, Lig/Senaryo'yla aynı 'sayfa başına konu' deseni tercih edildi, Topluluk.jsx'ten CTA linki var). ideas/idea_reactions/idea_reports tabloları (008_ideas.sql, append-only). C1: thesis zorunlu min 40 karakter. C2: küfür listesi GERÇEKTEN engeller (moderation.js, Türkçe \\b regex tuzağına düşmeden tam-kelime tokenizasyonu), emir/sinyal dili (alın/satın/kesin/garanti) yalnız yumuşak uyarı — engellemez. C3: kaldırılamaz 'eğitim amaçlıdır' etiketi her kartta. C4: D18'in eksik kalan 'faydalı' EARNING_TABLE kalemi eklendi + haftalık tavan (FAYDALI_WEEKLY_CAP=200, points.js:weeklyEarnedByType — MONTHLY_CAP'ten ayrı, tip-bazlı ikinci fren), puan İŞARETLEYENE değil FİKİR SAHİBİNE gider. C5: katılmıyorum günde 5, public sıralama/liste YOK. C6: Bildir modalı, idea_reports'a yazar, otomasyon yok (D20 ailesi — manuel review). C7: kart grid + ranks.js contribRank rozeti (sayfa başına bounded paralel fetch, gerçek bir 'toplu lifetime by ids' yok). C8: profileStats.js:ideasCount 3. parametre olarak realIdeas aldı (2-parametreli eski çağrılar/testler bozulmadı, varsayılan 0). NOT: chart_snapshot_ref şema hazır ama v1'de HİÇ kullanılmıyor — Supabase Storage bu repoda hiç kurulu değil, gerçek dosya yükleme ayrı bir altyapı görevi (ilerideki bir AK numarasıyla değerlendirilebilir). 21 yeni test, Playwright ile canlı doğrulandı (guest submit AuthGate'i tetikliyor, dürüst boş durum). ranks.js/ledger.js dokunulmadı.", "eski_adlar": ["Sonnet taslağı: AK-081 (ÇAKIŞMIŞTI — gerçek AK-081 Mobil Nav'a ait olduğu için buraya taşındı)"] },
-    { "id": "AK-091", "ne": "Eğitim içerikleri — Altın Kurallar (50MA/200MA/Fibonacci metin içerik) + video serisi taslağı", "durum": "⚪ backlog, henüz spec'e dönüştürülmedi", "eski_adlar": [] },
-    { "id": "AK-092", "ne": "Lig admin paneli — soru/sezon oluşturma+çözme için is_admin + gizli rota (D20'nin aday gelecek çözümü)", "durum": "⚪ backlog, bilerek ERTELENDİ (D20) — soru hacmi büyüyünce veya ikinci moderatör gelince değerlendirilir", "eski_adlar": [] },
-    { "id": "AK-093", "ne": "Mobil grafik tam ekran modu (F1-F4: büyüt ikonu, TÜM sayfa kromu gizli, tam etkileşim paritesi, X/ESC/geri tuşu çıkış)", "durum": "✅ TAMAMLANDI VE MAIN'DE (PR #4 merge, commit 357dd98 main'in ana geçmişinde — doğrulandı). TEK Chart iki yerleşim (hiç unmount olmaz, draws/vView/hov/win state korunur). CSS fixed-overlay (z-index:90, navbar/footer/tabbar'ın DIŞINDA olduğu için z-index+opak bg ile üstlerine biner, elementFromPoint ile doğrulandı) + native Fullscreen API ek fayda olarak denenir. Android geri tuşu history.pushState/popstate ile yakalanır (src/lib/fullscreenExit.js:exitPlan — saf karar fonksiyonu, test edildi). Playwright ile mobil viewport'ta canlı doğrulandı. NOT: bu görev bir handoff'ta yanlışlıkla 'AK-092' olarak gelmişti (o numara Lig admin paneli backlog'una aitti) — registry kontrolüyle AK-093'e düzeltildi, kod tarafında ikinci bir kopya/çakışma OLUŞMADI.", "eski_adlar": [] }
+    {
+      "id": "AK-023-EXT",
+      "ne": "Kulak Puanı ekonomisi — kazanım/harcama/enflasyon freni",
+      "durum": "✅ motor yazıldı (points.js Supabase-first, /puanlar, Ben.jsx Enerji kartı)",
+      "eski_adlar": []
+    },
+    {
+      "id": "AK-065",
+      "ne": "Profil.jsx — isOwner ayrımı, vitrin/mutfak, Supabase geçişi, strateji sonuç kartı, takip et",
+      "durum": "✅ canlıda",
+      "eski_adlar": [
+        "Sonnet taslağı: AK-077"
+      ]
+    },
+    {
+      "id": "AK-067",
+      "ne": "Portföy modülü — event sourcing, weighted average, USD normalize, gizlilik, BIST kapalı/ABD cache",
+      "durum": "✅ canlıda",
+      "eski_adlar": [
+        "Sonnet taslağı: AK-078"
+      ]
+    },
+    {
+      "id": "AK-080",
+      "ne": "Guest deneyimi — RequireAuth, login duvarı haritası",
+      "durum": "✅ TAMAMLANDI (finali 17 Tem: davet kodu + bekleme listesi Supabase'e bağlandı, tüm duvarlar canlıda)",
+      "eski_adlar": []
+    },
+    {
+      "id": "AK-081",
+      "ne": "Mobil navigasyon + oturum kalıcılığı",
+      "durum": "✅ TAMAMLANDI (C1 oturum+OTP, C2 alt tab bar, C3 hamburger — çekmece arka planı Android backdrop-filter bug fix dahil, MOBIL-FIX-1 ile merge)",
+      "eski_adlar": [
+        "Sonnet taslağı: AK-082"
+      ]
+    },
+    {
+      "id": "AK-082",
+      "ne": "Lab side toolbar + ölü buton fixleri (C2: Navbar zil kaldırma, Ara→/tarama, Hero CTA'lar) + mobil grafik paritesi",
+      "durum": "✅ TAMAMLANDI (toolbar + C2 ölü buton temizliği merge'de, doğrulandı)",
+      "eski_adlar": [
+        "Sonnet taslağı: AK-083"
+      ]
+    },
+    {
+      "id": "AK-083",
+      "ne": "Oyun katmanı v1 — Tahmin Ligi (Brier) + Replay Ligi + rozetler + sezon iskeleti",
+      "durum": "🟢 AK-083-TAMAMLAMA ile kod tarafı bitti: /lig'e 'Son sonuç' zorunlu kalibrasyon dersi (C4) + haftalık Brier geçmişi (C2) eklendi; /senaryo (Replay Ligi, C5/C6) yeni sayfa, 3 temsili/sentetik senaryo, ATR-stop/2R skorlama, percentile (az veride dürüst mesaj, D6); sezon iskeleti (C7) seasons.js + badges.js/profileStats.js seasonBrier+scenariosDone wiring (achievements.js 'senaryo' kazanımı otomatik tetiklenir). D20: admin paneli YOK, soru/sezon açma+çözme docs/sql/ scriptleriyle Sami tarafından elle. KALAN: Sami'nin docs/sql/lig_yeni_soru.sql + sezon_yeni.sql'i Dashboard'ta çalıştırması (ilk canlı veri) + görsel doğrulama turu.",
+      "eski_adlar": [
+        "Sonnet taslağı: AK-084"
+      ]
+    },
+    {
+      "id": "AK-084",
+      "ne": "Görsel↔kod çift yönlü senkron (PARAMS bloğu)",
+      "durum": "✅ TAMAMLANDI (commit 6601fe9/bb134ca, main'de doğrulandı — bu kayıt daha önce güncellenmemişti, AK-085-TAMAMLAMA sırasında fark edilip düzeltildi). strategyExtractor.js canlı, motor.test.js skip bloğu açıldı, hypothesisStatus/dürüstlük kapısı (D19) yerinde.",
+      "eski_adlar": [
+        "Sonnet taslağı: AK-085"
+      ]
+    },
+    {
+      "id": "AK-085",
+      "ne": "İzleme listesi gruplama + grafik sağ-tık menüsü + üst ikon barı + mum render optimizasyonu",
+      "durum": "🟢 AK-085-TAMAMLAMA ile C2+C4 bitti: Chart.jsx'e YENİ boş-alan bağlam menüsü (emptyCtxMenu — mevcut çizim-üstü ctxMenu'den ayrı, stopPropagation sayesinde doğal olarak çakışmıyor) desktop sağ-tık + mobil uzun-bas (500ms/10px eşik) ile; 6 kalem (Sıfırla/Temizle/Göstergeleri Kaldır/Yatay Çizgi/Pozisyon/Görünüm Ayarları), Playwright ile canlı doğrulandı (menü açılıyor, doğru sırada 6 kalem, dışa tıkta kapanıyor, hover/wheel/pan çökmüyor). C4: crosshair/pan/zoom'un tetiklediği state güncellemeleri artık paylaşılan rafThrottle yardımcısıyla (src/lib/rafThrottle.js) kareye kıstırılıyor (kod okumasıyla doğrulandı: memoize edilmiş türetilmiş veriler zaten hov'dan bağımsızdı, asıl sorun ham olay sıklığıydı). C3 (üst ikon barı) kapsam dışı bırakıldı (AK-082 ile örtüşüyor, ayrı değerlendirilecek). C1 zaten canlıydı, dokunulmadı.",
+      "eski_adlar": [
+        "Sonnet taslağı: AK-086"
+      ]
+    },
+    {
+      "id": "AK-086",
+      "ne": "Profil kimlik kartı istatistikleri + Achievement sistemi + davet-öncelikli onboarding",
+      "durum": "✅ TAMAMLANDI (commit 7b70772: BadgeStrip.jsx, Ben/Profil kimlik şeridi + Başarımlar UI, doğrulandı repoda var). NOT: bu commit'e yanlışlıkla strategyExtractor TESTLERİ karıştı → main kırıldı, 09125e8 ile skip'lenerek düzeltildi (doğrulandı). Esinlenme sayacı (D4) doğrulandı: Profil.jsx'te 'ak-pstrat-priv' sınıfı, sadece sahibine özel, yorum satırında D4/D14 referansı var — doğru uygulanmış.",
+      "eski_adlar": [
+        "Sonnet taslağı: AK-087"
+      ]
+    },
+    {
+      "id": "AK-087",
+      "ne": "Strateji Çıkarıcı — grafikte bölge seç, oluşumları tespit et, kodu üret",
+      "durum": "✅ TAMAMLANDI (commit 6601fe9/bb134ca, main'de doğrulandı — bu kayıt daha önce güncellenmemişti, AK-085-TAMAMLAMA sırasında fark edilip düzeltildi). İncele modu/oluşum paneli/kural kurucu/dürüstlük kapısı canlı.",
+      "eski_adlar": [
+        "Sonnet taslağı: AK-088"
+      ]
+    },
+    {
+      "id": "MOBIL-FIX-LOG",
+      "ne": "Küçük mobil düzeltmeler kaydı",
+      "durum": "MOBIL-FIX-1: çekmece arka planı (Android backdrop-filter bug) ✅ merge (commit 79b6f56/998814f). MOBIL-FIX-2: izleme taşma CSS ✅ merge (commit f720253/24b6f13, 18 Tem) — Fable'ın deltasında 'doğrulanacak' deniyordu, Sonnet tarafında taze zip ile doğrulandı, tamamlanmış.",
+      "eski_adlar": []
+    },
+    {
+      "id": "pointsStore.js",
+      "ne": "AK-023-EXT'in ilk taslağındaki localStorage katmanı",
+      "durum": "❌ İPTAL EDİLDİ (kasıtlı) — rebase'de points.js'in Supabase-first versiyonu kazandı, pointsStore buna bağımlıydı, kaldırıldı. Fonksiyonel kayıp yok.",
+      "eski_adlar": []
+    },
+    {
+      "id": "AK-088",
+      "ne": "Dedektör Faz 2 (geometri: çift tepe, OBO, üçgen) + Faz 3 (divergence)",
+      "durum": "✅ TAMAMLANDI (commit 131b6cf, main'de doğrulandı — bu kayıt daha önce güncellenmemişti, AK-093 sırasında fark edilip düzeltildi). detectors.js/strategyExtractor.js/codegen.js'e eklendi, 238 test yeşildi o commit'te.",
+      "eski_adlar": []
+    },
+    {
+      "id": "AK-089",
+      "ne": "Portföy/İzleme UI wireframe referansı (TradingView liste+detay ekranı görsel yön)",
+      "durum": "✅ TAMAMLANDI. ÖNEMLİ KEŞİF: bu görev registry'de 'backlog, Code'a gitmedi' diye duruyordu ama gerçekte main'de ÇOKTAN YAPILMIŞTI — eski (kanonik olmayan) AK-079/AK-078 numaralarıyla (commit 3e89856/e4904b0, git merge-base --is-ancestor ile doğrulandı). PortfolioPanel.jsx:AssetDetailModal zaten ikon+sembol+rozet, büyük fiyat+bugün/hafta değişim satırları, 1G/1H/1A/3A/Tümü seçici (YTD/1Y/5Y BİLEREK yok — ~900 bar/150 gün veri derinliğiyle dürüst olmayan aralıklar, AK-031), Genel Bakış/Geçmiş/Maliyet-KZ sekmeleri, Alarm/Karşılaştır/'Teknikler' kapsam dışı — hepsi TAM istenen şekilde. Bu oturumda kalan TEK gerçek boşluk dolduruldu: Izleme.jsx'in salt izleme listesi satırları (Portföy'den ayrı, AK-085/C1 grupları) hiç tıklanamıyordu — artık PortfolioPanel'le AYNI ak-pf-detail-* CSS'ini paylaşan WatchDetailModal açılıyor (sekmesiz — izlenen sembol bir holding değil, Geçmiş/Maliyet'in karşılığı yok). periodChangePct/WEEK_BARS/DETAIL_PERIODS iki dosyada tekrar yazılmasın diye src/lib/priceChange.js'e taşındı (davranış değişmedi, PortfolioPanel.jsx da oradan import ediyor). Playwright ile doğrulandı (fav/sil butonları satır tıklamasını tetiklemiyor — stopPropagation, satır gövdesi modalı açıyor, X kapatıyor, dürüst dönem seçenekleri). 5 yeni test.",
+      "eski_adlar": [
+        "Sonnet taslağı: AK-079"
+      ]
+    },
+    {
+      "id": "AK-090",
+      "ne": "Topluluk Fikirleri / Analiz Paylaşımı (TradingView 'Fikirler' modeli, sinyal değil serbest analiz)",
+      "durum": "✅ TAMAMLANDI. Yeni /fikirler sayfası (Topluluk.jsx'e sekme DEĞİL — orada tab altyapısı yoktu, Lig/Senaryo'yla aynı 'sayfa başına konu' deseni tercih edildi, Topluluk.jsx'ten CTA linki var). ideas/idea_reactions/idea_reports tabloları (008_ideas.sql, append-only). C1: thesis zorunlu min 40 karakter. C2: küfür listesi GERÇEKTEN engeller (moderation.js, Türkçe \\b regex tuzağına düşmeden tam-kelime tokenizasyonu), emir/sinyal dili (alın/satın/kesin/garanti) yalnız yumuşak uyarı — engellemez. C3: kaldırılamaz 'eğitim amaçlıdır' etiketi her kartta. C4: D18'in eksik kalan 'faydalı' EARNING_TABLE kalemi eklendi + haftalık tavan (FAYDALI_WEEKLY_CAP=200, points.js:weeklyEarnedByType — MONTHLY_CAP'ten ayrı, tip-bazlı ikinci fren), puan İŞARETLEYENE değil FİKİR SAHİBİNE gider. C5: katılmıyorum günde 5, public sıralama/liste YOK. C6: Bildir modalı, idea_reports'a yazar, otomasyon yok (D20 ailesi — manuel review). C7: kart grid + ranks.js contribRank rozeti (sayfa başına bounded paralel fetch, gerçek bir 'toplu lifetime by ids' yok). C8: profileStats.js:ideasCount 3. parametre olarak realIdeas aldı (2-parametreli eski çağrılar/testler bozulmadı, varsayılan 0). NOT: chart_snapshot_ref şema hazır ama v1'de HİÇ kullanılmıyor — Supabase Storage bu repoda hiç kurulu değil, gerçek dosya yükleme ayrı bir altyapı görevi (ilerideki bir AK numarasıyla değerlendirilebilir). 21 yeni test, Playwright ile canlı doğrulandı (guest submit AuthGate'i tetikliyor, dürüst boş durum). ranks.js/ledger.js dokunulmadı.",
+      "eski_adlar": [
+        "Sonnet taslağı: AK-081 (ÇAKIŞMIŞTI — gerçek AK-081 Mobil Nav'a ait olduğu için buraya taşındı)"
+      ]
+    },
+    {
+      "id": "AK-091",
+      "ne": "Eğitim içerikleri — Altın Kurallar (50MA/200MA/Fibonacci metin içerik) + video serisi taslağı",
+      "durum": "⚪ backlog, henüz spec'e dönüştürülmedi",
+      "eski_adlar": []
+    },
+    {
+      "id": "AK-092",
+      "ne": "Lig admin paneli — soru/sezon oluşturma+çözme için is_admin + gizli rota (D20'nin aday gelecek çözümü)",
+      "durum": "⚪ backlog, bilerek ERTELENDİ (D20) — soru hacmi büyüyünce veya ikinci moderatör gelince değerlendirilir",
+      "eski_adlar": []
+    },
+    {
+      "id": "AK-093",
+      "ne": "Mobil grafik tam ekran modu (F1-F4: büyüt ikonu, TÜM sayfa kromu gizli, tam etkileşim paritesi, X/ESC/geri tuşu çıkış)",
+      "durum": "✅ TAMAMLANDI VE MAIN'DE (PR #4 merge, commit 357dd98 main'in ana geçmişinde — doğrulandı). TEK Chart iki yerleşim (hiç unmount olmaz, draws/vView/hov/win state korunur). CSS fixed-overlay (z-index:90, navbar/footer/tabbar'ın DIŞINDA olduğu için z-index+opak bg ile üstlerine biner, elementFromPoint ile doğrulandı) + native Fullscreen API ek fayda olarak denenir. Android geri tuşu history.pushState/popstate ile yakalanır (src/lib/fullscreenExit.js:exitPlan — saf karar fonksiyonu, test edildi). Playwright ile mobil viewport'ta canlı doğrulandı. NOT: bu görev bir handoff'ta yanlışlıkla 'AK-092' olarak gelmişti (o numara Lig admin paneli backlog'una aitti) — registry kontrolüyle AK-093'e düzeltildi, kod tarafında ikinci bir kopya/çakışma OLUŞMADI.",
+      "eski_adlar": []
+    },
+    {
+      "id": "AK-094",
+      "ne": "Mobil grafik ekranı UX düzeltmeleri — taşma, çakışma, tam ekran bulunabilirliği (Sami'nin 3 telefon ekran görüntüsünden)",
+      "durum": "✅ TAMAMLANDI. C1/C2 (Mıknatıs metni kesiliyor + tarih aralığı butonları sıkışık): AYNI kök neden (.ak-ranges tek flex satırı, wrap/scroll yoktu) — tek çözümle giderildi: ≤640px altında .ak-ranges yatay kaydırmalı (overflow-x:auto, scrollbar gizli), butonlar flex:none+white-space:nowrap (artık hiçbir metin kırpılmıyor, sadece kaydırılıyor). C3 (\"GERÇEK VERİ\" rozeti kağıt-işlem uyarısıyla çakışıyor): (1) metin kısaltıldı \"● CANLI · Binance Xs\" (Lab.jsx satır 728), (2) ≤480px altında .ak-datasrc kendi tam-genişlik satırına düşer + .ak-cf-top margin-bottom artırıldı, altındaki grafiğin paperbox notuna görsel olarak yaklaşmasın diye. C4 (y-ekseni etiket kalabalığı): Chart.jsx'teki 6 sabit etiketten (0/.2/.4/.6/.8/1) ikisi (.2 ve .6, i===1/i===3) yeni bir 'ak-c-grid-thin' sınıfıyla işaretlendi, ≤860px altında display:none — masaüstünde 6, mobilde 4 etiket (tamamen kaldırma değil, sıklık azaltma). C5 (tam ekran ikonu Long/Short kutusuyla çakışıyordu — AK-093'ün kendi kök nedeni: .ak-chart-fs-btn ve Chart.jsx'in önceden var olan .ak-paperbox'ı (AK-058) AYNI sağ-üst köşeyi paylaşıyordu): enterFullscreen()/requestExitFullscreen() fonksiyonlarına DOKUNULMADI — yalnız ≤860px altında .ak-paperbox aşağı kaydırıldı (top:50px), tam ekran ikonu artık köşede tek başına, net, kendi tıklanabilir alanıyla duruyor. C6 (yatay sayfa kayması): html,body'ye overflow-x:hidden eklendi (global.css); viewport meta zaten doğruydu, box-sizing:border-box zaten vardı. Playwright ile 360/412/768px'te canlı doğrulandı: scrollWidth<=clientWidth (yatay kayma yok), Mıknatıs butonu artık kırpılmıyor (kaydırılabilir), tam ekran ikonu ile paperbox arasında dikey çakışma yok (fs-btn y:483-515, paperbox y:523+ — 8px net boşluk), y-ekseni 4 etikete indi. 274 test yeşil (yeni pure-fonksiyon eklenmedi, bu tamamen CSS/JSX layout düzeltmesi — mevcut testler zaten fonksiyonel mantığı kapsıyordu), build başarılı.",
+      "eski_adlar": []
+    }
   ],
-
   "kararlar": [
-    { "id": "D1", "konu": "Profil mimarisi", "karar": "Ben.jsx = mutfak (sandbox/sicil/parametreler), Profil.jsx = vitrin (public). Tek bileşen, isOwner koşullu mod (useAuth handle === route handle).", "gorev": "AK-065" },
-    { "id": "D2", "konu": "Portföy gizliliği", "karar": "Portföy sekmesi SADECE sahibine, isOwner=false iken DOM'a hiç girmez.", "gorev": "AK-065" },
-    { "id": "D3", "konu": "Strateji paylaşımı", "karar": "Strateji kartı = sonuç kartı: sym, setup adı, t-stat, win_rate, n, OOS. Parametre ASLA public değil.", "gorev": "AK-065" },
-    { "id": "D4", "konu": "Fork/esinlenme sayacı", "karar": "Public UI'da görünmez. Sadece strateji sahibi (isOwner=true) kendi profilinde özel bir insight olarak görür (örn. 'bu strateji X kez referans alındı'). Strava modeliyle tutarlı: sonuç public, sosyal/meta veri gizli.", "gorev": "AK-065 / AK-086 (uygulama satırı eklendi)", "eski_numaralar": ["açık soru olarak 'D4'", "ilk çözüm ataması: Sonnet D14"], "not": "Fable'ın canlı implementasyonuyla (fork UI'dan kaldırılmış, veri modelinde duruyor, 'kime görünür' açık) birebir uyumlu — çelişme yok, boşluk dolduruluyor." },
-    { "id": "D5", "konu": "Takip sistemi", "karar": "Sadece follows insert/delete + optimistic UI. Bildirim/feed v1'de yok. İlk kullanım: Topluluk'ta 'takip ettiklerin' filtresi.", "gorev": "AK-065" },
-    { "id": "D6", "konu": "Veri dürüstlüğü", "karar": "Mock fallback yasak: Supabase boşsa dürüst boş durum ('henüz doğrulanmış strateji yok'), fabrike veri gösterilmez.", "gorev": "AK-065, tüm modüller için genel ilke" },
-    { "id": "D7", "konu": "Gamification dengesi", "karar": "İstatistik metrikleri büyük, sosyal sayılar küçük/tıklanamaz. Referans model: Chess.com güvenilirliği + Kaggle kademe netliği + Strava gizlilik modeli. Duolingo lig mekaniği alınmaz.", "gorev": "AK-065, tüm oyunlaştırma kararları için genel ilke" },
-    { "id": "D8", "konu": "Portföy maliyet hesabı", "karar": "İç saklama USD normalize, girişteki kur fx_rate_at_entry olarak event log'a yazılır. Cost basis: weighted average.", "gorev": "AK-067" },
-    { "id": "D9", "konu": "Veri mimarisi deseni", "karar": "Event sourcing: mevcut durum event log'dan türetilir (portfolio_events, point_events, user_achievement_progress vb. hepsi bu deseni kullanır). Ayrı durum tablosu tutulmaz.", "gorev": "AK-067, genel mimari desen — sonraki tüm modüllerde tekrar kullanılıyor" },
-    { "id": "D10", "konu": "Varlık kapsamı", "karar": "Kripto+BIST+ABD tek liste, asset_type filtresi. BIST veri modelinde var, UI'da 'Yakında' rozetiyle kapalı — veri kaynağı pahalı, gecikmeli veri sorunu çözülene kadar açılmayacak.", "gorev": "AK-067" },
-    { "id": "D11", "konu": "ABD fiyat kaynağı", "karar": "Merkezi cache üzerinden çekilir (sembol başına, kullanıcı başına DEĞİL) — aksi halde her kullanıcı sayfa açtığında ayrı API isteği gider, ücretsiz plan limiti hızla tükenir.", "gorev": "AK-067" },
-    { "id": "D12", "konu": "İşlem giriş UX", "karar": "Ekle modalı: swap-toggle input (adet+maliyet ↔ tutar+adet), opsiyonel fiyat/fee override, Buy/Sell. Transfer v2'ye ertelendi.", "gorev": "AK-067" },
-    { "id": "D13", "konu": "Performans gösterimi", "karar": "'Maliyete göre K/Z' ve 'dönemsel fiyat değişimi' ayrı etiketlenir, şişirilmiş getiri yok. Gizlilik modu: tutarlar ••••, yüzdeler görünür kalır.", "gorev": "AK-067" },
-    { "id": "D14", "konu": "Cache tazelik göstergesi", "karar": "ABD hisse fiyatlarının yanında HER ZAMAN 'son güncelleme: X dk önce' etiketi gösterilir, asla gizlenmez. Etiket kaynağı merkezi cache'in kendi timestamp'i olmalı (kullanıcının sayfayı açtığı an değil) — cache 4 dakika önce yenilendiyse herkes '4 dk önce' görür, sayfa yenilense de değişmez.", "gorev": "AK-067", "eski_numaralar": ["ilk ataması: Sonnet D16"] },
-    { "id": "D15", "konu": "Kulak Puanı ekonomisi", "karar": "Kapalı devre: satılamaz, transfer edilemez, TL/USD karşılığı yok. Kazanım sadece topluluk yararına davranıştan, işlem hacminden ASLA. Harcama = geçici enerji, rütbe = kalıcı itibar (lifetime_points → contrib rank, harcamak düşürmez). Token/blockchain YOK.", "gorev": "AK-023-EXT", "eski_numaralar": ["Sonnet ilk ataması: D15", "Fable'ın kendi ataması: D14 — İÇERİK AYNI, TEKİLLEŞTİRİLDİ"] },
-    { "id": "D16", "konu": "Oyun/itibar katmanı ayrımı", "karar": "Oyun katmanı ile itibar katmanı kalıcı olarak ayrık: Kulak Puanı/oyun skorları edge rank'a asla akmaz. Edge rank = sadece işlem sonucu (R-bazlı). PnL yarışı, copy-trade lig, kaldıraç, teşvikli mağaza puanı (Google Play policy ihlali) kalıcı yasak.", "gorev": "AK-083", "eski_numaralar": ["Sonnet ilk ataması: D16 (ikinci kullanım, çakışmadan sonra sabitlendi)"] },
-    { "id": "D17", "konu": "Oyun katmanı v1 kapsamı", "karar": "Tahmin Ligi (Brier kalibrasyon skoru), Replay Ligi (skor sicile yazılmaz), 8'li rozet seti (bir kısmı gizli), hafif sezon iskeleti (3 ay, ödül sadece kozmetik). Görev ödülleri süreç davranışına verilir, sonuç davranışına (işlem açma) asla.", "gorev": "AK-083" },
-    { "id": "D18", "konu": "Puan ekonomisi genişletme", "karar": "Onaylı video içerik puanı, 'faydalı' işareti puanı (haftalık tavanlı — yorum çiftçiliği freni) earning_table'a eklenir. Yorum SAYISI hiçbir zaman puanlanmaz.", "gorev": "AK-023-EXT" },
-    { "id": "D19", "konu": "Strateji Çıkarıcı dürüstlük kapısı", "karar": "Elle seçilmiş bölgeden çıkan kural bir HİPOTEZDİR, strateji değil. Zorunlu OOS backtest kapısı ATLANAMAZ — t≥2 geçmeden 'strateji' diye anılmaz. Seçim yanlılığı (selection bias) eğitimi platformun varlık sebebi.", "gorev": "AK-087" },
-    { "id": "D20", "konu": "Lig sorusu/sezon oluşturma+çözme — admin paneli mi, manuel SQL mi", "karar": "v1'de admin paneli/is_admin YOK. Soru hacmi haftada 1, sezon hacmi ayda/3 ayda 1 — bu hacim için yeni bir RLS yazma yolu (is_admin kolonu, admin-gated rota) orantısız bir güvenlik yüzeyi olurdu. Bunun yerine docs/sql/ altında hazır scriptler (lig_yeni_soru.sql, lig_haftayi_coz.sql, sezon_yeni.sql) — Sami Supabase Dashboard'a yapıştırıp elle çalıştırır, tıpkı migration'lar gibi. Hacim büyürse ya da ikinci moderatör gelirse AK-092 değerlendirilir.", "gorev": "AK-083-TAMAMLAMA" },
-    { "id": "D21", "konu": "AK-090 (Topluluk Fikirleri) v1 tasarımı", "karar": "Herkes paylaşabilir (rütbe güvenilirlik sinyali verir, D7). İki ayrı filtre: (1) küfür/topluluk dili — basit kelime listesi. (2) emir/sinyal dili ('alın', 'kesin', 'garanti') — yasaklama değil format zorlama: zorunlu 'Tezim/Neden böyle düşünüyorum' alanı + yumuşak uyarı + her paylaşımın altında otomatik 'Eğitim amaçlıdır, yatırım tavsiyesi değildir' etiketi. Beğeni mekanizması ayrı sistem DEĞİL, mevcut 'Faydalı' işaretine bağlanır (D18). Olumsuz tepki 'Katılmıyorum' olarak adlandırılır (utanç etiketi değil, karşıt görüş) — günlük kotalı (örn. 5/gün, tükenince buton pasif), public 'en çok katılmıyorum alan' listesi YOK, içeriği sıralamada gömmez. Çöp/kural-dışı içerik için ayrı 'Bildir' butonu → kelime filtresi + manuel review.", "gorev": "AK-090 (henüz spec'e çevrilmedi, sıradaki iş)" }
+    {
+      "id": "D1",
+      "konu": "Profil mimarisi",
+      "karar": "Ben.jsx = mutfak (sandbox/sicil/parametreler), Profil.jsx = vitrin (public). Tek bileşen, isOwner koşullu mod (useAuth handle === route handle).",
+      "gorev": "AK-065"
+    },
+    {
+      "id": "D2",
+      "konu": "Portföy gizliliği",
+      "karar": "Portföy sekmesi SADECE sahibine, isOwner=false iken DOM'a hiç girmez.",
+      "gorev": "AK-065"
+    },
+    {
+      "id": "D3",
+      "konu": "Strateji paylaşımı",
+      "karar": "Strateji kartı = sonuç kartı: sym, setup adı, t-stat, win_rate, n, OOS. Parametre ASLA public değil.",
+      "gorev": "AK-065"
+    },
+    {
+      "id": "D4",
+      "konu": "Fork/esinlenme sayacı",
+      "karar": "Public UI'da görünmez. Sadece strateji sahibi (isOwner=true) kendi profilinde özel bir insight olarak görür (örn. 'bu strateji X kez referans alındı'). Strava modeliyle tutarlı: sonuç public, sosyal/meta veri gizli.",
+      "gorev": "AK-065 / AK-086 (uygulama satırı eklendi)",
+      "eski_numaralar": [
+        "açık soru olarak 'D4'",
+        "ilk çözüm ataması: Sonnet D14"
+      ],
+      "not": "Fable'ın canlı implementasyonuyla (fork UI'dan kaldırılmış, veri modelinde duruyor, 'kime görünür' açık) birebir uyumlu — çelişme yok, boşluk dolduruluyor."
+    },
+    {
+      "id": "D5",
+      "konu": "Takip sistemi",
+      "karar": "Sadece follows insert/delete + optimistic UI. Bildirim/feed v1'de yok. İlk kullanım: Topluluk'ta 'takip ettiklerin' filtresi.",
+      "gorev": "AK-065"
+    },
+    {
+      "id": "D6",
+      "konu": "Veri dürüstlüğü",
+      "karar": "Mock fallback yasak: Supabase boşsa dürüst boş durum ('henüz doğrulanmış strateji yok'), fabrike veri gösterilmez.",
+      "gorev": "AK-065, tüm modüller için genel ilke"
+    },
+    {
+      "id": "D7",
+      "konu": "Gamification dengesi",
+      "karar": "İstatistik metrikleri büyük, sosyal sayılar küçük/tıklanamaz. Referans model: Chess.com güvenilirliği + Kaggle kademe netliği + Strava gizlilik modeli. Duolingo lig mekaniği alınmaz.",
+      "gorev": "AK-065, tüm oyunlaştırma kararları için genel ilke"
+    },
+    {
+      "id": "D8",
+      "konu": "Portföy maliyet hesabı",
+      "karar": "İç saklama USD normalize, girişteki kur fx_rate_at_entry olarak event log'a yazılır. Cost basis: weighted average.",
+      "gorev": "AK-067"
+    },
+    {
+      "id": "D9",
+      "konu": "Veri mimarisi deseni",
+      "karar": "Event sourcing: mevcut durum event log'dan türetilir (portfolio_events, point_events, user_achievement_progress vb. hepsi bu deseni kullanır). Ayrı durum tablosu tutulmaz.",
+      "gorev": "AK-067, genel mimari desen — sonraki tüm modüllerde tekrar kullanılıyor"
+    },
+    {
+      "id": "D10",
+      "konu": "Varlık kapsamı",
+      "karar": "Kripto+BIST+ABD tek liste, asset_type filtresi. BIST veri modelinde var, UI'da 'Yakında' rozetiyle kapalı — veri kaynağı pahalı, gecikmeli veri sorunu çözülene kadar açılmayacak.",
+      "gorev": "AK-067"
+    },
+    {
+      "id": "D11",
+      "konu": "ABD fiyat kaynağı",
+      "karar": "Merkezi cache üzerinden çekilir (sembol başına, kullanıcı başına DEĞİL) — aksi halde her kullanıcı sayfa açtığında ayrı API isteği gider, ücretsiz plan limiti hızla tükenir.",
+      "gorev": "AK-067"
+    },
+    {
+      "id": "D12",
+      "konu": "İşlem giriş UX",
+      "karar": "Ekle modalı: swap-toggle input (adet+maliyet ↔ tutar+adet), opsiyonel fiyat/fee override, Buy/Sell. Transfer v2'ye ertelendi.",
+      "gorev": "AK-067"
+    },
+    {
+      "id": "D13",
+      "konu": "Performans gösterimi",
+      "karar": "'Maliyete göre K/Z' ve 'dönemsel fiyat değişimi' ayrı etiketlenir, şişirilmiş getiri yok. Gizlilik modu: tutarlar ••••, yüzdeler görünür kalır.",
+      "gorev": "AK-067"
+    },
+    {
+      "id": "D14",
+      "konu": "Cache tazelik göstergesi",
+      "karar": "ABD hisse fiyatlarının yanında HER ZAMAN 'son güncelleme: X dk önce' etiketi gösterilir, asla gizlenmez. Etiket kaynağı merkezi cache'in kendi timestamp'i olmalı (kullanıcının sayfayı açtığı an değil) — cache 4 dakika önce yenilendiyse herkes '4 dk önce' görür, sayfa yenilense de değişmez.",
+      "gorev": "AK-067",
+      "eski_numaralar": [
+        "ilk ataması: Sonnet D16"
+      ]
+    },
+    {
+      "id": "D15",
+      "konu": "Kulak Puanı ekonomisi",
+      "karar": "Kapalı devre: satılamaz, transfer edilemez, TL/USD karşılığı yok. Kazanım sadece topluluk yararına davranıştan, işlem hacminden ASLA. Harcama = geçici enerji, rütbe = kalıcı itibar (lifetime_points → contrib rank, harcamak düşürmez). Token/blockchain YOK.",
+      "gorev": "AK-023-EXT",
+      "eski_numaralar": [
+        "Sonnet ilk ataması: D15",
+        "Fable'ın kendi ataması: D14 — İÇERİK AYNI, TEKİLLEŞTİRİLDİ"
+      ]
+    },
+    {
+      "id": "D16",
+      "konu": "Oyun/itibar katmanı ayrımı",
+      "karar": "Oyun katmanı ile itibar katmanı kalıcı olarak ayrık: Kulak Puanı/oyun skorları edge rank'a asla akmaz. Edge rank = sadece işlem sonucu (R-bazlı). PnL yarışı, copy-trade lig, kaldıraç, teşvikli mağaza puanı (Google Play policy ihlali) kalıcı yasak.",
+      "gorev": "AK-083",
+      "eski_numaralar": [
+        "Sonnet ilk ataması: D16 (ikinci kullanım, çakışmadan sonra sabitlendi)"
+      ]
+    },
+    {
+      "id": "D17",
+      "konu": "Oyun katmanı v1 kapsamı",
+      "karar": "Tahmin Ligi (Brier kalibrasyon skoru), Replay Ligi (skor sicile yazılmaz), 8'li rozet seti (bir kısmı gizli), hafif sezon iskeleti (3 ay, ödül sadece kozmetik). Görev ödülleri süreç davranışına verilir, sonuç davranışına (işlem açma) asla.",
+      "gorev": "AK-083"
+    },
+    {
+      "id": "D18",
+      "konu": "Puan ekonomisi genişletme",
+      "karar": "Onaylı video içerik puanı, 'faydalı' işareti puanı (haftalık tavanlı — yorum çiftçiliği freni) earning_table'a eklenir. Yorum SAYISI hiçbir zaman puanlanmaz.",
+      "gorev": "AK-023-EXT"
+    },
+    {
+      "id": "D19",
+      "konu": "Strateji Çıkarıcı dürüstlük kapısı",
+      "karar": "Elle seçilmiş bölgeden çıkan kural bir HİPOTEZDİR, strateji değil. Zorunlu OOS backtest kapısı ATLANAMAZ — t≥2 geçmeden 'strateji' diye anılmaz. Seçim yanlılığı (selection bias) eğitimi platformun varlık sebebi.",
+      "gorev": "AK-087"
+    },
+    {
+      "id": "D20",
+      "konu": "Lig sorusu/sezon oluşturma+çözme — admin paneli mi, manuel SQL mi",
+      "karar": "v1'de admin paneli/is_admin YOK. Soru hacmi haftada 1, sezon hacmi ayda/3 ayda 1 — bu hacim için yeni bir RLS yazma yolu (is_admin kolonu, admin-gated rota) orantısız bir güvenlik yüzeyi olurdu. Bunun yerine docs/sql/ altında hazır scriptler (lig_yeni_soru.sql, lig_haftayi_coz.sql, sezon_yeni.sql) — Sami Supabase Dashboard'a yapıştırıp elle çalıştırır, tıpkı migration'lar gibi. Hacim büyürse ya da ikinci moderatör gelirse AK-092 değerlendirilir.",
+      "gorev": "AK-083-TAMAMLAMA"
+    },
+    {
+      "id": "D21",
+      "konu": "AK-090 (Topluluk Fikirleri) v1 tasarımı",
+      "karar": "Herkes paylaşabilir (rütbe güvenilirlik sinyali verir, D7). İki ayrı filtre: (1) küfür/topluluk dili — basit kelime listesi. (2) emir/sinyal dili ('alın', 'kesin', 'garanti') — yasaklama değil format zorlama: zorunlu 'Tezim/Neden böyle düşünüyorum' alanı + yumuşak uyarı + her paylaşımın altında otomatik 'Eğitim amaçlıdır, yatırım tavsiyesi değildir' etiketi. Beğeni mekanizması ayrı sistem DEĞİL, mevcut 'Faydalı' işaretine bağlanır (D18). Olumsuz tepki 'Katılmıyorum' olarak adlandırılır (utanç etiketi değil, karşıt görüş) — günlük kotalı (örn. 5/gün, tükenince buton pasif), public 'en çok katılmıyorum alan' listesi YOK, içeriği sıralamada gömmez. Çöp/kural-dışı içerik için ayrı 'Bildir' butonu → kelime filtresi + manuel review.",
+      "gorev": "AK-090 (henüz spec'e çevrilmedi, sıradaki iş)"
+    }
   ],
-
   "degismez_ilkeler": [
     "D6: Fabrike/mock veri hiçbir yerde gösterilmez, dürüst boş durum esastır.",
     "D7: Gamification'da istatistik büyük+public, sosyal küçük+gizli (Strava modeli), Duolingo lig mekaniği yok.",
@@ -65,6 +311,5 @@
     "D15/D16: Kulak Puanı ve oyun katmanı kapalı devre, edge rank'a asla akmaz, token/blockchain yok, teşvikli puan (Google Play ihlali) yasak.",
     "D19: Trade-bazlı achievement yasak, elle seçilmiş kural asla 'strateji' etiketiyle sunulmaz — OOS testi zorunlu."
   ],
-
   "backlog_numarasiz": []
 }

@@ -769,7 +769,9 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
       onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
       {[0, .2, .4, .6, .8, 1].map((f, i) => {
         const py = pT + f * (H - pT - pB), pv = logScale ? Math.exp(lnHi - f * (lnHi - lnLo)) : ehi - f * erg;
-        return <g key={i}><line x1={pL} y1={py} x2={W - pR} y2={py} className="ak-c-grid" /><text x={W - pR + 5} y={py + 3} className="ak-c-axis">{fmtP(pv)}</text></g>;
+        // AK-094 C4: mobilde 6 yerine 4 etiket — sıklığı azalt, tamamen kaldırma (i===1/.2 ve i===3/.6 gizlenir)
+        const thin = i === 1 || i === 3;
+        return <g key={i} className={thin ? "ak-c-grid-thin" : ""}><line x1={pL} y1={py} x2={W - pR} y2={py} className="ak-c-grid" /><text x={W - pR + 5} y={py + 3} className="ak-c-axis">{fmtP(pv)}</text></g>;
       })}
 
       {/* Zaman ekseni etiketleri (AK-030) */}
