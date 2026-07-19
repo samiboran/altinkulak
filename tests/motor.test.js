@@ -2122,4 +2122,33 @@ console.log("profileStats.ideasCount — gerçek fikir sayısı toplama eklendi 
   });
 }
 
+console.log("Dönemsel yüzde değişim — PortfolioPanel/Izleme detay ekranı paylaşımı (AK-089)");
+{
+  const { periodChangePct, WEEK_BARS, DETAIL_PERIODS } = await import("../src/lib/priceChange.js");
+  const bars = Array.from({ length: 100 }, (_, i) => ({ c: 100 + i })); // 100 -> 199, düz artan
+
+  test("periodChangePct: bilinen bir lookback için doğru yüzde hesaplar", () => {
+    // son bar c=199, 10 bar önce c=189 -> (199-189)/189*100
+    const expected = ((199 - 189) / 189) * 100;
+    assert.ok(Math.abs(periodChangePct(bars, 10) - expected) < 1e-9);
+  });
+  test("periodChangePct: yetersiz geçmiş/eksik girdide dürüst null döner (fabrike yüzde yok)", () => {
+    assert.equal(periodChangePct([{ c: 100 }], 10), null);
+    assert.equal(periodChangePct(null, 10), null);
+  });
+  test("periodChangePct: lookback tüm barlardan büyükse de çökmez, en baştan hesaplar", () => {
+    const v = periodChangePct(bars, 10000);
+    assert.ok(Number.isFinite(v));
+  });
+
+  test("DETAIL_PERIODS: YTD/1Y/5Y YOK — ~900 bar (150 gün) veri derinliğiyle dürüst olmayan aralıklar eklenmez (AK-031)", () => {
+    const labels = DETAIL_PERIODS.map((p) => p.label);
+    assert.ok(!labels.some((l) => /YTD|1Y|5Y/.test(l)));
+    assert.ok(labels.includes("Tümü"));
+  });
+  test("WEEK_BARS ~7 gün karşılığı (42 × 4s mum)", () => {
+    assert.equal(WEEK_BARS, 42);
+  });
+}
+
 console.log(`\n${pass} test geçti${process.exitCode ? " (HATALAR VAR)" : " — motor sağlam."}`);

@@ -4,6 +4,7 @@ import { getBars, hasData, loadReal, ALL_SYMBOLS, getSearchSymbols, pairFor } fr
 import { addTransaction, getItems, listEvents, itemKey } from "../lib/portfolio.js";
 import { getUSStockPrice, getCachedUSStockPrice, getUSStockPriceTimestamp, isUSStockPriceConfigured } from "../lib/usStockPrices.js";
 import { APPROX_USD_TRY, fmtPct, fmtDisplay } from "../lib/portfolioFormat.js";
+import { periodChangePct, WEEK_BARS, DETAIL_PERIODS } from "../lib/priceChange.js";
 import "../styles/portfolio.css";
 
 // AK-078: İzleme listesi "bak"tan "takip et"e geçiyor — kişisel portföy modülü.
@@ -37,29 +38,9 @@ function inferAssetType(sym) {
 }
 
 const PERIOD_BARS = { "1H": 1, "1A": 180, "1Y": 2190 }; // 4s mum varsayımıyla kaba yaklaşık bar sayısı
-function periodChangePct(bars, lookbackBars) {
-  if (!bars || bars.length < 2) return null;
-  const idx = Math.max(0, bars.length - 1 - lookbackBars);
-  if (idx >= bars.length - 1) return null; // yeterli geçmiş yok — dürüstçe "yok" de
-  const past = bars[idx]?.c, now = bars[bars.length - 1]?.c;
-  if (!past) return null;
-  return ((now - past) / past) * 100;
-}
-const WEEK_BARS = 42; // ~7 gün × 24s / 4s mum
 
 // AK-079: TradingView mobil referansı — sembol satırı/başlığında varlık tipine göre ikon.
 const ASSET_ICON = { crypto: Bitcoin, us: Building2, bist: Landmark };
-
-// AK-079: detay ekranı zaman aralığı seçici — yalnız GERÇEKTEN eldeki bar aralığına (900 bar ×
-// 4s ≈ 150 gün) sığan seçenekler sunulur; YTD/1Y/5Y gibi kapsamayanlar dürüstlük ilkesi (AK-031)
-// gereği eklenmez — TradingView'daki fikir korunur, kapsam gerçek veriyle sınırlanır.
-const DETAIL_PERIODS = [
-  { key: "1G", label: "1G", bars: 6 },
-  { key: "1H", label: "1H", bars: WEEK_BARS },
-  { key: "1A", label: "1A", bars: 180 },
-  { key: "3A", label: "3A", bars: 540 },
-  { key: "TUM", label: "Tümü", bars: Infinity },
-];
 
 // D16: ABD/BIST (kripto DIŞI) fiyatların yanında HER ZAMAN "son güncelleme: X" gösterilir — kaynak
 // cache'in KENDİ ts'i (kullanıcının sayfayı açtığı an değil). Kripto gerçek zamanlı ticker olduğu

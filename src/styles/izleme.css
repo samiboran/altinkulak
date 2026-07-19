@@ -13,6 +13,8 @@
 .ak-izle-add input:focus{border-color:var(--teal-deep);}
 .ak-izle-list{display:flex;flex-direction:column;gap:8px;}
 .ak-wrow{display:grid;grid-template-columns:28px 1.4fr 100px 90px .7fr 1.1fr 36px;align-items:center;gap:14px;padding:13px 16px;background:linear-gradient(180deg,#17211F,#141E1C);border:1px solid var(--line);border-radius:12px;}
+.ak-wrow:not(.bad){cursor:pointer;}
+.ak-wrow:not(.bad):hover{border-color:var(--teal-deep);}
 .ak-wrow.bad{grid-template-columns:28px 1fr 1fr 36px;opacity:.6;}
 .ak-fav{border:none;background:none;color:var(--muted);cursor:pointer;display:grid;place-items:center;padding:0;}
 .ak-fav:hover{color:var(--gold-2);}

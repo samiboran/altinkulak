@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Eye, Plus, Trash2, ShieldCheck, Bell, BellRing, Settings, Star, Wallet, X } from "lucide-react";
 import { getBars, loadReal, isReal, hasData, stats24h, getFreshness, getSearchSymbols, loadTop500Symbols } from "../lib/data.js";
+import { periodChangePct, WEEK_BARS, DETAIL_PERIODS } from "../lib/priceChange.js";
 import { runBacktest } from "../lib/backtest.js";
 import { detectModBSignals, DEFAULT_PARAMS } from "../lib/modB.js";
 import { requestNotifyPermission, notify, isSeen, markSeen } from "../lib/notify.js";
@@ -10,6 +11,7 @@ import { useAuthGate } from "../lib/AuthGate.jsx";
 import PortfolioPanel from "../components/PortfolioPanel.jsx";
 import { shouldShowNudge, nextNudgeState, loadNudgeState, saveNudgeState } from "../lib/nudge.js";
 import "../styles/izleme.css";
+import "../styles/portfolio.css"; // AK-089: watchlist detay modalı ak-pf-detail-* sınıflarını PortfolioPanel'le PAYLAŞIR (görsel tutarlılık, aynı CSS ikinci kez tanımlanmaz)
 
 const WKEY = "ak_watch_v1";
 const SKEY = "ak_my_system_v1";
@@ -74,6 +76,61 @@ function Spark({ sym }) {
   return <svg viewBox="0 0 100 30" preserveAspectRatio="none" className="ak-wspark"><polyline points={pts} className={up ? "up" : "dn"} /></svg>;
 }
 
+function fmtPctSigned(v) {
+  if (v == null) return "— veri yok";
+  return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
+}
+
+// AK-089: izleme listesi satırına dokunma → detay ekranı. PortfolioPanel.jsx'in AssetDetailModal'ı
+// (AK-079) ile AYNI CSS sınıflarını (ak-pf-detail-*) kullanır — görsel dil tekrar icat edilmez.
+// Sekmeler (Geçmiş/Maliyet) burada YOK: bu bir HOLDING değil, salt izlenen bir sembol — o sekmeler
+// bir portföy kalemine ait geçmiş/maliyet verisine dayanır, izleme listesinde karşılığı yok.
+// YTD/1Y/5Y de eklenmedi — DETAIL_PERIODS zaten AK-031 dürüstlük kararına göre veriye sığan
+// aralıklarla sınırlı (bkz. src/lib/priceChange.js).
+function WatchDetailModal({ row, fmtP, onClose }) {
+  const [period, setPeriod] = useState("1G");
+  const bars = getBars(row.sym);
+  const weekChangePct = periodChangePct(bars, WEEK_BARS);
+  const periodDef = DETAIL_PERIODS.find((p) => p.key === period) || DETAIL_PERIODS[0];
+  const periodChg = periodChangePct(bars, periodDef.bars);
+
+  return (
+    <div className="ak-pf-modal-ov" onClick={onClose}>
+      <div className="ak-pf-modal ak-pf-detail" onClick={(e) => e.stopPropagation()}>
+        <div className="ak-pf-modal-head">
+          <h3>{row.sym} <i className="ak-pf-detail-type">{row.group}</i></h3>
+          <button className="ak-icon" onClick={onClose}><X size={18} /></button>
+        </div>
+
+        <div className="ak-pf-detail-price">
+          <b>{fmtP(row.last)}</b>
+          <div className="ak-pf-detail-chglines">
+            <span className={row.chg >= 0 ? "pos" : "neg"}>Bugün {fmtPctSigned(row.chg)}</span>
+            <span className={weekChangePct == null ? "" : weekChangePct >= 0 ? "pos" : "neg"}>Bu hafta {fmtPctSigned(weekChangePct)}</span>
+          </div>
+          {row.fresh && <i className="ak-pf-age">{freshnessLabel(row.fresh)}</i>}
+        </div>
+
+        <div className="ak-pf-detail-periods">
+          {DETAIL_PERIODS.map((p) => (
+            <button key={p.key} className={period === p.key ? "on" : ""} onClick={() => setPeriod(p.key)}>{p.label}</button>
+          ))}
+        </div>
+        <p className={"ak-pf-detail-periodchg " + (periodChg == null ? "" : periodChg >= 0 ? "pos" : "neg")}>
+          {periodDef.label} değişim: {fmtPctSigned(periodChg)}
+        </p>
+
+        <div className="ak-pf-detail-grid">
+          <div><span className="k">Kaynak</span><b>{row.real ? "Gerçek veri" : "Örnek veri"}</b></div>
+          <div><span className="k">Edge (t-stat)</span><b className="mono">{row.edge ? "✓ " : ""}t={row.t}</b></div>
+          <div><span className="k">Grup</span><b>{row.group}</b></div>
+        </div>
+        <p className="ak-izle-note">Edge rozeti geçmiş 900 barın ölçümüdür, gelecek vaadi/yatırım tavsiyesi değildir.</p>
+      </div>
+    </div>
+  );
+}
+
 export default function Izleme() {
   const { user } = useAuth();
   const { requireAuth } = useAuthGate();
@@ -110,6 +167,7 @@ export default function Izleme() {
     });
   }
   const [favorites, setFavorites] = useState(loadFavorites); // AK-061: favori semboller, listenin en üstüne sabitlenir
+  const [detailSym, setDetailSym] = useState(null); // AK-089: satıra dokunma → detay ekranı (WatchDetailModal)
   const [alarmHistory, setAlarmHistory] = useState(listAlarmTrades); // AK-076: sinyal geldiğinde otomatik açılan hayali işlemler
   useEffect(() => { try { localStorage.setItem(WKEY, JSON.stringify(list)); } catch {} }, [list]);
   useEffect(() => { try { localStorage.setItem(FAV_KEY, JSON.stringify([...favorites])); } catch {} }, [favorites]);
@@ -375,14 +433,14 @@ export default function Izleme() {
                     <button className={"ak-fav" + (favorites.has(r.sym) ? " on" : "")} onClick={() => toggleFav(r.sym)} title={favorites.has(r.sym) ? "Favorilerden çıkar" : "Favorile"}><Star size={14} fill={favorites.has(r.sym) ? "currentColor" : "none"} /></button>
                     <span className="sy">{r.sym}</span><span className="nm">veri yok — Binance'te {r.sym}USDT bulunamadı, sentetik profili de tanımlı değil</span><button className="ak-del" onClick={() => del(r.sym)}><Trash2 size={14} /></button></div>
                 ) : (
-                  <div className="ak-wrow" key={r.sym}>
-                    <button className={"ak-fav" + (favorites.has(r.sym) ? " on" : "")} onClick={() => toggleFav(r.sym)} title={favorites.has(r.sym) ? "Favorilerden çıkar" : "Favorile"}><Star size={14} fill={favorites.has(r.sym) ? "currentColor" : "none"} /></button>
+                  <div className="ak-wrow" key={r.sym} onClick={() => setDetailSym(r.sym)} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && setDetailSym(r.sym)}>
+                    <button className={"ak-fav" + (favorites.has(r.sym) ? " on" : "")} onClick={(e) => { e.stopPropagation(); toggleFav(r.sym); }} title={favorites.has(r.sym) ? "Favorilerden çıkar" : "Favorile"}><Star size={14} fill={favorites.has(r.sym) ? "currentColor" : "none"} /></button>
                     <div className="ak-wid"><span className="sy">{r.sym}</span><span className="nm">{r.name} <i className={"src" + (r.real ? " real" : "")}>{r.real ? "● gerçek" : "○ örnek"}</i>{r.fresh && <i className={"fresh " + r.fresh.status}>{freshnessLabel(r.fresh)}</i>}</span></div>
                     <Spark sym={r.sym} />
                     <span className="last">{fmtP(r.last)}</span>
                     <span className={"chg " + (r.chg >= 0 ? "pos" : "neg")}>{r.chg >= 0 ? "+" : ""}{r.chg.toFixed(2)}%</span>
                     <span className={"edge " + (r.edge ? "on" : "")}>{r.edge ? <><ShieldCheck size={12} /> edge t={r.t}</> : `t=${r.t}`}</span>
-                    <button className="ak-del" onClick={() => del(r.sym)}><Trash2 size={14} /></button>
+                    <button className="ak-del" onClick={(e) => { e.stopPropagation(); del(r.sym); }}><Trash2 size={14} /></button>
                   </div>
                 ))}
               </div>
@@ -432,6 +490,10 @@ export default function Izleme() {
           <p className="ak-izle-note">Sinyal geldiğinde otomatik açılan hayali işlemler — gerçek para değildir, yalnız bu tarayıcıda saklanır.</p>
         </div>
       )}
+      {detailSym && (() => {
+        const row = rows.find((r) => r.sym === detailSym);
+        return row && !row.bad ? <WatchDetailModal row={row} fmtP={fmtP} onClose={() => setDetailSym(null)} /> : null;
+      })()}
       </>)}
     </div>
   );
