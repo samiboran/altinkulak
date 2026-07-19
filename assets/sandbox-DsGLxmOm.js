@@ -1,0 +1,6 @@
+import{c}from"./index-v3D13IL3.js";import{T as l,S as d}from"./ledger-D9KMdON_.js";/**
+ * @license lucide-react v0.383.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */const y=c("Download",[["path",{d:"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4",key:"ih7n3h"}],["polyline",{points:"7 10 12 15 17 10",key:"2ggqvy"}],["line",{x1:"12",x2:"12",y1:"15",y2:"3",key:"1vk2je"}]]),s="ak_sandbox_v1";function o(){if(typeof localStorage>"u")return[];try{return JSON.parse(localStorage.getItem(s))||[]}catch{return[]}}function u(n){if(!(typeof localStorage>"u"))try{localStorage.setItem(s,JSON.stringify(n))}catch{}}function S(n){const t=String(n.sym||"").trim().toUpperCase(),r=Number(n.plan),e=Number(n.r);if(!t||!["Long","Short"].includes(n.dir)||!Number.isFinite(r)||r<=0||!Number.isFinite(e)||!l.includes(n.tag))return null;const a={id:typeof crypto<"u"&&crypto.randomUUID?crypto.randomUUID():String(Date.now())+"-"+Math.random().toString(36).slice(2,8),d:new Date().toISOString(),sym:t,setup:d.includes(n.setup)?n.setup:"Diğer",dir:n.dir,plan:Math.round(r*10)/10,r:Math.round(e*10)/10,tag:n.tag},i=o();return i.push(a),u(i),a}function g(){return o().map(n=>({...n}))}function m(n){const t=o(),r=t.filter(e=>e.id!==n);return u(r),r.length<t.length}export{y as D,S as a,g as l,m as r};
