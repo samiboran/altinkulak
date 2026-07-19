@@ -1,7 +1,7 @@
 import { useMemo, useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
-import { Lock, Unlock, Copy, Trash2 } from "lucide-react";
+import { Lock, Unlock, Copy, Trash2, Maximize2, X } from "lucide-react";
 import { findFVG, findOrderBlocks, findBOS, ema, rsi, findMitigation, orderFlowArr, findFib, findSweep } from "../lib/detectors.js";
-import { inPlotArea } from "../lib/chartGeometry.js";
+import { inPlotArea, isTapGesture, isMobileFullscreenWidth } from "../lib/chartGeometry.js";
 import { rafThrottle } from "../lib/rafThrottle.js";
 import ChartLegend from "./ChartLegend.jsx";
 
@@ -177,6 +177,42 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
     return () => el.removeEventListener("wheel", onWheel);
   }, [onRangeSelect]);
 
+  // AK-092: mobil tam ekran — ≤860px'de köşedeki büyüt ikonu ya da grafiğe kısa dokunuş (sürükleme/
+  // pinch/uzun-bas DEĞİL) tam ekranı açar. Tarayıcı Fullscreen API denenir (outerRef üzerinde);
+  // desteklenmezse (ör. iOS Safari — arbitrary element'te hiç desteklemez) ya da reddedilirse
+  // `fullscreen` state'i TEK BAŞINA CSS fixed-overlay fallback'ini sürer — iki yol da aynı kapatma
+  // X'ine ve aynı "sayfa kromu görsel olarak kaplı" davranışına çıkar, dallanma UI'a sızmaz.
+  const [fullscreen, setFullscreen] = useState(false);
+  const outerRef = useRef(null);
+  function enterFullscreen() {
+    setFullscreen(true);
+    try {
+      const el = outerRef.current;
+      const req = el && (el.requestFullscreen || el.webkitRequestFullscreen);
+      req?.call(el)?.catch?.(() => {}); // native API yoksa/reddedilirse fixed-overlay zaten aktif
+    } catch { /* Fullscreen API yok/izin yok — fallback CSS'e devam */ }
+  }
+  function exitFullscreen() {
+    setFullscreen(false);
+    try {
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        (document.exitFullscreen || document.webkitExitFullscreen)?.call(document)?.catch?.(() => {});
+      }
+    } catch { /* yoksay */ }
+  }
+  // Tarayıcı geri tuşu/ESC ile native fullscreen'den çıkılırsa state (ve dolayısıyla X/overlay) senkron kalsın.
+  useEffect(() => {
+    function onFsChange() {
+      if (!(document.fullscreenElement || document.webkitFullscreenElement)) setFullscreen(false);
+    }
+    document.addEventListener("fullscreenchange", onFsChange);
+    document.addEventListener("webkitfullscreenchange", onFsChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFsChange);
+      document.removeEventListener("webkitfullscreenchange", onFsChange);
+    };
+  }, []);
+
   // AK-044: dokunmatik pan (tek parmak) + pinch-zoom (iki parmak)
   const touchRef = useRef(null);
   const touchDist = (t0, t1) => Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
@@ -189,15 +225,21 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
     if (longPressRef.current?.timer) clearTimeout(longPressRef.current.timer);
     longPressRef.current = null;
   }
+  // AK-092: "düz dokunuş" izleyici — pan/pinch/uzun-bas'a KARIŞMAZ, sadece paralelde izler. Karar
+  // touchend'de changedTouches'ın GERÇEK kalkış konumuyla verilir (isTapGesture, chartGeometry.js) —
+  // touchmove'a ayrı bir hook eklemeye gerek yok, pan/pinch/uzun-bas mantığı hiç değişmedi.
+  const tapRef = useRef(null); // {x0, y0, t0}
   function onTouchStart(e) {
     const r = e.currentTarget.getBoundingClientRect();
     if (e.touches.length === 2) {
       clearLongPress();
+      tapRef.current = null; // ikinci parmak değdi — artık tap değil
       touchRef.current = { mode: "pinch", d0: touchDist(e.touches[0], e.touches[1]), off0: off, len0: view.length, total: bars.length };
       setHov(null);
     } else if (e.touches.length === 1) {
       const t = e.touches[0];
       touchRef.current = { mode: "pan", x0: t.clientX, off0: off, len0: view.length, total: bars.length, pxPerBar: r.width * ((W - pL - pR) / W) / view.length };
+      tapRef.current = { x0: t.clientX, y0: t.clientY, t0: Date.now() };
       const px = ((t.clientX - r.left) / r.width) * W, py = ((t.clientY - r.top) / r.height) * H;
       const inPlot = inPlotArea(px, py, { pL, pR, pT, pB, W, H });
       const i0 = Math.max(0, Math.min(slots - 1, Math.round(((px - pL) / (W - pL - pR)) * (slots - 1))));
@@ -215,6 +257,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
         timer: setTimeout(() => {
           longPressRef.current = null;
           touchRef.current = null; // uzun-bas menüye dönüştü — pan olarak devam etmesin
+          tapRef.current = null; // ...ve tap da sayılmasın (fullscreen tetiklenmesin)
           if (!inPlot) return;
           setCtxMenu(null);
           setEmptyCtxMenu({ leftPct: ((t.clientX - r.left) / r.width) * 100, topPct: ((t.clientY - r.top) / r.height) * 100, i: off + i0, price: priceAt(py) });
@@ -224,7 +267,18 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
   }
   function onTouchEnd(e) {
     clearLongPress();
-    if (e.touches.length === 0) { touchRef.current = null; setHov(null); }
+    if (e.touches.length === 0) {
+      touchRef.current = null; setHov(null);
+      const tap = tapRef.current;
+      tapRef.current = null;
+      // AK-092: ≤860px'de düz dokunuş (sürükleme/pinch/uzun-bas yapılmadan kalkan parmak) tam ekranı açar.
+      // changedTouches[0] = az önce kalkan parmağın GERÇEK son konumu — pan yapıldıysa dx/dy büyük çıkar.
+      if (tap && !fullscreen && isMobileFullscreenWidth(typeof window !== "undefined" ? window.innerWidth : NaN)) {
+        const ct = e.changedTouches && e.changedTouches[0];
+        const dx = ct ? ct.clientX - tap.x0 : Infinity, dy = ct ? ct.clientY - tap.y0 : Infinity;
+        if (isTapGesture(dx, dy, Date.now() - tap.t0)) enterFullscreen();
+      }
+    }
   }
   useEffect(() => {
     const el = svgRef.current;
@@ -760,7 +814,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
 
   const cursorClass = spaceDown ? (handDragging ? " ak-c-grabbing" : " ak-c-grab") : "";
   return (
-    <div className="ak-c-outer">
+    <div className={"ak-c-outer" + (fullscreen ? " ak-fullscreen" : "")} ref={outerRef}>
     <svg id="ak-main-chart" ref={svgRef} className={"ak-chart" + cursorClass + (showRsi ? " has-rsi" : "")} viewBox={`0 0 ${W} ${svgH}`} preserveAspectRatio="none" role="img" aria-label="Fiyat grafiği"
       onMouseEnter={() => { overRef.current = true; }}
       onMouseMove={(e) => { onMove(e); onDrag(e); }}
@@ -952,6 +1006,18 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
         </g>
       )}
     </svg>
+    {/* AK-092: mobil tam ekran — ≤860px'de köşede büyüt ikonu (CSS media query ile gösterilir/gizlenir,
+        SSR'da window'a dokunulmaz); tam ekranken sağ üstte yarı saydam daire içinde kapat X. */}
+    {!fullscreen && (
+      <button type="button" className="ak-c-fs-btn" title="Tam ekran" aria-label="Tam ekran" onClick={enterFullscreen}>
+        <Maximize2 size={15} />
+      </button>
+    )}
+    {fullscreen && (
+      <button type="button" className="ak-c-fs-close" title="Tam ekrandan çık" aria-label="Tam ekrandan çık" onClick={exitFullscreen}>
+        <X size={16} />
+      </button>
+    )}
     {/* AK-068: TradingView tarzı gösterge legend'ı — sol üst, OHLC künyesinin altında */}
     <ChartLegend
       indicators={indicators}

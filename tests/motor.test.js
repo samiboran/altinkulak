@@ -1912,6 +1912,53 @@ console.log("Grafik boş-alan bağlam menüsü — sınır kontrolü (AK-085-TAM
   });
 }
 
+console.log("mobil grafik tam ekran — dokunuş/breakpoint kararları (AK-092)");
+{
+  const { isTapGesture, isMobileFullscreenWidth } = await import("../src/lib/chartGeometry.js");
+
+  test("isTapGesture: hareketsiz, hızlı parmak kalkışı → tap", () => {
+    assert.equal(isTapGesture(0, 0, 80), true);
+    assert.equal(isTapGesture(3, -4, 150), true); // 5px, tol(10) altında
+  });
+  test("isTapGesture: sürükleme (tol üstü hareket) → tap DEĞİL", () => {
+    assert.equal(isTapGesture(40, 0, 80), false);
+    assert.equal(isTapGesture(0, 25, 80), false);
+  });
+  test("isTapGesture: uzun-bas (maxMs üstü süre) → tap DEĞİL, hareketsiz olsa bile", () => {
+    assert.equal(isTapGesture(0, 0, 500), false);
+    assert.equal(isTapGesture(1, 1, 401), false);
+  });
+  test("isTapGesture: tam sınırda (tol=10, maxMs=400) — tol dahil, maxMs hariç", () => {
+    assert.equal(isTapGesture(10, 0, 399), true);
+    assert.equal(isTapGesture(10.01, 0, 100), false);
+    assert.equal(isTapGesture(0, 0, 400), false);
+  });
+  test("isTapGesture: eksik/NaN girdi (changedTouches yoksa Infinity geçilir) çökmez, false döner", () => {
+    assert.equal(isTapGesture(Infinity, Infinity, 100), false);
+    assert.equal(isTapGesture(NaN, 0, 100), false);
+    assert.equal(isTapGesture(0, 0, NaN), false);
+  });
+  test("isTapGesture: özel eşiklerle (maxMs/tol) çağrılabilir", () => {
+    assert.equal(isTapGesture(20, 0, 100, { tol: 25 }), true);
+    assert.equal(isTapGesture(0, 0, 900, { maxMs: 1000 }), true);
+  });
+
+  test("isMobileFullscreenWidth: chart.css ile AYNI eşik (≤860px mobil)", () => {
+    assert.equal(isMobileFullscreenWidth(860), true);
+    assert.equal(isMobileFullscreenWidth(375), true); // tipik telefon genişliği
+    assert.equal(isMobileFullscreenWidth(861), false);
+    assert.equal(isMobileFullscreenWidth(1280), false); // masaüstü — tap-to-fullscreen devre dışı
+  });
+  test("isMobileFullscreenWidth: NaN/tanımsız (SSR'da window yok) güvenle false döner", () => {
+    assert.equal(isMobileFullscreenWidth(NaN), false);
+    assert.equal(isMobileFullscreenWidth(undefined), false);
+  });
+  test("isMobileFullscreenWidth: özel breakpoint parametresiyle çağrılabilir", () => {
+    assert.equal(isMobileFullscreenWidth(500, 480), false);
+    assert.equal(isMobileFullscreenWidth(480, 480), true);
+  });
+}
+
 console.log("rafThrottle — pan/zoom/crosshair kare-başına-bir-kez (AK-085-TAMAMLAMA/C4)");
 {
   const { rafThrottle } = await import("../src/lib/rafThrottle.js");
