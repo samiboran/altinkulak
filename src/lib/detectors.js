@@ -60,6 +60,10 @@ export function findFVG(bars, maxGapATR = 0.6) {
 }
 
 // Order Block: güçlü yükselişten önceki son düşüş mumunun gövdesi (kabaca)
+// AK-095/Bug1: eskiden .slice(-8) ile son 8'e kesiliyordu — bu, Chart.jsx'in inWin
+// filtresinden ÖNCE gerçekleşiyordu, yani kullanıcı geçmişe kaydırınca o bölgedeki
+// gerçek OB'ler zaten silinmiş oluyordu. findFVG'de böyle bir limit yok (referans davranış),
+// asıl sınırlama zaten çağıran taraftaki inWin() filtresinde.
 export function findOrderBlocks(bars) {
   const out = [];
   for (let i = 3; i < bars.length - 1; i++) {
@@ -67,17 +71,17 @@ export function findOrderBlocks(bars) {
       out.push({ i: i - 1, lo: bars[i - 1].l, hi: bars[i - 1].o });
     }
   }
-  return out.slice(-8);
+  return out;
 }
 
-// BOS: önceki 5 barlık tepenin kırılması
+// BOS: önceki 5 barlık tepenin kırılması (AK-095/Bug1: bkz. findOrderBlocks notu — aynı sebep)
 export function findBOS(bars) {
   const out = [];
   for (let i = 6; i < bars.length; i++) {
     const prevHigh = Math.max(...bars.slice(i - 6, i - 1).map(b => b.h));
     if (bars[i].c > prevHigh) out.push({ i, price: prevHigh });
   }
-  return out.slice(-6);
+  return out;
 }
 
 // --- AK-012b: kavram hizalama yardımcıları ---
@@ -102,6 +106,7 @@ export function trendArr(bars, period = 50, look = 5) {
 // --- AK-012c: Mitigation / Order Flow / Fibonacci ---
 
 // Mitigation: önceki bir OB bölgesine fiyatın geri dönüp "mitigasyon" yaptığı noktalar
+// (AK-095/Bug1: bkz. findOrderBlocks notu — aynı sebep, aynı düzeltme)
 export function findMitigation(bars) {
   const obs = findOrderBlocks(bars);
   const out = [];
@@ -110,7 +115,7 @@ export function findMitigation(bars) {
       if (bars[j].l <= o.hi && bars[j].h >= o.lo) { out.push({ i: j, lo: o.lo, hi: o.hi, price: (o.lo + o.hi) / 2 }); break; }
     }
   }
-  return out.slice(-8);
+  return out;
 }
 
 // Order flow yönü: son k mum gövdesi toplamının işareti (displacement/baskı)

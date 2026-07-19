@@ -2151,4 +2151,76 @@ console.log("Dönemsel yüzde değişim — PortfolioPanel/Izleme detay ekranı 
   });
 }
 
+console.log("OB/BOS/Mitigation geçmişe kaydırınca kaybolmuyor (AK-095/Bug1)");
+{
+  const { findOrderBlocks, findBOS, findMitigation } = await import("../src/lib/detectors.js");
+
+  // Eskiden findOrderBlocks/findBOS/findMitigation kendi içlerinde .slice(-8)/.slice(-6) ile
+  // SONUÇLARINI kırpıyordu — Chart.jsx'in inWin() filtresinden ÖNCE. Kullanıcı geçmişe (900+ bar
+  // önceki bir bölgeye) kaydırdığında o bölgedeki gerçek OB/BOS/Mitigation zaten silinmiş oluyordu.
+  // Bu testler: (a) 8/6 sınırından FAZLA öğe varken hiçbiri kırpılmıyor, (b) diziden ÇOK ÖNCEki
+  // (yüzlerce bar geride) bir öğe hâlâ dönüyor VE bir inWin-benzeri filtreyle o bölgeye kaydırılmış
+  // pencerede bulunabiliyor.
+
+  const flat = (n, base = 100) => Array.from({ length: n }, () => ({ o: base, h: base + 1, l: base - 1, c: base }));
+  const obPair = (base) => [
+    { o: base, h: base + 0.2, l: base - 1, c: base - 0.8 }, // düşüş mumu
+    { o: base - 0.8, h: base + 3, l: base - 1, c: (base - 0.8) * 1.02 }, // >1.5% yükseliş
+  ];
+
+  test("findOrderBlocks: 8'den fazla OB varken hiçbiri kırpılmaz, 250+ bar önceki OB hâlâ dönüyor", () => {
+    let bars = flat(4);
+    const earlyBearIdx = bars.length;
+    bars = bars.concat(obPair(100));
+    bars = bars.concat(flat(250)); // erken OB'yi geçmişe it
+    for (let k = 0; k < 10; k++) { bars = bars.concat(flat(3)); bars = bars.concat(obPair(200 + k)); }
+    bars = bars.concat(flat(5));
+
+    const obs = findOrderBlocks(bars);
+    assert.equal(obs.length, 11, "toplam 11 OB var, hiçbiri kırpılmamalı (eski davranış: son 8'e keserdi)");
+    assert.ok(obs.some(o => o.i === earlyBearIdx), "250+ bar önceki OB hâlâ tespit ediliyor");
+
+    // Chart.jsx'teki inWin() ile AYNI mantık: kullanıcı erken bölgeye kaydırmış gibi filtrele
+    const inWin = (i) => i >= 0 && i <= earlyBearIdx + 5;
+    const visible = obs.filter(o => inWin(o.i));
+    assert.equal(visible.length, 1, "kaydırılmış pencerede yalnız erken OB görünmeli, ve GÖRÜNMELİ (silinmiş olmamalı)");
+  });
+
+  test("findBOS: 6'dan fazla BOS varken hiçbiri kırpılmaz, geçmişteki BOS hâlâ dönüyor", () => {
+    const flatBOS = (n, base = 100) => Array.from({ length: n }, () => ({ o: base, h: base, l: base - 1, c: base - 0.2 }));
+    let bars = flatBOS(10);
+    const earlyBreakIdx = bars.length;
+    bars.push({ o: 100, h: 100, l: 99, c: 105 }); // önceki 5 barlık tepeyi (100) kırar
+    bars = bars.concat(flatBOS(250));
+    for (let k = 0; k < 8; k++) { bars = bars.concat(flatBOS(3)); bars.push({ o: 100, h: 100, l: 99, c: 105 }); }
+    bars = bars.concat(flatBOS(5));
+
+    const boses = findBOS(bars);
+    assert.equal(boses.length, 9, "toplam 9 BOS var, hiçbiri kırpılmamalı (eski davranış: son 6'ya keserdi)");
+    assert.ok(boses.some(b => b.i === earlyBreakIdx), "250+ bar önceki BOS hâlâ tespit ediliyor");
+  });
+
+  test("findMitigation: 8'den fazla mitigasyon varken hiçbiri kırpılmaz, geçmişteki mitigasyon hâlâ dönüyor", () => {
+    const neutralFiller = (n) => Array.from({ length: n }, () => ({ o: 5000, h: 5001, l: 4999, c: 5000 }));
+    const unit = (base) => [
+      { o: base, h: base + 0.2, l: base - 1, c: base - 0.8 },        // OB düşüş mumu
+      { o: base - 0.8, h: base + 3, l: base - 1, c: (base - 0.8) * 1.02 }, // OB yükseliş
+      { o: base + 20, h: base + 21, l: base + 19, c: base + 20 },    // uzak dolgu
+      { o: base + 20, h: base + 21, l: base + 19, c: base + 20 },
+      { o: base + 20, h: base + 21, l: base + 19, c: base + 20 },
+      { o: base + 10, h: base + 11, l: base - 0.5, c: base + 9 },    // bölgeye geri dönüş (mitigasyon)
+    ];
+    let bars = neutralFiller(4);
+    const earlyMitIdx = bars.length + 5; // unit() içindeki mitigasyon barının indeksi
+    bars = bars.concat(unit(1000));
+    bars = bars.concat(neutralFiller(250));
+    for (let k = 0; k < 8; k++) { bars = bars.concat(neutralFiller(3)); bars = bars.concat(unit(2000 + k * 100)); }
+    bars = bars.concat(neutralFiller(5));
+
+    const mits = findMitigation(bars);
+    assert.equal(mits.length, 9, "toplam 9 mitigasyon var, hiçbiri kırpılmamalı (eski davranış: son 8'e keserdi)");
+    assert.ok(mits.some(m => m.i === earlyMitIdx), "250+ bar önceki mitigasyon hâlâ tespit ediliyor");
+  });
+}
+
 console.log(`\n${pass} test geçti${process.exitCode ? " (HATALAR VAR)" : " — motor sağlam."}`);

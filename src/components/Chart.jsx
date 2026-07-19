@@ -92,9 +92,15 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
   const x = i => pL + (i / Math.max(1, slots - 1)) * (W - pL - pR);
   // Dikey ölçek (AK-030): eksen sürüklenince vScale değişir (1 = otomatik sığdır). Log ölçek destekli.
   const [vView, setVView] = useState(null); // null = oto-sığdır; {mid, half} = kullanıcı dikey görünümü
-  useEffect(() => { setVView(null); }, [bars]); // sembol/veri değişince sıfırla
-  const mid = vView ? vView.mid : (lo + hi) / 2;
-  const half = vView ? vView.half : rg / 2;
+  // AK-095/Bug2: yatay pan sırasında oto-sığdır (vView=null) her karede o anki view'dan lo/hi'yi
+  // YENİDEN hesaplıyordu — off/endIdx her sürükleme adımında değiştiği için dikey ölçek de
+  // "zıplıyordu" (kullanıcı sadece yatay kaydırırken bile). Pan başlarken mevcut lo/hi'den bir
+  // görünüm dondurulur (vFreezeRef), sürükleme bitene kadar SABİT kalır; bitince (vView hâlâ
+  // null'sa) oto-sığdır otomatik devreye girer (freeze temizlenir, aşağıdaki hesap yeniden lo/hi'ye döner).
+  const vFreezeRef = useRef(null);
+  useEffect(() => { setVView(null); vFreezeRef.current = null; }, [bars]); // sembol/veri değişince sıfırla
+  const mid = vView ? vView.mid : vFreezeRef.current ? vFreezeRef.current.mid : (lo + hi) / 2;
+  const half = vView ? vView.half : vFreezeRef.current ? vFreezeRef.current.half : rg / 2;
   const elo = Math.max(logScale ? 1e-9 : -Infinity, mid - half), ehi = mid + half, erg = ehi - elo || 1;
   const lnLo = Math.log(Math.max(1e-9, elo)), lnHi = Math.log(Math.max(elo * 1.0001, ehi));
   const y = p => logScale
@@ -197,6 +203,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
       setHov(null);
     } else if (e.touches.length === 1) {
       const t = e.touches[0];
+      if (!vView) vFreezeRef.current = { mid, half }; // AK-095/Bug2: dokunmatik pan başlarken dikey görünümü dondur
       touchRef.current = { mode: "pan", x0: t.clientX, off0: off, len0: view.length, total: bars.length, pxPerBar: r.width * ((W - pL - pR) / W) / view.length };
       const px = ((t.clientX - r.left) / r.width) * W, py = ((t.clientY - r.top) / r.height) * H;
       const inPlot = inPlotArea(px, py, { pL, pR, pT, pB, W, H });
@@ -224,7 +231,10 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
   }
   function onTouchEnd(e) {
     clearLongPress();
-    if (e.touches.length === 0) { touchRef.current = null; setHov(null); }
+    if (e.touches.length === 0) {
+      if (touchRef.current?.mode === "pan") vFreezeRef.current = null; // AK-095/Bug2: bırakınca oto-sığdıra dön
+      touchRef.current = null; setHov(null);
+    }
   }
   useEffect(() => {
     const el = svgRef.current;
@@ -386,6 +396,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
       dragRef.current = { mode: "sel" };
       return;
     }
+    if (!vView) vFreezeRef.current = { mid, half }; // AK-095/Bug2: pan başlarken dikey görünümü dondur
     dragRef.current = { mode: "pan", x0: e.clientX, off0: off, len0: view.length, pxPerBar: r.width * ((W - pL - pR) / W) / view.length };
   }
   function onDrag(e) {
@@ -449,6 +460,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
     const d = dragRef.current;
     dragRef.current = null;
     setHandDragging(false);
+    if (d?.mode === "pan") vFreezeRef.current = null; // AK-095/Bug2: bırakınca oto-sığdıra dön
     if (d?.mode === "draw") {
       const g = d.ghost;
       // AK-087/C1: "İncele" seçimi kalıcı bir çizim DEĞİL — bar aralığına çevrilip dışarı
@@ -764,7 +776,7 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
     <svg id="ak-main-chart" ref={svgRef} className={"ak-chart" + cursorClass + (showRsi ? " has-rsi" : "")} viewBox={`0 0 ${W} ${svgH}`} preserveAspectRatio="none" role="img" aria-label="Fiyat grafiği"
       onMouseEnter={() => { overRef.current = true; }}
       onMouseMove={(e) => { onMove(e); onDrag(e); }}
-      onMouseLeave={() => { overRef.current = false; setHov(null); setSel(null); dragRef.current = null; setHandDragging(false); }}
+      onMouseLeave={() => { overRef.current = false; setHov(null); setSel(null); if (dragRef.current?.mode === "pan") vFreezeRef.current = null; dragRef.current = null; setHandDragging(false); }}
       onMouseDown={onDown} onMouseUp={onUpSel} onDoubleClick={onDbl} onContextMenu={onCanvasContextMenu}
       onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
       {[0, .2, .4, .6, .8, 1].map((f, i) => {
