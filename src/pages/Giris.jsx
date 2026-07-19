@@ -24,7 +24,7 @@ export default function Giris() {
 
   async function submitOtp() {
     const t = otp.trim();
-    if (!/^\d{6}$/.test(t)) { setErr("Maildeki 6 haneli kodu gir."); return; }
+    if (!/^\d{8}$/.test(t)) { setErr("Maildeki 8 haneli kodu gir."); return; }
     setErr("");
     setBusy(true);
     const { data, error } = await verifyEmailOtp(sentTo, t);
@@ -89,10 +89,10 @@ export default function Giris() {
         {done ? (
           <div className="ak-giris-done">
             <Clock size={20} />
-            <p>{mode === "bekleme" ? "Listeye eklendin. Sıran gelince e-posta göndereceğiz." : "E-postana bir giriş linki ve 6 haneli kod gönderildi."}</p>
+            <p>{mode === "bekleme" ? "Listeye eklendin. Sıran gelince e-posta göndereceğiz." : "E-postana bir giriş linki ve 8 haneli kod gönderildi."}</p>
             {awaitingEmail && (
               <div className="ak-giris-form" style={{ marginTop: 12 }}>
-                <div className="ak-in"><Hash size={16} /><input placeholder="Maildeki 6 haneli kod" inputMode="numeric" maxLength={6} value={otp} onChange={e => { setOtp(e.target.value.replace(/\D/g, "")); setErr(""); }} /></div>
+                <div className="ak-in"><Hash size={16} /><input placeholder="Maildeki 8 haneli kod" inputMode="numeric" maxLength={8} value={otp} onChange={e => { setOtp(e.target.value.replace(/\D/g, "")); setErr(""); }} /></div>
                 <button className="ak-btn ak-btn-primary" onClick={submitOtp} disabled={busy}>{busy ? "Doğrulanıyor…" : "Kodla giriş yap"}</button>
                 <p className="ak-giris-foot" style={{ marginTop: 6 }}>Linke tıklamak yerine kodu burada girmen önerilir — böylece oturum bu tarayıcıda açılır ve kalıcı olur.</p>
                 {err && <p className="ak-giris-err">{err}</p>}
