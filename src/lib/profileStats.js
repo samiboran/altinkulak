@@ -16,6 +16,7 @@ import { supabase, fetchStrategiesByUser, fetchProfilesByIds } from "./supabase.
 import { fetchMyScenarioCount } from "./replay.js";
 import { fetchActiveSeason, computeSeasonBrier } from "./seasons.js";
 import { fetchMyResolvedPredictionsWithDates } from "./predictions.js";
+import { fetchIdeasCount } from "./ideas.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -39,10 +40,11 @@ export function verifiedStrategiesCount(strategies) {
   return (strategies || []).filter((s) => Number(s.oos_t) >= 2).length;
 }
 
-// K1: "Fikirler" sayacı v1 — ayrı bir "fikir postu" içerik tipi henüz yok (AK-090, v2).
-// Doğrulanmış strateji + Tahmin Ligi katılımı toplamı dürüst bir vekildir, fabrike sayı DEĞİL.
-export function ideasCount(verifiedStrategies, predictions) {
-  return Math.max(0, verifiedStrategies || 0) + Math.max(0, predictions || 0);
+// K1: "Fikirler" sayacı — AK-090 ile artık gerçek fikir paylaşımları da toplama eklendi
+// (realIdeas, varsayılan 0 — eski 2-parametreli çağrılar/testler bozulmaz). Doğrulanmış
+// strateji + Tahmin Ligi katılımı + gerçek fikir sayısı toplamı, hiçbiri fabrike değil.
+export function ideasCount(verifiedStrategies, predictions, realIdeas = 0) {
+  return Math.max(0, verifiedStrategies || 0) + Math.max(0, predictions || 0) + Math.max(0, realIdeas || 0);
 }
 
 export function profileComplete(profile) {
@@ -89,12 +91,13 @@ export async function fetchMemberIndex(userId, createdAt) {
 // isOwner=false iken sicil-bazlı alanlar (D1: cihaz-içi veri, başkasının cihazından görülemez) 0 kalır.
 export async function fetchProfileStats(profile, { isOwner = false, trades = [] } = {}) {
   if (!profile) return {};
-  const [strategies, predictions, memberIndex, scenariosDone, season] = await Promise.all([
+  const [strategies, predictions, memberIndex, scenariosDone, season, realIdeas] = await Promise.all([
     fetchStrategiesByUser(profile.id),
     fetchPredictionsCount(profile.id),
     fetchMemberIndex(profile.id, profile.created_at),
     fetchMyScenarioCount(profile.id),
     fetchActiveSeason(),
+    fetchIdeasCount(profile.id),
   ]);
   const verified = verifiedStrategiesCount(strategies);
   // seasonBrier: aktif sezon yoksa ya da pencerede hiç tahmin yoksa dürüst null (D6) — sicil-bazlı
@@ -105,7 +108,7 @@ export async function fetchProfileStats(profile, { isOwner = false, trades = [] 
     maxStreakDays: isOwner ? maxStreakDays(trades) : 0,
     verifiedStrategies: verified,
     predictions,
-    ideas: ideasCount(verified, predictions),
+    ideas: ideasCount(verified, predictions, realIdeas),
     profileComplete: profileComplete(profile) ? 1 : 0,
     activeInvites: 0,
     helpfulMarks: 0,

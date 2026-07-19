@@ -19,8 +19,9 @@ import KodEditoru from "../src/pages/KodEditoru.jsx";
 import Puanlar from "../src/pages/Puanlar.jsx";
 import Lig from "../src/pages/Lig.jsx";
 import Senaryo from "../src/pages/Senaryo.jsx";
+import Fikirler from "../src/pages/Fikirler.jsx";
 
-const PAGES = [["Home", Home], ["Lab", Lab], ["Izleme", Izleme], ["Tarama", Tarama], ["Ben", Ben], ["Topluluk", Topluluk], ["Giris", Giris], ["Profil", Profil], ["Haberler", Haberler], ["Ogren", Ogren], ["Fiyatlandirma", Fiyatlandirma], ["KodEditoru", KodEditoru], ["Puanlar", Puanlar], ["Lig", Lig], ["Senaryo", Senaryo]];
+const PAGES = [["Home", Home], ["Lab", Lab], ["Izleme", Izleme], ["Tarama", Tarama], ["Ben", Ben], ["Topluluk", Topluluk], ["Giris", Giris], ["Profil", Profil], ["Haberler", Haberler], ["Ogren", Ogren], ["Fiyatlandirma", Fiyatlandirma], ["KodEditoru", KodEditoru], ["Puanlar", Puanlar], ["Lig", Lig], ["Senaryo", Senaryo], ["Fikirler", Fikirler]];
 
 let fail = 0;
 console.log("sayfa render (SSR duman testi)");

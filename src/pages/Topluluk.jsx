@@ -34,6 +34,7 @@ export default function Topluluk() {
         <p className="lead">
           Burada sıralama kazanç oranına göre değil, <b>doğrulanmış edge’e</b> göre. Out-of-sample t-istatistiği ve yeterli örnek sayısı kazandırır. Pump yok, kanıt var.
         </p>
+        <Link to="/fikirler" className="ak-comm-fikirler-cta">Topluluk Fikirleri — tezini paylaş, gerçek kullanıcı fikirlerini oku →</Link>
       </div>
 
       <div className="ak-sort">

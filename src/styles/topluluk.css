@@ -1,6 +1,8 @@
 .ak-comm{padding:40px 24px 30px;max-width:1080px;margin:0 auto;}
 .ak-comm-head h1{font-family:'Chakra Petch';font-weight:700;font-size:clamp(24px,3.2vw,38px);margin:12px 0 8px;letter-spacing:-.4px;}
 .ak-comm-head .lead{color:var(--muted);font-size:16px;line-height:1.6;max-width:640px;margin:0 0 22px;}
+.ak-comm-fikirler-cta{display:inline-block;color:var(--teal-soft);font-size:13.5px;text-decoration:none;border:1px solid #1f5249;background:#10241F;padding:9px 14px;border-radius:10px;transition:.13s;}
+.ak-comm-fikirler-cta:hover{border-color:var(--teal);color:var(--teal);}
 .ak-sort{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-size:13px;color:var(--muted);}
 .ak-sort .ak-sortbtns{display:inline-flex;background:#101A18;border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px;}
 .ak-sort button{font-family:'JetBrains Mono';font-size:12.5px;padding:7px 13px;border-radius:7px;border:none;background:transparent;color:var(--muted);cursor:pointer;transition:.14s;}

@@ -24,6 +24,10 @@ export const EARNING_TABLE = [
   { key: "streak_7", label: "Günlük sicil serisi: 7 gün kesintisiz giriş", points: 50, cap: "haftada 1", wired: true },
   { key: "streak_30", label: "Sicil serisi: 30 gün", points: 300, cap: "ayda 1", wired: true },
   { key: "edu_content", label: "Eğitim içeriği katkısı (onaylanmış)", points: 150, cap: "moderasyon onayı şart, v2", wired: false },
+  // AK-090/D18: fikrin "faydalı" işareti aldı — puan İŞARETLEYENE değil, FİKİR SAHİBİNE gider
+  // (davranışın hedefi ödüllenir, mevcut earning_table deseniyle tutarlı: paylaşım kalitesi teşvik edilir).
+  // Haftalık tavanlı (FAYDALI_WEEKLY_CAP) — yorum/faydalı-işaret çiftçiliği freni.
+  { key: "faydali", label: "Fikrin 'faydalı' işareti aldı", points: 10, cap: "haftada 200 puan (çiftçilik freni)", wired: true },
 ];
 
 // durationDays: null = kalıcı. maxPurchases: null = sınırsız (süreli kalemlerde "aktifken tekrar
@@ -63,6 +67,24 @@ export function monthlyEarned(events, refDate = new Date()) {
 
 export function remainingMonthlyCap(events, refDate = new Date()) {
   return Math.max(0, MONTHLY_CAP - monthlyEarned(events, refDate));
+}
+
+// AK-090/D18: "faydalı" işaretinin haftalık tavanı — monthlyEarned'ın haftalık/tip-bazlı
+// kardeşi, aynı desen. Yorum/faydalı-işaret çiftçiliğine karşı asıl fren burada (MONTHLY_CAP
+// zaten genel bir üst sınır, bu AYRICA tek bir kazanım TİPİNİ haftalık kısıtlar).
+export const FAYDALI_WEEKLY_CAP = 200;
+
+export function weeklyEarnedByType(events, type, refDate = new Date()) {
+  const cutoff = refDate.getTime() - 7 * DAY_MS;
+  return (events || []).reduce((a, e) => {
+    const amt = Number(e.amount) || 0;
+    if (amt <= 0 || e.type !== type) return a;
+    return e.ts >= cutoff ? a + amt : a;
+  }, 0);
+}
+
+export function remainingFaydaliWeeklyCap(events, refDate = new Date()) {
+  return Math.max(0, FAYDALI_WEEKLY_CAP - weeklyEarnedByType(events, "faydali", refDate));
 }
 
 // Sicil (ledger.js trades) barından en son güne kadar uzanan kesintisiz gün serisi.

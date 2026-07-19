@@ -1973,4 +1973,153 @@ console.log("Mobil grafik tam ekran — çıkış kararı (AK-092)");
   });
 }
 
+console.log("Topluluk Fikirleri — moderasyon yardımcıları (AK-090/C1/C2)");
+{
+  const { validateThesis, containsBannedWord, containsOrderLanguage } = await import("../src/lib/moderation.js");
+
+  test("validateThesis: 40 karakterden kısa tez reddedilir, sebep mesajı verir", () => {
+    const r = validateThesis("çok kısa");
+    assert.equal(r.ok, false);
+    assert.match(r.reason, /tez/i);
+  });
+  test("validateThesis: boş/eksik girdi çökmez, reddedilir", () => {
+    assert.equal(validateThesis(null).ok, false);
+    assert.equal(validateThesis(undefined).ok, false);
+    assert.equal(validateThesis("").ok, false);
+  });
+  test("validateThesis: 40+ karakter kabul edilir", () => {
+    const long = "Bu sembolde hacim artışı ve destek testi görüyorum, RSI da aşırı satımda.";
+    assert.ok(long.length >= 40);
+    assert.equal(validateThesis(long).ok, true);
+  });
+
+  test("containsBannedWord: küfür tam kelime olarak geçince true (gerçekten ENGELLER)", () => {
+    assert.equal(containsBannedWord("bu amk bir tez değil"), true);
+  });
+  test("containsBannedWord: yasaklı kelimenin İÇİNDE geçtiği farklı bir kelime yanlış pozitif vermez", () => {
+    // 'al' benzeri kısa kökler listede yok ama yine de tokenizasyonun TAM kelime eşleştirdiğini doğrula
+    assert.equal(containsBannedWord("kanal analizi gayet net görünüyor buradan itibaren"), false);
+  });
+  test("containsBannedWord: temiz tez false döner", () => {
+    assert.equal(containsBannedWord("destek seviyesinden tepki bekliyorum"), false);
+  });
+
+  test("containsOrderLanguage: 'alın'/'garanti' gibi emir dili tespit edilir (ENGELLEMEZ, yalnız işaretler)", () => {
+    assert.equal(containsOrderLanguage("hemen alın, garanti kâr"), true);
+    assert.equal(containsOrderLanguage("bence satın almak mantıklı olabilir, kesinlikle düşünün"), true);
+  });
+  test("containsOrderLanguage: normal analiz dilinde false döner", () => {
+    assert.equal(containsOrderLanguage("bu bölgede alıcıların baskın olduğunu düşünüyorum"), false);
+  });
+}
+
+console.log("Kulak Puanı — 'faydalı' haftalık tavanı (AK-090/C4, D18'in tamamlanan parçası)");
+{
+  const { EARNING_TABLE, weeklyEarnedByType, remainingFaydaliWeeklyCap, FAYDALI_WEEKLY_CAP } = await import("../src/lib/points.js");
+
+  test("EARNING_TABLE: 'faydali' kalemi artık var ve wired:true (D18'in eksik parçası tamamlandı)", () => {
+    const item = EARNING_TABLE.find((e) => e.key === "faydali");
+    assert.ok(item);
+    assert.equal(item.wired, true);
+    assert.ok(item.points > 0);
+  });
+
+  test("weeklyEarnedByType: son 7 gün dışındaki event'ler sayılmaz", () => {
+    const now = new Date("2026-07-20T12:00:00Z");
+    const events = [
+      { type: "faydali", amount: 50, ts: now.getTime() - 2 * 24 * 60 * 60 * 1000 }, // 2 gün önce — içeride
+      { type: "faydali", amount: 50, ts: now.getTime() - 10 * 24 * 60 * 60 * 1000 }, // 10 gün önce — DIŞARIDA
+      { type: "streak_7", amount: 50, ts: now.getTime() - 1 * 24 * 60 * 60 * 1000 }, // başka tip — sayılmaz
+    ];
+    assert.equal(weeklyEarnedByType(events, "faydali", now), 50);
+  });
+  test("weeklyEarnedByType: boş/eksik girdide çökmez", () => {
+    assert.equal(weeklyEarnedByType([], "faydali"), 0);
+    assert.equal(weeklyEarnedByType(null, "faydali"), 0);
+  });
+
+  test("remainingFaydaliWeeklyCap: tavana yaklaştıkça azalır, asla negatif dönmez", () => {
+    const now = new Date("2026-07-20T12:00:00Z");
+    const events = [{ type: "faydali", amount: FAYDALI_WEEKLY_CAP + 500, ts: now.getTime() }];
+    assert.equal(remainingFaydaliWeeklyCap(events, now), 0);
+    assert.equal(remainingFaydaliWeeklyCap([], now), FAYDALI_WEEKLY_CAP);
+  });
+}
+
+console.log("Topluluk Fikirleri — veri katmanı saf fonksiyonu + Supabase boş-durum (AK-090)");
+{
+  const {
+    tallyReactions, fetchIdeas, fetchIdeasByUser, fetchIdeasCount, fetchReactionCounts,
+    fetchMyReactions, fetchTodayKatilmiyorumCount, createIdea, reactToIdea, reportIdea,
+  } = await import("../src/lib/ideas.js");
+
+  test("tallyReactions: idea başına faydalı/katılmıyorum sayaçları doğru çıkar", () => {
+    const rows = [
+      { idea_id: "i1", type: "faydali" }, { idea_id: "i1", type: "faydali" },
+      { idea_id: "i1", type: "katilmiyorum" }, { idea_id: "i2", type: "faydali" },
+    ];
+    const t = tallyReactions(rows, ["i1", "i2", "i3"]);
+    assert.deepEqual(t.i1, { faydali: 2, katilmiyorum: 1 });
+    assert.deepEqual(t.i2, { faydali: 1, katilmiyorum: 0 });
+    assert.deepEqual(t.i3, { faydali: 0, katilmiyorum: 0 }); // hiç reaksiyon yoksa da dürüst 0
+  });
+  test("tallyReactions: boş/eksik girdide çökmez", () => {
+    assert.deepEqual(tallyReactions(null, ["i1"]), { i1: { faydali: 0, katilmiyorum: 0 } });
+    assert.deepEqual(tallyReactions([], null), {});
+  });
+
+  const ideas = await fetchIdeas();
+  const byUser = await fetchIdeasByUser("u1");
+  const count = await fetchIdeasCount("u1");
+  const counts = await fetchReactionCounts(["i1"]);
+  const mine = await fetchMyReactions(["i1"], "u1");
+  const todayCount = await fetchTodayKatilmiyorumCount("u1");
+  const createRes = await createIdea("u1", { symbol: "BTC", thesis: "kısa" });
+  const reactRes = await reactToIdea("i1", "u2", "u1", "faydali");
+  const reportRes = await reportIdea("i1", "u1", "spam");
+  test("Supabase yapılandırılmamışken tüm ideas sorguları dürüst boş değer döner (D6)", () => {
+    assert.deepEqual(ideas, []);
+    assert.deepEqual(byUser, []);
+    assert.equal(count, 0);
+    assert.deepEqual(counts, {});
+    assert.deepEqual(mine, {});
+    assert.equal(todayCount, 0);
+    assert.equal(createRes.ok, false);
+    assert.equal(reactRes.ok, false);
+    assert.equal(reportRes.ok, false);
+  });
+
+  // createIdea/reactToIdea'nın SUPABASE'E GİTMEDEN önce (client-side) reddettiği durumlar —
+  // top-level await ile önce çözülür, test() senkron doğrular (dosyanın genel deseni).
+  const shortThesisRes = await createIdea("u1", { symbol: "BTC", thesis: "çok kısa bir şey" });
+  const selfReactRes = await reactToIdea("i1", "u1", "u1", "faydali");
+  const badTypeRes = await reactToIdea("i1", "u2", "u1", "begendim");
+  test("createIdea: thesis çok kısaysa reddedilir (client-side ön kontrol)", () => {
+    assert.equal(shortThesisRes.ok, false);
+    assert.match(shortThesisRes.error, /tez/i);
+  });
+  test("reactToIdea: kendi fikrine tepki veremez", () => {
+    assert.equal(selfReactRes.ok, false);
+    assert.match(selfReactRes.error, /kendi/i);
+  });
+  test("reactToIdea: geçersiz tepki tipi reddedilir", () => {
+    assert.equal(badTypeRes.ok, false);
+  });
+}
+
+console.log("profileStats.ideasCount — gerçek fikir sayısı toplama eklendi (AK-090/C8)");
+{
+  const { ideasCount } = await import("../src/lib/profileStats.js");
+
+  test("ideasCount: 3 parametreli çağrı — doğrulanmış strateji + tahmin + gerçek fikir toplamı", () => {
+    assert.equal(ideasCount(3, 5, 2), 10);
+  });
+  test("ideasCount: realIdeas verilmezse eski 2-parametreli davranış AYNEN korunur (geriye uyumlu)", () => {
+    assert.equal(ideasCount(3, 5), 8);
+  });
+  test("ideasCount: negatif realIdeas negatife düşürmez", () => {
+    assert.equal(ideasCount(1, 1, -5), 2);
+  });
+}
+
 console.log(`\n${pass} test geçti${process.exitCode ? " (HATALAR VAR)" : " — motor sağlam."}`);
