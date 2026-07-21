@@ -30,7 +30,7 @@ language sql
 volatile
 set search_path = public
 as $$
-  select encode(gen_random_bytes(6), 'hex');
+  select encode(gen_random_bytes(12), 'hex');
 $$;
 
 -- ============================================================
@@ -102,10 +102,23 @@ create index if not exists waitlist_entries_referred_by_code_idx
 do $$
 begin
   if to_regclass('public.waitlist') is not null then
-    insert into public.waitlist_entries (email, joined_at)
-    select lower(trim(email)), created_at
-    from public.waitlist
-    on conflict (email) do nothing;
+    if exists (
+      select 1
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'waitlist'
+        and column_name = 'created_at'
+    ) then
+      insert into public.waitlist_entries (email, joined_at)
+      select lower(trim(email)), created_at
+      from public.waitlist
+      on conflict (email) do nothing;
+    else
+      insert into public.waitlist_entries (email)
+      select lower(trim(email))
+      from public.waitlist
+      on conflict (email) do nothing;
+    end if;
   end if;
 end
 $$;
@@ -163,10 +176,10 @@ begin
   left join public.waitlist_entries inviter_waitlist
     on inviter_waitlist.referral_code = we.referred_by_code
   left join auth.users inviter_user
-    on lower(inviter_user.email) = lower(inviter_waitlist.email)
+    on lower(inviter_user.email) = inviter_waitlist.email
   left join public.contributors inviter_contributor
     on inviter_contributor.user_id = inviter_user.id
-  where lower(we.email) = lower(new.email)
+  where we.email = lower(new.email)
     and we.status = 'invited'
   order by we.joined_at asc
   limit 1;
@@ -219,7 +232,7 @@ drop policy if exists "waitlist_select_own_or_admin" on public.waitlist_entries;
 create policy "waitlist_select_own_or_admin"
   on public.waitlist_entries for select
   using (
-    lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+    email = lower(coalesce(auth.jwt() ->> 'email', ''))
     or public.is_admin()
   );
 
@@ -247,5 +260,5 @@ as
     and c.privilege_level <> 'standard';
 
 comment on view public.my_privileges is
-  'Standard dışı privilege_level''a sahip kullanıcının kendi ayrıcalıklarını döner. '
+  'Standard privilege_level kullanıcıları için bilerek boş döner; yalnız standard dışı kullanıcının kendi ayrıcalıklarını döner. '
   'Frontend''de "ayrıcalıklarım" ekranı için kullanılır, admin paneli değildir.';
