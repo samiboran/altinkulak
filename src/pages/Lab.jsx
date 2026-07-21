@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { FlaskConical, Code2, Activity, Play, Pause, SkipBack, SkipForward, RotateCcw, ShieldCheck, ShieldAlert, Search, SlidersHorizontal, Monitor, Dices, Calculator, LayoutGrid, Target, Download, PenTool, ChevronLeft, ChevronRight, Film, Maximize2, X } from "lucide-react";
 import { getBars, MARKET_GROUPS, ALL_SYMBOLS, loadReal, isReal, hasData, pairFor, tfOf, TIMEFRAMES, stats24h } from "../lib/data.js";
 import { atr } from "../lib/detectors.js";
@@ -529,6 +529,18 @@ export default function Lab() {
   }, []);
 
   function pick(s) { setSymbol(s.sym); setQuery(s.sym); setDebounced(s.sym); setOpen(false); setRes(null); }
+
+  // AK-102: Alarm Geçmişi'nden "grafikte gör" — /lab?sym=X ile açılırsa o sembole geçilir.
+  // Seviyelerin kendisi (giriş/TP/SL) Izleme.jsx tarafından zaten ak_draw_${sym}'e yazılmıştır
+  // (bkz. src/lib/chartHandoff.js) — Chart.jsx symbol değişince bunu KENDİSİ okur, burada ayrıca
+  // bir şey yapmaya gerek yok. Yalnız MOUNT'ta okunur — sekme içindeyken kullanıcı sembol
+  // değiştirirse URL'deki eski ?sym= onu geri almaya çalışmasın.
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    const sym = searchParams.get("sym");
+    if (sym) pick({ sym: sym.toUpperCase() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function downloadChartPNG() {
     const svg = document.getElementById("ak-main-chart");

@@ -28,6 +28,19 @@ export async function fetchWebhookEntry(userId, sym) {
   return data;
 }
 
+// AK-102: kullanıcının TÜM tetiklenmiş Pine Code webhook'ları — "Pine Code Tetiklenmeleri"
+// bölümü için (Alarm Geçmişi'nden AYRI kaynak: platformun kendi Avcı kuralı değil, kullanıcının
+// KENDİ TradingView alert'i). En son tetiklenen en üstte.
+export async function listTriggeredWebhookEntries(userId) {
+  if (!supabase || !userId) return [];
+  const { data, error } = await supabase
+    .from("izleme_entries").select("*")
+    .eq("user_id", userId).eq("webhook_status", "tetiklendi")
+    .order("last_triggered_at", { ascending: false });
+  if (error) return [];
+  return data || [];
+}
+
 // Yoksa oluşturur (token/status DB tarafında üretilir — bkz. 010_izleme_webhook.sql default'ları),
 // varsa mevcut kaydı döner. unique(user_id, sym) çakışmasında (23505) ikinci bir SELECT ile
 // mevcut satır getirilir — iki sekmede aynı ana aynı anda tıklarsa yarış durumuna dayanıklı.

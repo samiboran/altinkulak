@@ -6,7 +6,7 @@ import { runBacktest, latestFvgSignal } from "../src/lib/backtest.js";
 import { getBars, parseKlines, loadReal, isReal, pairFor, hasData, stats24h, getFreshness, freshnessStatus, getSearchSymbols, ALL_SYMBOLS } from "../src/lib/data.js";
 import { decimalsFromTick, tickSizeForPair, formatPriceTick } from "../src/lib/priceFormat.js";
 import { generateWebhookToken, buildWebhookUrl, isRateLimited, processWebhookTrigger, RATE_LIMIT_MS, isPayloadTooLarge, MAX_PAYLOAD_BYTES } from "../src/lib/izlemeWebhookCore.js";
-import { fetchWebhookEntry, getOrCreateWebhookEntry, webhookUrlFor } from "../src/lib/izlemeEntries.js";
+import { fetchWebhookEntry, getOrCreateWebhookEntry, webhookUrlFor, listTriggeredWebhookEntries } from "../src/lib/izlemeEntries.js";
 import {
   lastClosedFourHourBoundary, isHistoryCacheFresh, getCachedHistory, setCachedHistory,
   computeHistory, getOrComputeHistory,
@@ -305,6 +305,11 @@ test("izlemeEntries.js: Supabase yapılandırılmamışken tüm sorgular dürüs
   assert.equal(await getOrCreateWebhookEntry("u1", "TRX"), null);
   assert.equal(await fetchWebhookEntry(null, "TRX"), null); // userId yok → sorgulanmaz
   assert.equal(await getOrCreateWebhookEntry("u1", ""), null); // sym yok → sorgulanmaz
+});
+test("AK-102: listTriggeredWebhookEntries — Supabase yapılandırılmamışken/userId yokken dürüst boş dizi (D6)", async () => {
+  assert.deepEqual(await listTriggeredWebhookEntries("u1"), []);
+  assert.deepEqual(await listTriggeredWebhookEntries(null), []);
+  assert.deepEqual(await listTriggeredWebhookEntries(""), []);
 });
 test("webhookUrlFor: Supabase yapılandırılmamışken/token yokken null (fabrike URL üretilmez)", () => {
   assert.equal(webhookUrlFor("abc123"), null); // bu test ortamında VITE_SUPABASE_URL boş
@@ -886,6 +891,117 @@ test("fibLevel=0.618 (varsayılan) eski inOTE bandı ile birebir aynı davranır
   const a = detectModBSignals(bars, "TEST").length;
   const b = detectModBSignals(bars, "TEST", { fibLevel: 0.618 }).length;
   assert.equal(a, b);
+});
+
+console.log("AK-102: Avcı — opsiyonel confluence filtreleri (OB/BOS/Mitigation/Order Flow/Fibonacci)");
+test("REGRESYON: concepts:[] (varsayılan) eski davranışla birebir aynı — filtre YOK sayılır", () => {
+  const bars = buildModBBars();
+  const a = detectModBSignals(bars, "TEST");
+  const b = detectModBSignals(bars, "TEST", { concepts: [] });
+  assert.deepEqual(a, b);
+});
+test("confluence filtresi FVG'nin YERİNE geçmez, ÜZERİNE AND'lenir: herhangi bir kavram seçilince sinyal sayısı ASLA artmaz, yalnız azalabilir/aynı kalabilir", () => {
+  const bars = buildModBBars();
+  const base = detectModBSignals(bars, "TEST").length;
+  for (const c of ["ob", "bos", "mit", "of", "fib"]) {
+    const n = detectModBSignals(bars, "TEST", { concepts: [c] }).length;
+    assert.ok(n <= base, `concepts:[${c}] sinyal sayısını artırdı: ${n} > ${base}`);
+  }
+  const allFive = detectModBSignals(bars, "TEST", { concepts: ["ob", "bos", "mit", "of", "fib"] }).length;
+  assert.ok(allFive <= base, "beş kavram birden AND'lenince sinyal sayısı taban değerden fazla olamaz");
+});
+test("dişleri var: bu fikstürde OB ve Mitigation confluence'ı GERÇEKTEN reddeder (no-op filtre değil)", () => {
+  const bars = buildModBBars();
+  assert.equal(detectModBSignals(bars, "TEST").length, 1); // taban: filtresiz sinyal var
+  assert.equal(detectModBSignals(bars, "TEST", { concepts: ["ob"] }).length, 0, "OB confluence'ı bu fikstürde sinyali reddetmeliydi");
+  assert.equal(detectModBSignals(bars, "TEST", { concepts: ["mit"] }).length, 0, "Mitigation confluence'ı bu fikstürde sinyali reddetmeliydi");
+});
+test("geçersiz/bilinmeyen concept string'i sessizce yok sayılır, motor çökmez", () => {
+  const bars = buildModBBars();
+  const sigs = detectModBSignals(bars, "TEST", { concepts: ["boyle-bir-sey-yok"] });
+  assert.ok(Array.isArray(sigs));
+});
+
+console.log("AK-102: Alarm Geçmişi — hedef2'ye ayrıca ulaşılıp ulaşılmadığı (won kapanışta)");
+// alarmTrades.js `localStorage` global'ini doğrudan kullanır (store enjeksiyonu yok) — Node'da
+// gerçek localStorage olmadığından bu blok İÇİN geçici, izole bir sahte store kurup hemen
+// sonra kaldırır (diğer testleri etkilememesi için — özellikle portfolio.js/izlemeHistory.js
+// gibi `typeof localStorage !== "undefined"` kontrolüyle "yapılandırılmamış" dalına düşen testler).
+{
+  const fakeLS = (() => {
+    const m = new Map();
+    return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) };
+  })();
+  globalThis.localStorage = fakeLS;
+  const { addAlarmTrade, checkOpenAlarmTrades } = await import("../src/lib/alarmTrades.js");
+
+  test("checkOpenAlarmTrades: hedef1 vurulup ardından hedef2'ye de dokunulursa hitHedef2 true", () => {
+    addAlarmTrade({ id: "ak102-t1", sym: "AK102A", dir: 1, entry: 100, stop: 90, hedef1: 110, hedef2: 130, barIndex: 5, time: 1000 });
+    const bars = [];
+    for (let i = 0; i <= 5; i++) bars.push({ o: 100, h: 100, l: 100, c: 100, time: i });
+    bars.push({ o: 100, h: 112, l: 99, c: 111, time: 6 });  // hedef1 (110) vurulur -> won, exitIdx=6
+    bars.push({ o: 111, h: 135, l: 110, c: 130, time: 7 }); // hedef2 (130) de vurulur
+    const closed = checkOpenAlarmTrades("AK102A", bars);
+    assert.equal(closed.length, 1);
+    assert.equal(closed[0].status, "won");
+    assert.equal(closed[0].hitHedef2, true);
+  });
+  test("checkOpenAlarmTrades: hedef1 vurulur ama elde hedef2'ye ulaşan bar yoksa hitHedef2 false (dürüst — fabrike 'ulaştı' iddiası yok)", () => {
+    addAlarmTrade({ id: "ak102-t2", sym: "AK102B", dir: 1, entry: 100, stop: 90, hedef1: 110, hedef2: 130, barIndex: 5, time: 1000 });
+    const bars = [];
+    for (let i = 0; i <= 5; i++) bars.push({ o: 100, h: 100, l: 100, c: 100, time: i });
+    bars.push({ o: 100, h: 112, l: 99, c: 111, time: 6 }); // yalnız hedef1 vurulur, veri burada biter
+    const closed = checkOpenAlarmTrades("AK102B", bars);
+    assert.equal(closed.length, 1);
+    assert.equal(closed[0].status, "won");
+    assert.equal(closed[0].hitHedef2, false);
+  });
+  test("checkOpenAlarmTrades: stop önce vurulursa lost, kayıttaki stop alanı (SL fiyatı) aynen kalır", () => {
+    addAlarmTrade({ id: "ak102-t3", sym: "AK102C", dir: 1, entry: 100, stop: 90, hedef1: 110, hedef2: 130, barIndex: 5, time: 1000 });
+    const bars = [];
+    for (let i = 0; i <= 5; i++) bars.push({ o: 100, h: 100, l: 100, c: 100, time: i });
+    bars.push({ o: 100, h: 101, l: 89, c: 90, time: 6 }); // stop (90) vurulur
+    const closed = checkOpenAlarmTrades("AK102C", bars);
+    assert.equal(closed.length, 1);
+    assert.equal(closed[0].status, "lost");
+    assert.equal(closed[0].stop, 90);
+  });
+
+  delete globalThis.localStorage;
+}
+
+console.log("AK-102: 'Grafikte gör' — Alarm Geçmişi seviyelerinin Chart.jsx çizimlerine eklenmesi");
+const { buildHandoffDraws, seedChartLevels } = await import("../src/lib/chartHandoff.js");
+test("buildHandoffDraws: boş çizimlere position (giriş/TP1/SL) + hedef2 için hline ekler", () => {
+  const draws = buildHandoffDraws([], 42, { entry: 100, stop: 90, hedef1: 110, hedef2: 130 });
+  assert.equal(draws.length, 2);
+  assert.equal(draws[0].type, "position");
+  assert.equal(draws[0].entry, 100); assert.equal(draws[0].tp, 110); assert.equal(draws[0].sl, 90);
+  assert.equal(draws[1].type, "hline"); assert.equal(draws[1].price, 130);
+});
+test("buildHandoffDraws: hedef2 yoksa yalnız position eklenir (hline yok)", () => {
+  const draws = buildHandoffDraws([], 42, { entry: 100, stop: 90, hedef1: 110, hedef2: null });
+  assert.equal(draws.length, 1);
+  assert.equal(draws[0].type, "position");
+});
+test("buildHandoffDraws: aynı entry/tp/sl'ye sahip position zaten varsa TEKRAR eklenmez (ikinci tıklama çoğaltmaz)", () => {
+  const existing = [{ id: "x", type: "position", i: 10, entry: 100, tp: 110, sl: 90 }];
+  const draws = buildHandoffDraws(existing, 42, { entry: 100, stop: 90, hedef1: 110, hedef2: 130 });
+  assert.deepEqual(draws, []);
+});
+test("buildHandoffDraws: kullanıcının kendi FARKLI çizimlerine dokunmaz, yalnız ekler (additive)", () => {
+  const existing = [{ id: "user1", type: "trendline", a: { i: 1, price: 1 }, b: { i: 2, price: 2 } }];
+  const draws = buildHandoffDraws(existing, 42, { entry: 100, stop: 90, hedef1: 110, hedef2: 130 });
+  assert.equal(draws.length, 2); // kullanıcının trendline'ı sayılmaz, yeni ekleme normal şekilde üretilir
+});
+test("seedChartLevels: fakeStore'a yazar, ikinci çağrıda (aynı seviyeler) tekrar eklemez", () => {
+  const store = fakeStore();
+  const a1 = seedChartLevels("TESTSYM", 5, { entry: 100, stop: 90, hedef1: 110, hedef2: 130 }, store);
+  assert.equal(a1.length, 2);
+  const a2 = seedChartLevels("TESTSYM", 5, { entry: 100, stop: 90, hedef1: 110, hedef2: 130 }, store);
+  assert.equal(a2.length, 0); // zaten eklenmiş
+  const saved = JSON.parse(store.getItem("ak_draw_TESTSYM"));
+  assert.equal(saved.length, 2); // çoğalmadı
 });
 
 console.log("Profil vitrini — Supabase sorguları (AK-077)");

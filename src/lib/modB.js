@@ -1,13 +1,17 @@
 // Sistemim — kullanicinin kendi ayarladigi kural: 4H EMA bias + siki FVG (<MAX_GAP_ATR x ATR14) + OTE (fib bolgesi) + onay mumu.
 // Saf fonksiyon: input bars -> sinyal listesi. UI/bildirim burada yok (bkz. notify.js, Izleme.jsx).
 // DEFAULT_PARAMS = eskiden "Mod B v1.1" olarak sabitlenmis, dogrulanmis degerler — artik yalnizca baslangic sablonu.
-import { ema, atr, findFib, fibSideOk } from "./detectors.js";
+import { ema, atr, findFib, fibSideOk, findOrderBlocks, isNearOB, trendArr, findMitigation, orderFlowArr } from "./detectors.js";
 
 export const DEFAULT_PARAMS = {
   maxGapAtr: 0.3,  // FVG, ATR14'un bu katindan dar olmali (siki bosluk)
   riskMult: 2,     // R (risk birimi) = riskMult x ATR14(sinyal barinda)
   emaPeriod: 50,   // bias EMA periyodu
   fibLevel: 0.618, // OTE bolgesinin merkez fib orani
+  concepts: [],    // AK-102: opsiyonel confluence filtreleri — "ob"|"bos"|"mit"|"of"|"fib". Boşsa
+                    // (varsayılan) ESKİ davranışla birebir aynı — bu, FVG'nin YERİNE geçen bağımsız
+                    // bir dedektör seçimi DEĞİL, backtest.js'teki filterGaps ile AYNI kavramda:
+                    // seçilen her kavram FVG girişine EK bir AND-filtresi olarak uygulanır.
 };
 
 // 3 barlik FVG: bars[i-2] ile bars[i] arasindaki dokunulmamis bosluk.
@@ -39,6 +43,16 @@ export function detectModBSignals(bars, sym = "", params = {}) {
   const a14 = atr(bars, 14);
   const out = [];
 
+  // AK-102: concept dizileri döngü İÇİNDE değil, İÇİNDE İHTİYAÇ duyulursa BİR KEZ hesaplanır
+  // (O(n²) değil) — backtest.js'teki filterGaps'in aynısı, yalnız FVG üzerine AND-filtre.
+  const concepts = p.concepts || [];
+  const useOB = concepts.includes("ob"), useBOS = concepts.includes("bos");
+  const useMit = concepts.includes("mit"), useOF = concepts.includes("of"), useFib2 = concepts.includes("fib");
+  const obs = useOB ? findOrderBlocks(bars) : null;
+  const tArr = useBOS ? trendArr(bars) : null;
+  const mits = useMit ? findMitigation(bars) : null;
+  const ofArr = useOF ? orderFlowArr(bars) : null;
+
   for (let i = 2; i < bars.length - 1; i++) {
     if (e50[i] == null || !a14[i]) continue;
 
@@ -56,6 +70,16 @@ export function detectModBSignals(bars, sym = "", params = {}) {
     const fib = findFib(bars.slice(0, i + 1));
     const mid = (gap.lo + gap.hi) / 2;
     if (!inOTECustom(mid, fib, p.fibLevel) || !fibSideOk(mid, fib, dir)) continue;
+
+    // 3b) AK-102: isteğe bağlı confluence filtreleri (hiçbiri seçili değilse atlanır, eski davranış)
+    if (concepts.length) {
+      const tol = a14[i] * 0.6;
+      if (useOB && !isNearOB(mid, obs, tol)) continue;
+      if (useBOS && tArr[i] !== dir) continue;
+      if (useMit && !isNearOB(mid, mits, tol)) continue;
+      if (useOF && ofArr[i] !== dir) continue;
+      if (useFib2 && !fibSideOk(mid, findFib(bars.slice(0, i + 1), 50), dir)) continue;
+    }
 
     // 4) onay mumu: bir sonraki bar, bias yonunde kapanir
     const conf = bars[i + 1];

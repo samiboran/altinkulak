@@ -1,13 +1,15 @@
 import { useState, useEffect } from "react";
-import { Eye, Plus, Trash2, ShieldCheck, Bell, BellRing, Settings, Star, Wallet, X, Link2, Copy, Check, History } from "lucide-react";
+import { Link as RouterLink } from "react-router-dom";
+import { Eye, Plus, Trash2, ShieldCheck, Bell, BellRing, Settings, Star, Wallet, X, Link2, Copy, Check, History, LineChart } from "lucide-react";
 import { getBars, loadReal, isReal, hasData, stats24h, getFreshness, getSearchSymbols, loadTop500Symbols, pairFor } from "../lib/data.js";
 import { periodChangePct, WEEK_BARS, DETAIL_PERIODS } from "../lib/priceChange.js";
 import { getOrComputeHistory } from "../lib/izlemeHistory.js";
 import { formatPriceTick } from "../lib/priceFormat.js";
-import { fetchWebhookEntry, getOrCreateWebhookEntry, webhookUrlFor } from "../lib/izlemeEntries.js";
+import { fetchWebhookEntry, getOrCreateWebhookEntry, webhookUrlFor, listTriggeredWebhookEntries } from "../lib/izlemeEntries.js";
 import { detectModBSignals, DEFAULT_PARAMS } from "../lib/modB.js";
 import { requestNotifyPermission, notify, isSeen, markSeen } from "../lib/notify.js";
 import { addAlarmTrade, checkOpenAlarmTrades, listAlarmTrades } from "../lib/alarmTrades.js";
+import { seedChartLevels } from "../lib/chartHandoff.js";
 import { useAuth } from "../lib/AuthProvider.jsx";
 import { useAuthGate } from "../lib/AuthGate.jsx";
 import PortfolioPanel from "../components/PortfolioPanel.jsx";
@@ -29,9 +31,13 @@ function loadHistoryOn() { try { return new Set(JSON.parse(localStorage.getItem(
 function loadSystem() {
   try {
     const saved = JSON.parse(localStorage.getItem(SKEY));
-    if (saved && typeof saved === "object") return { name: "Sistemim", ...DEFAULT_PARAMS, ...saved };
+    // AK-102: historyDays — Alarm Geçmişi'nde "kaç gün öncesine kadar göster" filtresi. modB.js'in
+    // DEFAULT_PARAMS'ına BİLEREK eklenmedi (o sinyal ÜRETİM parametreleri, bu salt bir GÖRÜNTÜLEME
+    // filtresi) — 0 = tümü (varsayılan, filtre uygulanmadığında ESKİ davranışla birebir aynı).
+    // concepts DEFAULT_PARAMS'tan geliyor (modB.js) — []=hiçbiri seçili değil, eski davranış.
+    if (saved && typeof saved === "object") return { name: "Sistemim", historyDays: 0, ...DEFAULT_PARAMS, ...saved };
   } catch {}
-  return { name: "Sistemim", ...DEFAULT_PARAMS };
+  return { name: "Sistemim", historyDays: 0, ...DEFAULT_PARAMS };
 }
 function loadBadgeSeen() { try { return new Set(JSON.parse(localStorage.getItem(BADGE_KEY)) || []); } catch { return new Set(); } }
 function saveBadgeSeen(set) { try { localStorage.setItem(BADGE_KEY, JSON.stringify([...set])); } catch { /* dolu — önemsiz */ } }
@@ -180,8 +186,8 @@ function WatchDetailModal({ row, fmtP, onClose, userId, requireAuth, onToggleHis
         {row.showHistory && <p className="ak-izle-note">Edge rozeti geçmiş 900 barın ölçümüdür, gelecek vaadi/yatırım tavsiyesi değildir. Giriş/TP/SL geçmiş simülasyondur, yatırım tavsiyesi değildir.</p>}
 
         <div className="ak-webhook">
-          <h4><Link2 size={13} /> Code'a bağla</h4>
-          <p className="ak-izle-note">Bu linki TradingView alert'inin webhook alanına yapıştır. Tetiklendiğinde bu kart "tetiklendi" rozetiyle güncellenir — otomatik işlem/pozisyon AÇILMAZ.</p>
+          <h4><Link2 size={13} /> Code'a bağla <span className="ak-soon">Kaynak: Pine Code</span></h4>
+          <p className="ak-izle-note">Bu linki TradingView alert'inin webhook alanına yapıştır. Tetiklendiğinde bu kart "tetiklendi" rozetiyle güncellenir — otomatik işlem/pozisyon AÇILMAZ. Bu, platformun kendi Avcı kuralından (Alarm Geçmişi) AYRI bir kaynaktır — kendi alert'ine bağlısın.</p>
           {!webhook ? (
             <button className="ak-btn ak-btn-secondary sm" onClick={connectWebhook} disabled={whBusy}>
               <Link2 size={14} /> {whBusy ? "Bağlanıyor…" : "Code'a bağla"}
@@ -256,6 +262,16 @@ export default function Izleme() {
   const [historyOn, setHistoryOn] = useState(loadHistoryOn);
   const [detailSym, setDetailSym] = useState(null); // AK-089: satıra dokunma → detay ekranı (WatchDetailModal)
   const [alarmHistory, setAlarmHistory] = useState(listAlarmTrades); // AK-076: sinyal geldiğinde otomatik açılan hayali işlemler
+  // AK-102: Pine Code Tetiklenmeleri — Alarm Geçmişi'nden AYRI kaynak (platformun kendi Avcı
+  // kuralı değil, kullanıcının KENDİ TradingView alert'i). Yalnız girişliyken vardır (webhook
+  // Supabase'te tutulur, D6 — girişsizken/yapılandırılmamışken zaten boş dizi döner).
+  const [pineTriggers, setPineTriggers] = useState([]);
+  useEffect(() => {
+    let on = true;
+    if (user?.id) listTriggeredWebhookEntries(user.id).then((rows) => { if (on) setPineTriggers(rows); });
+    else setPineTriggers([]);
+    return () => { on = false; };
+  }, [user?.id]);
   useEffect(() => { try { localStorage.setItem(WKEY, JSON.stringify(list)); } catch {} }, [list]);
   useEffect(() => { try { localStorage.setItem(FAV_KEY, JSON.stringify([...favorites])); } catch {} }, [favorites]);
   useEffect(() => { try { localStorage.setItem(HISTORY_ON_KEY, JSON.stringify([...historyOn])); } catch {} }, [historyOn]);
@@ -347,10 +363,33 @@ export default function Izleme() {
 
   async function enableNotify() { setNotifyPerm(await requestNotifyPermission()); }
 
+  // AK-102: "kaç gün öncesine kadar göster" — 0/tümü ise ESKİ davranış birebir korunur (filtre yok).
+  const filteredAlarmHistory = system.historyDays > 0
+    ? alarmHistory.filter((t) => t.openedAt >= Date.now() - system.historyDays * 86400000)
+    : alarmHistory;
+
+  // AK-102: "grafikte gör" — bu sinyalin giriş/TP/SL seviyelerini Lab.jsx'in grafiğine ekler
+  // (Chart.jsx'in KENDİ çizim aracı yeniden kullanılır, bkz. src/lib/chartHandoff.js). Bar indeksi
+  // olarak elimizdeki en güncel barlardan biri seçilir — orijinal sinyal barının TAM karşılığı
+  // değildir (semboller sürekli yeni bar aldığı için eski indeks kaymış olabilir), önemli olan
+  // fiyat SEVİYELERİnin doğru gösterilmesidir.
+  function openAlarmInChart(t) {
+    const bars = getBars(t.sym);
+    const anchorIdx = Math.max(0, (bars?.length || 1) - 5);
+    seedChartLevels(t.sym, anchorIdx, { entry: t.entry, stop: t.stop, hedef1: t.hedef1, hedef2: t.hedef2 });
+  }
+
   function add() { const s = q.trim().toUpperCase(); if (s && !list.includes(s)) setList(l => [...l, s]); setQ(""); }
   function del(s) { setList(l => l.filter(x => x !== s)); }
   function setParam(key, val) { setSystem(s => ({ ...s, [key]: val })); }
-  function resetSystem() { setSystem({ name: "Sistemim", ...DEFAULT_PARAMS }); }
+  function resetSystem() { setSystem({ name: "Sistemim", historyDays: 0, ...DEFAULT_PARAMS }); }
+  // AK-102: concept checkbox'ları — dizide varsa çıkar, yoksa ekle.
+  function toggleConcept(key) {
+    setSystem(s => {
+      const cur = s.concepts || [];
+      return { ...s, concepts: cur.includes(key) ? cur.filter(c => c !== key) : [...cur, key] };
+    });
+  }
   function toggleFav(sym) { setFavorites(f => { const n = new Set(f); n.has(sym) ? n.delete(sym) : n.add(sym); return n; }); }
   function toggleHistory(sym) { setHistoryOn(h => { const n = new Set(h); n.has(sym) ? n.delete(sym) : n.add(sym); return n; }); }
 
@@ -491,6 +530,31 @@ export default function Izleme() {
             <span>Fib/OTE seviyesi — {system.fibLevel.toFixed(3)}</span>
             <input type="range" min="0.5" max="0.786" step="0.001" value={system.fibLevel} onChange={e => setParam("fibLevel", Number(e.target.value))} />
           </label>
+
+          {/* AK-102: OB/BOS/Mitigation/Order Flow/Fibonacci — bunlar FVG'nin YERİNE geçen ayrı
+              sinyal kaynakları DEĞİL (Lab.jsx'in backtest motöründe de öyle çalışmıyor); seçilen
+              her kavram, mevcut FVG girişine EK bir "buna da uysun" şartı ekler. Hiçbiri seçili
+              değilken (varsayılan) davranış birebir eskisiyle aynıdır. */}
+          <div className="ak-sys-field">
+            <span>Ek onay şartı (opsiyonel — hiçbiri seçili değilse davranış değişmez)</span>
+            <div className="ak-sys-concepts">
+              {[
+                ["ob", "Order Block"], ["bos", "BOS"], ["mit", "Mitigation"],
+                ["of", "Order Flow"], ["fib", "Fibonacci (indirim/prim)"],
+              ].map(([key, label]) => (
+                <label key={key} className="ak-sys-concept-chip">
+                  <input type="checkbox" checked={(system.concepts || []).includes(key)} onChange={() => toggleConcept(key)} />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <label className="ak-sys-field">
+            <span>Alarm Geçmişi'nde kaç gün öncesine kadar göster — {system.historyDays > 0 ? `${system.historyDays} gün` : "tümü"}</span>
+            <input type="range" min="0" max="180" step="10" value={system.historyDays || 0} onChange={e => setParam("historyDays", Number(e.target.value))} />
+          </label>
+
           <button className="ak-btn ak-btn-secondary sm" onClick={resetSystem}>Varsayılana dön</button>
         </div>
       )}
@@ -584,23 +648,56 @@ export default function Izleme() {
 
       {alarmHistory.length > 0 && (
         <div className="ak-signals">
-          <h2>Alarm Geçmişi <span className="ak-soon">{alarmHistory.length} kayıt</span></h2>
+          <h2>Alarm Geçmişi <span className="ak-soon">Kaynak: Avcı</span> <span className="ak-soon">{filteredAlarmHistory.length} kayıt</span></h2>
           <div className="ak-signal-list">
-            {alarmHistory.slice(0, 15).map((t) => (
+            {filteredAlarmHistory.slice(0, 15).map((t) => (
               <div className={"ak-signal-row " + (t.dir === 1 ? "long" : "short")} key={t.id}>
                 <span className={"ak-alarm-status " + t.status}>{t.status === "open" ? "Açık" : t.status === "won" ? "Kazandı ✅" : "Kayıp ❌"}</span>
                 <span className="sy">{t.sym}</span>
                 <span className="dir">{t.dir === 1 ? "LONG" : "SHORT"}</span>
                 <span className="lv">Giriş <b>{fmtP(t.entry)}</b></span>
+                {/* AK-102: TP1/TP2 her zaman referans olarak görünür; TP2'ye o an ELİMİZDEKİ
+                    barlarla ulaşıldığı doğrulandıysa (hitHedef2) yeşil ✓ — dürüst sınır: veri
+                    kapanış sonrası biterse hedef2'ye sonradan ulaşılmış olsa bile bilinemez. */}
+                <span className="lv">TP1 <b className={t.status === "won" ? "pos" : ""}>{fmtP(t.hedef1)}</b></span>
+                {t.hedef2 != null && (
+                  <span className="lv">TP2 <b className={t.hitHedef2 ? "pos" : ""}>{fmtP(t.hedef2)}{t.status === "won" && (t.hitHedef2 ? " ✓" : " (henüz)")}</b></span>
+                )}
+                {t.status === "lost" && <span className="lv">SL <b className="neg">{fmtP(t.stop)}</b></span>}
+                <RouterLink className="ak-icon ak-alarm-chartlink" title="Grafikte gör" to={`/lab?sym=${t.sym}`} onClick={() => openAlarmInChart(t)}>
+                  <LineChart size={14} />
+                </RouterLink>
                 {t.status !== "open"
                   ? durationLabel(t.openedAt, t.closedAt) && <span className="ago">{durationLabel(t.openedAt, t.closedAt)} sürdü</span>
                   : timeAgo(t.openedAt) && <span className="ago">{timeAgo(t.openedAt)}</span>}
               </div>
             ))}
           </div>
-          <p className="ak-izle-note">Sinyal geldiğinde otomatik açılan hayali işlemler — gerçek para değildir, yalnız bu tarayıcıda saklanır.</p>
+          <p className="ak-izle-note">Sinyal geldiğinde otomatik açılan hayali işlemler — gerçek para değildir, yalnız bu tarayıcıda saklanır. Kaynak: platformun kendi Avcı kuralı (Pine Code webhook tetiklenmeleri ayrı bölümde).</p>
         </div>
       )}
+
+      {/* AK-102: Alarm Geçmişi ile KARIŞTIRILMASIN — bu, kullanıcının KENDİ TradingView alert'inden
+          webhook ile gelen tetiklenmeler. Platformun Avcı kuralıyla hiçbir ilgisi yok, bilinçli
+          olarak ayrı bir bölüm/başlık altında. */}
+      {pineTriggers.length > 0 && (
+        <div className="ak-signals">
+          <h2>Pine Code Tetiklenmeleri <span className="ak-soon">Kaynak: Pine Code</span> <span className="ak-soon">{pineTriggers.length} kayıt</span></h2>
+          <div className="ak-signal-list">
+            {pineTriggers.slice(0, 15).map((w) => (
+              <div className="ak-signal-row" key={w.id}>
+                <span className="ak-alarm-status won">Tetiklendi</span>
+                <span className="sy">{w.sym}</span>
+                {timeAgo(w.last_triggered_at ? new Date(w.last_triggered_at).getTime() : null) && (
+                  <span className="ago">{timeAgo(new Date(w.last_triggered_at).getTime())}</span>
+                )}
+              </div>
+            ))}
+          </div>
+          <p className="ak-izle-note">Kendi TradingView alert'inden webhook ile gelen tetiklenmeler — otomatik işlem/pozisyon açmaz, yalnız bilgilendirir. Alarm Geçmişi (platformun Avcı kuralı) ile karıştırılmasın.</p>
+        </div>
+      )}
+
       {detailSym && (() => {
         const row = rows.find((r) => r.sym === detailSym);
         return row && !row.bad ? <WatchDetailModal row={row} fmtP={fmtP} onClose={() => setDetailSym(null)} userId={user?.id} requireAuth={requireAuth} onToggleHistory={toggleHistory} /> : null;

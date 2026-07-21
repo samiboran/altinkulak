@@ -40,6 +40,20 @@ export function addAlarmTrade(signal) {
   return rec;
 }
 
+// AK-102: hedef1 (won kapanış) sonrası — kapanış anında elde ne kadar bar varsa o kadarında
+// hedef2'ye de dokunulmuş mu, saf tarama. YALNIZ kapanış anında bir kez bakılır (trade "open"
+// olmaktan çıktığı için tekrar taranmaz) — dürüst sınır: hedef2 kapanıştan SONRA vurulursa
+// bu kayıtta görünmez (geriye dönük "aslında sonra ulaştı" bilgisi tutulmaz, D6 fabrike veri
+// yasağıyla tutarlı — ancak GERÇEKTEN gördüğümüz veriyi bildiririz).
+function hedef2ReachedByThen(bars, dir, fromIdx, hedef2) {
+  if (hedef2 == null) return false;
+  for (let j = fromIdx + 1; j < bars.length; j++) {
+    const hit = dir === 1 ? bars[j].h >= hedef2 : bars[j].l <= hedef2;
+    if (hit) return true;
+  }
+  return false;
+}
+
 // sym'e ait AÇIK kayıtları güncel bars ile kontrol eder; stop/hedef1'den hangisi önce vurulduysa
 // status'u "won"/"lost" yapıp kaydeder. Yeni kapananları döner (çağıran bildirim göndersin diye).
 export function checkOpenAlarmTrades(sym, bars) {
@@ -56,6 +70,7 @@ export function checkOpenAlarmTrades(sym, bars) {
     if (outcome == null) continue;
     t.status = outcome > 0 ? "won" : "lost";
     t.closedAt = bars[exitIdx]?.time ?? Date.now();
+    if (t.status === "won") t.hitHedef2 = hedef2ReachedByThen(bars, t.dir, exitIdx, t.hedef2);
     changed = true;
     closedNow.push(t);
   }

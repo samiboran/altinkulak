@@ -164,6 +164,9 @@ main{min-height:60vh;}
   }
   .ak-drawer-item.on{background:rgba(212,169,78,.08);color:var(--gold-2,#d4a94e);}
   .ak-drawer-item:active{opacity:.75;}
+  /* AK-102: navbar'daki .ak-burger, drawer aç ıkken kendi stacking context'i yüzünden bu portalın
+     altında kalıp tıklanamıyor — drawer'ın içinde garanti-tıklanabilir bir kapatma butonu. */
+  .ak-drawer-close{position:absolute;top:16px;right:14px;}
 }
 @media(prefers-reduced-motion:reduce){ .ak-drawer{animation:none;} }
 
