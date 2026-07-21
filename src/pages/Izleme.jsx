@@ -6,7 +6,7 @@ import { periodChangePct, WEEK_BARS, DETAIL_PERIODS } from "../lib/priceChange.j
 import { getOrComputeHistory } from "../lib/izlemeHistory.js";
 import { formatPriceTick } from "../lib/priceFormat.js";
 import { fetchWebhookEntry, getOrCreateWebhookEntry, webhookUrlFor, listTriggeredWebhookEntries } from "../lib/izlemeEntries.js";
-import { detectModBSignals, DEFAULT_PARAMS, describeConcepts } from "../lib/modB.js";
+import { detectModBSignals, DEFAULT_PARAMS, describeConcepts, isSignalPriceSane } from "../lib/modB.js";
 import { requestNotifyPermission, notify, isSeen, markSeen } from "../lib/notify.js";
 import { addAlarmTrade, checkOpenAlarmTrades, listAlarmTrades, removeAlarmTrade, pruneOldAlarmTrades } from "../lib/alarmTrades.js";
 import { seedChartLevels } from "../lib/chartHandoff.js";
@@ -322,11 +322,25 @@ export default function Izleme() {
       const all = [];
       const barsBySym = {};
       for (const sym of list) {
-        if (!hasData(sym)) continue;
+        // AK-104: hasData() curated semboller (BTC/ETH/.../BNB) için sentetik yedeği de "veri
+        // var" sayar — gerçek Binance isteği henüz dönmeden Avcı bu fabrike, start=100'den
+        // sürüklenen fiyatlarla sinyal üretip bildirim gönderiyordu (AK-101'de PortfolioPanel'de
+        // bulunanla AYNI hata sınıfı — BNB/TRX/DOGE'nin İzleme'deki gerçek fiyattan tamamen
+        // farklı görünen Giriş/Stop/Hedef değerlerinin kök nedeni). isReal() yalnız GERÇEK
+        // Binance verisi geldiyse true döner — Avcı asla sentetik/demo veriden sinyal üretmez.
+        if (!isReal(sym)) continue;
         const b = getBars(sym);
         if (!b || b.length < 60) continue;
         barsBySym[sym] = b;
-        all.push(...detectModBSignals(b, sym, system));
+        // AK-104 sağlık kontrolü: isReal() gate'i asıl savunma — bu yalnız son bir güvenlik ağı,
+        // sinyal fiyatı canlı fiyattan %50+ sapıyorsa (bir hata belirtisi) sessizce filtrelenir.
+        const livePrice = b[b.length - 1].c;
+        const sigs = detectModBSignals(b, sym, system).filter((s) => {
+          if (isSignalPriceSane(s.entry, livePrice)) return true;
+          console.warn(`[Avcı sağlık kontrolü] ${sym} sinyali canlı fiyattan aşırı sapıyor, filtrelendi — entry=${s.entry} canlı=${livePrice}`);
+          return false;
+        });
+        all.push(...sigs);
       }
       all.sort((a, b) => (b.time || 0) - (a.time || 0));
       const top = all.slice(0, 10);

@@ -19,6 +19,20 @@ export const DEFAULT_PARAMS = {
 // değişince etiket de değişir (önceden hep "FVG" sabit kalıyordu, seçim yansımıyordu).
 export const CONCEPT_LABELS = { ob: "Order Block", bos: "BOS", mit: "Mitigation", of: "Order Flow", fib: "Fibonacci" };
 
+// AK-104: sinyal sağlık kontrolü — üretilen bir sinyalin giriş fiyatı, o an bilinen CANLI
+// fiyattan çok sapıyorsa (yanlış sembol/ölçek/decimal ya da sentetik veriye yanlışlıkla düşme
+// gibi bir hatanın belirtisi) tespit eder. Ana savunma Izleme.jsx'teki isReal() gate'i — bu,
+// gelecekte AYNI hata sınıfı BAŞKA bir yoldan tekrar sızarsa son güvenlik ağı: sinyal sessizce
+// kullanıcıya gitmesin, konsola açıkça loglanıp filtrelensin.
+export function priceDeviationPct(price, livePrice) {
+  if (!Number.isFinite(price) || !Number.isFinite(livePrice) || livePrice === 0) return null;
+  return (Math.abs(price - livePrice) / Math.abs(livePrice)) * 100;
+}
+export function isSignalPriceSane(entry, livePrice, maxDeviationPct = 50) {
+  const dev = priceDeviationPct(entry, livePrice);
+  return dev == null ? true : dev <= maxDeviationPct; // canlı fiyat bilinmiyorsa reddetmeyiz — bilinemez durumda susturma yapmayız
+}
+
 // SAF fonksiyon: seçili concepts -> "FVG" ya da "FVG + Order Block + Mitigation" gibi okunur metin.
 export function describeConcepts(concepts) {
   const extra = (concepts || []).map((c) => CONCEPT_LABELS[c]).filter(Boolean);

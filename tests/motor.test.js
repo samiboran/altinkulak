@@ -12,7 +12,7 @@ import {
   computeHistory, getOrComputeHistory,
 } from "../src/lib/izlemeHistory.js";
 import { normalizeTop500 } from "../src/lib/top500.js";
-import { detectModBSignals, DEFAULT_PARAMS, describeConcepts } from "../src/lib/modB.js";
+import { detectModBSignals, DEFAULT_PARAMS, describeConcepts, priceDeviationPct, isSignalPriceSane } from "../src/lib/modB.js";
 import { applyTick, mergeGapFill } from "../src/lib/liveData.js";
 import {
   deriveBalance, deriveLifetime, monthlyEarned, remainingMonthlyCap, currentStreakDays,
@@ -941,6 +941,33 @@ test("shouldSnapOpen: yarısından azsa kapan, yarısı+ ise aç — ara durum y
   assert.equal(shouldSnapOpen(-SWIPE_REVEAL_PX / 2, SWIPE_REVEAL_PX), true);
   assert.equal(shouldSnapOpen(-SWIPE_REVEAL_PX, SWIPE_REVEAL_PX), true);
   assert.equal(shouldSnapOpen(0, SWIPE_REVEAL_PX), false);
+});
+
+console.log("AK-104: Avcı Sinyalleri fiyat ölçek uyuşmazlığı — kök neden kanıtı + sağlık kontrolü");
+test("KÖK NEDEN kanıtı: curated bir sembol (BNB) için hasData() true olabilir ama gerçek veri gelmeden isReal() false kalır — Avcı'nın tarama döngüsü YANLIŞLIKLA hasData() kullanıyordu, artık isReal() kullanıyor", () => {
+  assert.equal(hasData("BNB"), true); // PROFILES.BNB var — sentetik yedek her zaman "veri var" der
+  assert.equal(isReal("BNB"), false); // bu test ortamında ağ engelli, gerçek Binance verisi HİÇ gelmedi
+});
+test("priceDeviationPct: bilinen fiyatlar için doğru yüzde", () => {
+  assert.equal(priceDeviationPct(150, 100), 50);
+  assert.equal(priceDeviationPct(100, 100), 0);
+});
+test("priceDeviationPct: geçersiz/sıfır canlı fiyatta null döner (bilinemez durumda hesaplama yapılmaz)", () => {
+  assert.equal(priceDeviationPct(100, 0), null);
+  assert.equal(priceDeviationPct(100, NaN), null);
+  assert.equal(priceDeviationPct(NaN, 100), null);
+});
+test("isSignalPriceSane: bu görevin bildirdiği GERÇEK senaryo — sentetik BNB/TRX/DOGE girişleri, gerçek canlı fiyata göre SAĞLIKSIZ işaretlenir", () => {
+  assert.equal(isSignalPriceSane(39.61, 573.0), false);   // BNB: İzleme $573 — Avcı Giriş 39.61
+  assert.equal(isSignalPriceSane(25.20, 0.3297), false);  // TRX: İzleme $0.3297 — Avcı Giriş 25.20
+  assert.equal(isSignalPriceSane(1353, 0.0735), false);   // DOGE: İzleme $0.0735 — Avcı Giriş 1353
+});
+test("isSignalPriceSane: makul bir sapma (gerçek FVG girişi canlı fiyata yakın) sağlıklı sayılır", () => {
+  assert.equal(isSignalPriceSane(101, 100), true);
+  assert.equal(isSignalPriceSane(120, 100), true); // %20 sapma, varsayılan %50 eşiğinin altında
+});
+test("isSignalPriceSane: canlı fiyat bilinmiyorsa (null/NaN) reddetmez — bilinemez durumda susturma yapmaz", () => {
+  assert.equal(isSignalPriceSane(100, NaN), true);
 });
 
 console.log("AK-103: describeConcepts — üst bar etiketi seçili detector setini yansıtır");
