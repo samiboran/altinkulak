@@ -181,7 +181,7 @@
     {
       "id": "AK-098",
       "ne": "Sicil (ledger.js) localStorage'dan Supabase'e taşınması — append-only ledger_events, RLS ile silinemezlik garantisi, public rütbe yalnız edge_stats view'ından türetilir, girişte idempotent tek seferlik migrasyon akışı (D22)",
-      "durum": "⚪ backlog, Code'a yeni devredildi — SQL Fable tarafından yazılacak, bu handoff'ta henüz yok",
+      "durum": "🟡 KISMEN — SQL şeması docs/sql/AK098_ledger_events.sql olarak repoya eklendi (ledger_events + RLS + edge_stats view, Fable'ın verdiği içerikle birebir). Sami'nin Supabase SQL Editor'den elle çalıştırması VE iki doğrulama testini (edge_stats cross-user görünürlüğü, authenticated grant) yapması bekleniyor — bkz. dosyanın sonundaki NOT bloğu. ledger.js'in Supabase okuma/yazma + idempotent migrasyon akışı ve UI uyarı modalı HENÜZ YAZILMADI (araya AK-101 portföy bug'ları girdi, öncelik ona kaydı) — sıradaki oturum bu görevi client-side implementasyonla tamamlamalı.",
       "eski_adlar": [
         "AK-097 (Sonnet handoff'unda önerildi — main'de AK-097 zaten Chart.jsx viewBox/grafik-distorsiyon düzeltmesine atanmış VE TAMAMLANMIŞ durumdaydı, çakışma AK-098'e kaydırılarak çözüldü, 2026-07-19)"
       ]
