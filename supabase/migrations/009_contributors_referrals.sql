@@ -30,6 +30,8 @@ language sql
 volatile
 set search_path = public
 as $$
+  -- 12 random byte = 24 hex karakter (~96 bit entropy): kullanıcıya gösterilecek kadar kısa,
+  -- brute-force/çakışma açısından v1 ölçeği için yeterince güçlü.
   select encode(gen_random_bytes(12), 'hex');
 $$;
 
@@ -132,16 +134,18 @@ language plpgsql
 security definer
 set search_path = public, auth
 as $$
+declare
+  required_invite_count constant int := 2;
 begin
   if new.referred_by_code is not null then
     update public.waitlist_entries
     set invited_count = invited_count + 1,
         status = case
-          when invited_count + 1 >= 2 and status = 'pending' then 'invited'
+          when invited_count + 1 >= required_invite_count and status = 'pending' then 'invited'
           else status
         end,
         invited_at = case
-          when invited_count + 1 >= 2 and status = 'pending' then now()
+          when invited_count + 1 >= required_invite_count and status = 'pending' then now()
           else invited_at
         end
     where referral_code = new.referred_by_code
