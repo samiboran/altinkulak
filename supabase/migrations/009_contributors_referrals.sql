@@ -24,6 +24,15 @@ as $$
   );
 $$;
 
+create or replace function public.generate_referral_code()
+returns text
+language sql
+volatile
+set search_path = public
+as $$
+  select encode(gen_random_bytes(6), 'hex');
+$$;
+
 -- ============================================================
 -- contributors — görünen rozet + gerçek ayrıcalık seviyesi
 -- ============================================================
@@ -35,11 +44,12 @@ create table if not exists public.contributors (
   privilege_level text not null default 'standard'
     check (privilege_level in ('founding', 'core', 'standard')),
   contribution_count int not null default 0,
-  referral_code text unique not null default substr(md5(random()::text), 1, 8),
+  referral_code text unique not null default public.generate_referral_code(),
   referred_by uuid references public.contributors(id),
   awarded_by uuid references auth.users(id),
   awarded_at timestamptz not null default now(),
-  notes text
+  notes text,
+  check (referral_code = lower(referral_code))
 );
 
 comment on table public.contributors is
@@ -71,14 +81,15 @@ on conflict do nothing;
 -- ============================================================
 create table if not exists public.waitlist_entries (
   id uuid primary key default gen_random_uuid(),
-  email text unique not null,
-  referral_code text unique not null default substr(md5(random()::text), 1, 8),
+  email text unique not null check (email = lower(trim(email))),
+  referral_code text unique not null default public.generate_referral_code(),
   referred_by_code text references public.waitlist_entries(referral_code),
   invited_count int not null default 0,
   status text not null default 'pending'
     check (status in ('pending', 'invited', 'converted')),
   joined_at timestamptz not null default now(),
-  invited_at timestamptz
+  invited_at timestamptz,
+  check (referral_code = lower(referral_code))
 );
 
 comment on table public.waitlist_entries is
@@ -111,15 +122,17 @@ as $$
 begin
   if new.referred_by_code is not null then
     update public.waitlist_entries
-    set invited_count = invited_count + 1
-    where referral_code = new.referred_by_code;
-
-    update public.waitlist_entries
-    set status = 'invited',
-        invited_at = now()
+    set invited_count = invited_count + 1,
+        status = case
+          when invited_count + 1 >= 2 and status = 'pending' then 'invited'
+          else status
+        end,
+        invited_at = case
+          when invited_count + 1 >= 2 and status = 'pending' then now()
+          else invited_at
+        end
     where referral_code = new.referred_by_code
-      and invited_count >= 2
-      and status = 'pending';
+      and status in ('pending', 'invited');
   end if;
 
   return new;
@@ -142,21 +155,28 @@ set search_path = public, auth
 as $$
 declare
   matched_waitlist_id uuid;
+  matched_referred_by uuid;
 begin
-  select id
-  into matched_waitlist_id
-  from public.waitlist_entries
-  where lower(email) = lower(new.email)
-    and status = 'invited'
-  order by joined_at asc
+  select we.id, inviter_contributor.id
+  into matched_waitlist_id, matched_referred_by
+  from public.waitlist_entries we
+  left join public.waitlist_entries inviter_waitlist
+    on inviter_waitlist.referral_code = we.referred_by_code
+  left join auth.users inviter_user
+    on lower(inviter_user.email) = lower(inviter_waitlist.email)
+  left join public.contributors inviter_contributor
+    on inviter_contributor.user_id = inviter_user.id
+  where lower(we.email) = lower(new.email)
+    and we.status = 'invited'
+  order by we.joined_at asc
   limit 1;
 
   if matched_waitlist_id is null then
     return new;
   end if;
 
-  insert into public.contributors (user_id, notes)
-  values (new.id, 'Referral ile invited olduktan sonra kaydoldu.')
+  insert into public.contributors (user_id, referred_by, notes)
+  values (new.id, matched_referred_by, 'Referral ile invited olduktan sonra kaydoldu.')
   on conflict (user_id) do nothing;
 
   update public.waitlist_entries
@@ -227,5 +247,5 @@ as
     and c.privilege_level <> 'standard';
 
 comment on view public.my_privileges is
-  'Kullanıcının kendi title''ına göre sahip olduğu ayrıcalıkları döner. '
+  'Standard dışı privilege_level''a sahip kullanıcının kendi ayrıcalıklarını döner. '
   'Frontend''de "ayrıcalıklarım" ekranı için kullanılır, admin paneli değildir.';
