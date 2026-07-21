@@ -530,6 +530,14 @@ export default function Lab() {
 
   function pick(s) { setSymbol(s.sym); setQuery(s.sym); setDebounced(s.sym); setOpen(false); setRes(null); }
 
+  // AK-103: zoom in/out — hem normal hem tam ekran görünümünde AYNI mantık (tek yerden).
+  // Önceden bu yalnız {!fullscreen && ...} bloğunda vardı; AK-092'nin "tam ekranda tüm sayfa
+  // kroması gizli" kararı, mobil kullanıcıların asıl kullandığı tam ekran modunda tek zoom
+  // yolunu pinch-gesture'a düşürmüştü — dokunmatik jest tanınmazsa/başarısız olursa geri dönüş
+  // (buton) yoktu. Bu, "zoom çalışmıyor" şikayetinin en olası kaynağıydı.
+  function zoomOut() { setWin(w => { const sp = Math.min(1, (w.e - w.s) * 1.5); return { s: Math.max(0, w.e - sp), e: w.e }; }); }
+  function zoomIn() { setWin(w => { const sp = Math.max(0.04, (w.e - w.s) / 1.5); return { s: Math.max(0, w.e - sp), e: w.e }; }); }
+
   // AK-102: Alarm Geçmişi'nden "grafikte gör" — /lab?sym=X ile açılırsa o sembole geçilir.
   // Seviyelerin kendisi (giriş/TP/SL) Izleme.jsx tarafından zaten ak_draw_${sym}'e yazılmıştır
   // (bkz. src/lib/chartHandoff.js) — Chart.jsx symbol değişince bunu KENDİSİ okur, burada ayrıca
@@ -757,9 +765,17 @@ export default function Lab() {
                 </button>
               )}
               {fullscreen && (
-                <button className="ak-chart-fs-exit" onClick={requestExitFullscreen} title="Çık (ESC)" aria-label="Tam ekrandan çık">
-                  <X size={18} />
-                </button>
+                <>
+                  <button className="ak-chart-fs-exit" onClick={requestExitFullscreen} title="Çık (ESC)" aria-label="Tam ekrandan çık">
+                    <X size={18} />
+                  </button>
+                  {/* AK-103: pinch-zoom'a ek, garanti çalışan buton fallback'i — tam ekranda tek
+                      zoom yolu jest olmasın diye. */}
+                  <div className="ak-chart-fs-zoom">
+                    <button onClick={zoomOut} title="Uzaklaş (daha çok bar)" aria-label="Uzaklaş">−</button>
+                    <button onClick={zoomIn} title="Yakınlaş (daha az bar)" aria-label="Yakınlaş">+</button>
+                  </div>
+                </>
               )}
               {!dataOk && (
                 <div className="ak-nodata">
@@ -805,8 +821,8 @@ export default function Lab() {
             <button className={logS ? "on" : ""} title="Logaritmik fiyat ölçeği" onClick={() => setLogS(v => !v)}>Log</button>
             <button className={magnetOn ? "on" : ""} title="Mıknatıs — imleci en yakın O/Y/D/K'ya yasla" onClick={() => setMagnetOn(v => !v)}>Mıknatıs</button>
             <span className="ak-ranges-sep" />
-            <button title="Uzaklaş (daha çok bar)" onClick={() => setWin(w => { const sp = Math.min(1, (w.e - w.s) * 1.5); return { s: Math.max(0, w.e - sp), e: w.e }; })}>−</button>
-            <button title="Yakınlaş (daha az bar)" onClick={() => setWin(w => { const sp = Math.max(0.04, (w.e - w.s) / 1.5); return { s: Math.max(0, w.e - sp), e: w.e }; })}>+</button>
+            <button title="Uzaklaş (daha çok bar)" onClick={zoomOut}>−</button>
+            <button title="Yakınlaş (daha az bar)" onClick={zoomIn}>+</button>
             <span className="ak-ranges-sep" />
             {[["14G", 84], ["1A", 180], ["3A", 540], ["Tümü", 900]].map(([lb, nb]) => (
               <button key={lb} onClick={() => { setWin({ s: Math.max(0, 1 - nb / 900), e: 1 }); }}>{lb}</button>

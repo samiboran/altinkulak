@@ -6,10 +6,11 @@ import { periodChangePct, WEEK_BARS, DETAIL_PERIODS } from "../lib/priceChange.j
 import { getOrComputeHistory } from "../lib/izlemeHistory.js";
 import { formatPriceTick } from "../lib/priceFormat.js";
 import { fetchWebhookEntry, getOrCreateWebhookEntry, webhookUrlFor, listTriggeredWebhookEntries } from "../lib/izlemeEntries.js";
-import { detectModBSignals, DEFAULT_PARAMS } from "../lib/modB.js";
+import { detectModBSignals, DEFAULT_PARAMS, describeConcepts } from "../lib/modB.js";
 import { requestNotifyPermission, notify, isSeen, markSeen } from "../lib/notify.js";
-import { addAlarmTrade, checkOpenAlarmTrades, listAlarmTrades } from "../lib/alarmTrades.js";
+import { addAlarmTrade, checkOpenAlarmTrades, listAlarmTrades, removeAlarmTrade, pruneOldAlarmTrades } from "../lib/alarmTrades.js";
 import { seedChartLevels } from "../lib/chartHandoff.js";
+import SwipeToDelete from "../components/SwipeToDelete.jsx";
 import { useAuth } from "../lib/AuthProvider.jsx";
 import { useAuthGate } from "../lib/AuthGate.jsx";
 import PortfolioPanel from "../components/PortfolioPanel.jsx";
@@ -261,7 +262,13 @@ export default function Izleme() {
   // hiçbir backtest/geçmiş veri hesabı tetiklenmez (yalnız bu Set'e girmiş semboller için hesaplanır).
   const [historyOn, setHistoryOn] = useState(loadHistoryOn);
   const [detailSym, setDetailSym] = useState(null); // AK-089: satıra dokunma → detay ekranı (WatchDetailModal)
-  const [alarmHistory, setAlarmHistory] = useState(listAlarmTrades); // AK-076: sinyal geldiğinde otomatik açılan hayali işlemler
+  // AK-103: 80+ gün önce KAPANMIŞ kayıtlar sayfa her açıldığında bir kez budanır (açık kayıtlara
+  // dokunulmaz). Sicil ledger'ın append-only kuralı BURAYA uygulanmaz — bu, gerçek para/istatistik
+  // taşımayan, salt bu tarayıcıdaki bir bildirim geçmişidir (bkz. alarmTrades.js üstündeki not).
+  const [alarmHistory, setAlarmHistory] = useState(() => { pruneOldAlarmTrades(); return listAlarmTrades(); });
+  function deleteAlarmTrade(id) {
+    if (removeAlarmTrade(id)) setAlarmHistory(listAlarmTrades());
+  }
   // AK-102: Pine Code Tetiklenmeleri — Alarm Geçmişi'nden AYRI kaynak (platformun kendi Avcı
   // kuralı değil, kullanıcının KENDİ TradingView alert'i). Yalnız girişliyken vardır (webhook
   // Supabase'te tutulur, D6 — girişsizken/yapılandırılmamışken zaten boş dizi döner).
@@ -502,9 +509,9 @@ export default function Izleme() {
           {notifyPerm === "granted" ? <><BellRing size={14} /> Bildirimler açık</> : <><Bell size={14} /> Bildirimleri Aç</>}
         </button>
         <button className="ak-btn ak-btn-secondary sm" onClick={() => setShowSettings(v => !v)}>
-          <Settings size={14} /> {system.name || "Sistemim"}
+          <Settings size={14} /> {system.name || "Sistemim"} <span className="ak-sys-concept-badge">{describeConcepts(system.concepts)}</span>
         </button>
-        <span className="ak-izle-notify-note">"{system.name || "Sistemim"}" kuralına uyan sinyal oluşunca, yalnız bu sekme açıkken bildirim gelir.</span>
+        <span className="ak-izle-notify-note">"{system.name || "Sistemim"}" ({describeConcepts(system.concepts)}) kuralına uyan sinyal oluşunca, yalnız bu sekme açıkken bildirim gelir.</span>
       </div>
 
       {showSettings && (
@@ -627,7 +634,7 @@ export default function Izleme() {
 
       {signals.length > 0 && (
         <div className="ak-signals">
-          <h2>{system.name || "Sistemim"} Sinyalleri <span className="ak-soon">kişisel ayar</span></h2>
+          <h2>{system.name || "Sistemim"} Sinyalleri <span className="ak-soon">{describeConcepts(system.concepts)}</span> <span className="ak-soon">kişisel ayar</span></h2>
           <div className="ak-signal-list">
             {signals.map((s) => (
               <div className={"ak-signal-row " + (s.dir === 1 ? "long" : "short")} key={s.id}>
@@ -648,29 +655,31 @@ export default function Izleme() {
 
       {alarmHistory.length > 0 && (
         <div className="ak-signals">
-          <h2>Alarm Geçmişi <span className="ak-soon">Kaynak: Avcı</span> <span className="ak-soon">{filteredAlarmHistory.length} kayıt</span></h2>
+          <h2>Alarm Geçmişi <span className="ak-soon">Kaynak: Avcı · {describeConcepts(system.concepts)}</span> <span className="ak-soon">{filteredAlarmHistory.length} kayıt</span></h2>
           <div className="ak-signal-list">
             {filteredAlarmHistory.slice(0, 15).map((t) => (
-              <div className={"ak-signal-row " + (t.dir === 1 ? "long" : "short")} key={t.id}>
-                <span className={"ak-alarm-status " + t.status}>{t.status === "open" ? "Açık" : t.status === "won" ? "Kazandı ✅" : "Kayıp ❌"}</span>
-                <span className="sy">{t.sym}</span>
-                <span className="dir">{t.dir === 1 ? "LONG" : "SHORT"}</span>
-                <span className="lv">Giriş <b>{fmtP(t.entry)}</b></span>
-                {/* AK-102: TP1/TP2 her zaman referans olarak görünür; TP2'ye o an ELİMİZDEKİ
-                    barlarla ulaşıldığı doğrulandıysa (hitHedef2) yeşil ✓ — dürüst sınır: veri
-                    kapanış sonrası biterse hedef2'ye sonradan ulaşılmış olsa bile bilinemez. */}
-                <span className="lv">TP1 <b className={t.status === "won" ? "pos" : ""}>{fmtP(t.hedef1)}</b></span>
-                {t.hedef2 != null && (
-                  <span className="lv">TP2 <b className={t.hitHedef2 ? "pos" : ""}>{fmtP(t.hedef2)}{t.status === "won" && (t.hitHedef2 ? " ✓" : " (henüz)")}</b></span>
-                )}
-                {t.status === "lost" && <span className="lv">SL <b className="neg">{fmtP(t.stop)}</b></span>}
-                <RouterLink className="ak-icon ak-alarm-chartlink" title="Grafikte gör" to={`/lab?sym=${t.sym}`} onClick={() => openAlarmInChart(t)}>
-                  <LineChart size={14} />
-                </RouterLink>
-                {t.status !== "open"
-                  ? durationLabel(t.openedAt, t.closedAt) && <span className="ago">{durationLabel(t.openedAt, t.closedAt)} sürdü</span>
-                  : timeAgo(t.openedAt) && <span className="ago">{timeAgo(t.openedAt)}</span>}
-              </div>
+              <SwipeToDelete key={t.id} deleteLabel={`${t.sym} kaydını sil`} onDelete={() => deleteAlarmTrade(t.id)}>
+                <div className={"ak-signal-row " + (t.dir === 1 ? "long" : "short")}>
+                  <span className={"ak-alarm-status " + t.status}>{t.status === "open" ? "Açık" : t.status === "won" ? "Kazandı ✅" : "Kayıp ❌"}</span>
+                  <span className="sy">{t.sym}</span>
+                  <span className="dir">{t.dir === 1 ? "LONG" : "SHORT"}</span>
+                  <span className="lv">Giriş <b>{fmtP(t.entry)}</b></span>
+                  {/* AK-102: TP1/TP2 her zaman referans olarak görünür; TP2'ye o an ELİMİZDEKİ
+                      barlarla ulaşıldığı doğrulandıysa (hitHedef2) yeşil ✓ — dürüst sınır: veri
+                      kapanış sonrası biterse hedef2'ye sonradan ulaşılmış olsa bile bilinemez. */}
+                  <span className="lv">TP1 <b className={t.status === "won" ? "pos" : ""}>{fmtP(t.hedef1)}</b></span>
+                  {t.hedef2 != null && (
+                    <span className="lv">TP2 <b className={t.hitHedef2 ? "pos" : ""}>{fmtP(t.hedef2)}{t.status === "won" && (t.hitHedef2 ? " ✓" : " (henüz)")}</b></span>
+                  )}
+                  {t.status === "lost" && <span className="lv">SL <b className="neg">{fmtP(t.stop)}</b></span>}
+                  <RouterLink className="ak-icon ak-alarm-chartlink" title="Grafikte gör" to={`/lab?sym=${t.sym}`} onClick={() => openAlarmInChart(t)}>
+                    <LineChart size={14} />
+                  </RouterLink>
+                  {t.status !== "open"
+                    ? durationLabel(t.openedAt, t.closedAt) && <span className="ago">{durationLabel(t.openedAt, t.closedAt)} sürdü</span>
+                    : timeAgo(t.openedAt) && <span className="ago">{timeAgo(t.openedAt)}</span>}
+                </div>
+              </SwipeToDelete>
             ))}
           </div>
           <p className="ak-izle-note">Sinyal geldiğinde otomatik açılan hayali işlemler — gerçek para değildir, yalnız bu tarayıcıda saklanır. Kaynak: platformun kendi Avcı kuralı (Pine Code webhook tetiklenmeleri ayrı bölümde).</p>

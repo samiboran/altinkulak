@@ -14,6 +14,17 @@ export const DEFAULT_PARAMS = {
                     // seçilen her kavram FVG girişine EK bir AND-filtresi olarak uygulanır.
 };
 
+// AK-103: concept id -> okunur etiket. Izleme.jsx'in "Ek onay şartı" checkbox'larıyla AYNI
+// sözlük — üst bardaki gösterge (Sinyaller/Alarm Geçmişi başlığı) burayı kullanır, seçim
+// değişince etiket de değişir (önceden hep "FVG" sabit kalıyordu, seçim yansımıyordu).
+export const CONCEPT_LABELS = { ob: "Order Block", bos: "BOS", mit: "Mitigation", of: "Order Flow", fib: "Fibonacci" };
+
+// SAF fonksiyon: seçili concepts -> "FVG" ya da "FVG + Order Block + Mitigation" gibi okunur metin.
+export function describeConcepts(concepts) {
+  const extra = (concepts || []).map((c) => CONCEPT_LABELS[c]).filter(Boolean);
+  return extra.length ? `FVG + ${extra.join(" + ")}` : "FVG";
+}
+
 // 3 barlik FVG: bars[i-2] ile bars[i] arasindaki dokunulmamis bosluk.
 function fvgAt(bars, i) {
   if (bars[i - 2].h < bars[i].l) return { dir: 1, lo: bars[i - 2].h, hi: bars[i].l };

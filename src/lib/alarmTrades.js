@@ -82,3 +82,26 @@ export function checkOpenAlarmTrades(sym, bars) {
 export function listAlarmTrades() {
   return loadAll().sort((a, b) => (b.openedAt || 0) - (a.openedAt || 0));
 }
+
+// AK-103: swipe-to-delete — kullanıcı TEK bir kaydı elle siler (Sicil ledger'ın append-only
+// kuralı bu listeye UYGULANMAZ; alarm işlemleri gerçek para/istatistik değildir, salt bu
+// tarayıcıdaki bir bildirim geçmişidir — silinebilir olması bilinçli bir tasarım farkı).
+export function removeAlarmTrade(id) {
+  const all = loadAll();
+  const next = all.filter((t) => t.id !== id);
+  if (next.length === all.length) return false; // bulunamadı
+  saveAll(next);
+  return true;
+}
+
+// AK-103: 80+ gün eski KAPANMIŞ kayıtları buda (açık kayıtlara dokunulmaz — hâlâ takip
+// ediliyor olabilirler). Dönüş: kaç kayıt temizlendiği (0 ise UI sessizce hiçbir şey göstermez).
+export const RETENTION_DAYS = 80;
+export function pruneOldAlarmTrades(now = Date.now()) {
+  const all = loadAll();
+  const cutoff = now - RETENTION_DAYS * 86400000;
+  const next = all.filter((t) => t.status === "open" || (t.closedAt || t.openedAt || 0) >= cutoff);
+  const removed = all.length - next.length;
+  if (removed > 0) saveAll(next);
+  return removed;
+}

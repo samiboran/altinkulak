@@ -55,6 +55,9 @@
 
 .ak-izle-notify{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;}
 .ak-izle-notify-note{font-size:12px;color:var(--muted);}
+/* AK-103: Avcı'nın o an hangi kavramları aradığını gösteren küçük etiket — "Ek onay şartı"
+   seçimi değişince buradaki metin de değişir (önceden hiçbir yerde yansımıyordu). */
+.ak-sys-concept-badge{font-family:'JetBrains Mono';font-size:10px;color:var(--teal-soft);background:#101A18;border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin-left:2px;}
 
 .ak-sys-panel{display:flex;flex-direction:column;gap:14px;padding:18px 18px 16px;margin-bottom:20px;background:linear-gradient(180deg,#17211F,#141E1C);border:1px solid var(--line);border-radius:13px;}
 .ak-sys-warn{font-size:12px;line-height:1.6;color:var(--muted);background:#10241F;border:1px solid #1f5249;border-radius:9px;padding:10px 12px;margin:0;}
@@ -85,6 +88,14 @@
 .ak-signal-row .lv b.pos{color:var(--good);} .ak-signal-row .lv b.neg{color:var(--bad);}
 .ak-signal-row .ago{margin-left:auto;font-size:11px;color:#647974;font-family:'JetBrains Mono';white-space:nowrap;}
 .ak-alarm-chartlink{width:26px;height:26px;border-radius:7px;flex-shrink:0;}
+
+/* AK-103: swipe-to-delete — telefon kilit ekranı stili. .ak-swipe-content kayınca altındaki
+   kırmızı "Sil" butonu açığa çıkar; buton yalnız AYRICA dokununca silme yapar (kaydırma silmez). */
+.ak-swipe{position:relative;overflow:hidden;border-radius:12px;}
+.ak-swipe-del{position:absolute;top:0;right:0;bottom:0;background:var(--bad);color:#1A0E0E;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.ak-swipe-content{position:relative;touch-action:pan-y;transition:transform .18s ease-out;background:inherit;}
+.ak-swipe-content.dragging{transition:none;}
+.ak-swipe .ak-signal-row{margin:0;}
 
 /* AK-076: alarm işlemi durum rozeti (açık/kazandı/kayıp) */
 .ak-alarm-status{font-family:'JetBrains Mono';font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:6px;white-space:nowrap;}

@@ -12,7 +12,7 @@ import {
   computeHistory, getOrComputeHistory,
 } from "../src/lib/izlemeHistory.js";
 import { normalizeTop500 } from "../src/lib/top500.js";
-import { detectModBSignals, DEFAULT_PARAMS } from "../src/lib/modB.js";
+import { detectModBSignals, DEFAULT_PARAMS, describeConcepts } from "../src/lib/modB.js";
 import { applyTick, mergeGapFill } from "../src/lib/liveData.js";
 import {
   deriveBalance, deriveLifetime, monthlyEarned, remainingMonthlyCap, currentStreakDays,
@@ -922,6 +922,41 @@ test("geçersiz/bilinmeyen concept string'i sessizce yok sayılır, motor çökm
   assert.ok(Array.isArray(sigs));
 });
 
+console.log("AK-103: swipeGesture — sola-kaydır-sil jestinin saf matematiği");
+const { clampSwipeX, shouldSnapOpen, SWIPE_REVEAL_PX } = await import("../src/lib/swipeGesture.js");
+test("clampSwipeX: sağa kaydırma (pozitif dx) her zaman 0'a kısıtlanır — asla sağa taşmaz", () => {
+  assert.equal(clampSwipeX(50), 0);
+  assert.equal(clampSwipeX(1), 0);
+});
+test("clampSwipeX: sola kaydırma REVEAL genişliğini aşamaz", () => {
+  assert.equal(clampSwipeX(-200), -SWIPE_REVEAL_PX);
+  assert.equal(clampSwipeX(-10), -10);
+});
+test("clampSwipeX: NaN/geçersiz girdide çökmez, 0 döner", () => {
+  assert.equal(clampSwipeX(NaN), 0);
+  assert.equal(clampSwipeX(undefined), 0);
+});
+test("shouldSnapOpen: yarısından azsa kapan, yarısı+ ise aç — ara durum yok (D9 net karar)", () => {
+  assert.equal(shouldSnapOpen(-10, SWIPE_REVEAL_PX), false);
+  assert.equal(shouldSnapOpen(-SWIPE_REVEAL_PX / 2, SWIPE_REVEAL_PX), true);
+  assert.equal(shouldSnapOpen(-SWIPE_REVEAL_PX, SWIPE_REVEAL_PX), true);
+  assert.equal(shouldSnapOpen(0, SWIPE_REVEAL_PX), false);
+});
+
+console.log("AK-103: describeConcepts — üst bar etiketi seçili detector setini yansıtır");
+test("describeConcepts: boş/verilmemiş concepts -> yalnız 'FVG' (önceki sabit davranış korunur)", () => {
+  assert.equal(describeConcepts([]), "FVG");
+  assert.equal(describeConcepts(undefined), "FVG");
+});
+test("describeConcepts: seçili kavramlar sıraya göre eklenir", () => {
+  assert.equal(describeConcepts(["ob"]), "FVG + Order Block");
+  assert.equal(describeConcepts(["ob", "mit"]), "FVG + Order Block + Mitigation");
+  assert.equal(describeConcepts(["fib", "bos", "of"]), "FVG + Fibonacci + BOS + Order Flow");
+});
+test("describeConcepts: bilinmeyen concept id'si sessizce atlanır (motor çökmez, fabrike etiket üretmez)", () => {
+  assert.equal(describeConcepts(["ob", "boyle-bir-sey-yok"]), "FVG + Order Block");
+});
+
 console.log("AK-102: Alarm Geçmişi — hedef2'ye ayrıca ulaşılıp ulaşılmadığı (won kapanışta)");
 // alarmTrades.js `localStorage` global'ini doğrudan kullanır (store enjeksiyonu yok) — Node'da
 // gerçek localStorage olmadığından bu blok İÇİN geçici, izole bir sahte store kurup hemen
@@ -933,7 +968,7 @@ console.log("AK-102: Alarm Geçmişi — hedef2'ye ayrıca ulaşılıp ulaşılm
     return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) };
   })();
   globalThis.localStorage = fakeLS;
-  const { addAlarmTrade, checkOpenAlarmTrades } = await import("../src/lib/alarmTrades.js");
+  const { addAlarmTrade, checkOpenAlarmTrades, removeAlarmTrade, pruneOldAlarmTrades, listAlarmTrades, RETENTION_DAYS } = await import("../src/lib/alarmTrades.js");
 
   test("checkOpenAlarmTrades: hedef1 vurulup ardından hedef2'ye de dokunulursa hitHedef2 true", () => {
     addAlarmTrade({ id: "ak102-t1", sym: "AK102A", dir: 1, entry: 100, stop: 90, hedef1: 110, hedef2: 130, barIndex: 5, time: 1000 });
@@ -965,6 +1000,51 @@ console.log("AK-102: Alarm Geçmişi — hedef2'ye ayrıca ulaşılıp ulaşılm
     assert.equal(closed.length, 1);
     assert.equal(closed[0].status, "lost");
     assert.equal(closed[0].stop, 90);
+  });
+
+  test("removeAlarmTrade: tek kaydı siler, diğerleri kalır (swipe-to-delete'in çekirdeği)", () => {
+    addAlarmTrade({ id: "ak103-del1", sym: "AK103D1", dir: 1, entry: 1, stop: 1, hedef1: 1, hedef2: 1, barIndex: 0, time: 1 });
+    addAlarmTrade({ id: "ak103-del2", sym: "AK103D2", dir: 1, entry: 1, stop: 1, hedef1: 1, hedef2: 1, barIndex: 0, time: 1 });
+    const ok = removeAlarmTrade("ak103-del1");
+    assert.equal(ok, true);
+    const remaining = listAlarmTrades().map((t) => t.id);
+    assert.ok(!remaining.includes("ak103-del1"));
+    assert.ok(remaining.includes("ak103-del2"));
+  });
+  test("removeAlarmTrade: olmayan id sessizce false döner, hiçbir şey silinmez", () => {
+    addAlarmTrade({ id: "ak103-del3", sym: "AK103D3", dir: 1, entry: 1, stop: 1, hedef1: 1, hedef2: 1, barIndex: 0, time: 1 });
+    const before = listAlarmTrades().length;
+    assert.equal(removeAlarmTrade("hic-yok-boyle-id"), false);
+    assert.equal(listAlarmTrades().length, before);
+  });
+  test(`pruneOldAlarmTrades: ${RETENTION_DAYS}+ gün önce KAPANMIŞ kayıtlar budanır, açık kayıtlara (kaç gün önce açılmış olursa olsun) dokunulmaz`, () => {
+    localStorage.setItem("ak_alarm_trades_v1", "[]"); // önceki testlerin kalıntılarından izole
+    const now = Date.UTC(2026, 6, 21);
+    const oldClosed = now - (RETENTION_DAYS + 5) * 86400000;
+    const freshClosed = now - 5 * 86400000;
+    const oldOpen = now - (RETENTION_DAYS + 30) * 86400000; // eski ama HÂLÂ AÇIK
+    addAlarmTrade({ id: "ak103-old-closed", sym: "P1", dir: 1, entry: 1, stop: 1, hedef1: 1, hedef2: 1, barIndex: 0, openedAt: oldClosed, time: oldClosed });
+    addAlarmTrade({ id: "ak103-fresh-closed", sym: "P2", dir: 1, entry: 1, stop: 1, hedef1: 1, hedef2: 1, barIndex: 0, openedAt: freshClosed, time: freshClosed });
+    addAlarmTrade({ id: "ak103-old-open", sym: "P3", dir: 1, entry: 1, stop: 1, hedef1: 1, hedef2: 1, barIndex: 0, openedAt: oldOpen, time: oldOpen });
+    // "kapanmış" durumuna manuel geçir (checkOpenAlarmTrades'siz, saf test — closedAt doğrudan yazılır)
+    const all = listAlarmTrades();
+    for (const t of all) {
+      if (t.id === "ak103-old-closed") { t.status = "won"; t.closedAt = oldClosed + 1000; }
+      if (t.id === "ak103-fresh-closed") { t.status = "won"; t.closedAt = freshClosed + 1000; }
+    }
+    localStorage.setItem("ak_alarm_trades_v1", JSON.stringify(all));
+    const removed = pruneOldAlarmTrades(now);
+    assert.equal(removed, 1);
+    const remaining = listAlarmTrades().map((t) => t.id);
+    assert.ok(!remaining.includes("ak103-old-closed"), "80+ gün önce kapanmış kayıt budanmalıydı");
+    assert.ok(remaining.includes("ak103-fresh-closed"), "taze kapanmış kayda dokunulmamalıydı");
+    assert.ok(remaining.includes("ak103-old-open"), "hâlâ AÇIK kayıt, ne kadar eski olursa olsun budanmamalıydı");
+  });
+  test("pruneOldAlarmTrades: budanacak kayıt yoksa 0 döner, dizi değişmez", () => {
+    const before = listAlarmTrades();
+    const removed = pruneOldAlarmTrades(Date.UTC(2026, 6, 21)); // önceki testle AYNI referans an
+    assert.equal(removed, 0);
+    assert.deepEqual(listAlarmTrades().map(t => t.id).sort(), before.map(t => t.id).sort());
   });
 
   delete globalThis.localStorage;
