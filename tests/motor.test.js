@@ -1385,6 +1385,110 @@ console.log("kod üreteci uçtan uca (AK-087/C5 duman)");
   });
 }
 
+console.log("T1 — yeni codegen blokları: ob / bos / mitigation / sr (AK-T1)");
+{
+  const { generateSignalCode } = await import("../src/lib/codegen.js");
+  const det = await import("../src/lib/detectors.js");
+  const B = (o, h, l, c) => ({ o, h, l, c });
+
+  // ob bloğu: boğa OB oluşacak şekilde mum dizisi
+  // Bar i-1: ayı mumu, bar i: ≥%1.5 gövdeli boğa mumu → OB i-1'de
+  // Sonra birkaç düzlük bar + OB bölgesine dönen bar
+  test("ob bloğu: kod parse edilir, PARAMS'lı, HİPOTEZ uyarısı var, dir üretir", () => {
+    const code = generateSignalCode(["ob"], { slR: 2, tpR: 4 });
+    assert.ok(code, "kod üretilmeli");
+    assert.ok(code.includes("HİPOTEZ"));
+    assert.ok(code.includes("obTolAtr"));
+    new Function(code + "\nreturn mySignal;"); // sözdizimi geçerli mi
+  });
+  test("ob bloğu: OB oluşan ve fiyatın OB bölgesine döndüğü barda sinyal döndürür", () => {
+    const code = generateSignalCode(["ob"], { slR: 2, tpR: 3 });
+    const mySignal = new Function(code + "\nreturn mySignal;")();
+    const bars = [];
+    for (let i = 0; i < 65; i++) bars.push(B(100, 101, 99, 100)); // ısınma
+    // OB: ayı mumu + hemen arkasından ≥1.5% boğa mumu
+    bars.push(B(100, 100.5, 99.2, 99.4));  // bearish
+    bars.push(B(99.4, 101.5, 99.3, 101.4)); // bullish ≥1.5% body → OB @i_prev=[99.2,100]
+    for (let i = 0; i < 5; i++) bars.push(B(101, 101.5, 100.5, 101)); // düzlük
+    // Fiyat OB bölgesine (~99.2–100) geri döner
+    bars.push(B(101, 101, 99.5, 99.6)); // close OB bölgesinde
+    const sig = mySignal(bars, det);
+    assert.ok(sig, "OB bölgesine dönüşte sinyal dönmeli");
+    assert.equal(sig.dir, 1, "bullish OB → LONG");
+  });
+
+  test("bos bloğu: kod parse edilir, PARAMS'lı, HİPOTEZ uyarısı var, dir üretir", () => {
+    const code = generateSignalCode(["bos"], { slR: 1.5, tpR: 3 });
+    assert.ok(code, "kod üretilmeli");
+    assert.ok(code.includes("HİPOTEZ"));
+    new Function(code + "\nreturn mySignal;"); // sözdizimi geçerli mi
+  });
+  test("bos bloğu: önceki zirveyi kıran barda sinyal döndürür", () => {
+    const code = generateSignalCode(["bos"], { slR: 1.5, tpR: 3 });
+    const mySignal = new Function(code + "\nreturn mySignal;")();
+    const bars = [];
+    for (let i = 0; i < 65; i++) bars.push(B(100, 102, 99, 100));   // high=102 baseline
+    bars.push(B(100, 103, 99.5, 102.5)); // close > prevHigh (max of last 5 bars ~102) → BOS
+    const sig = mySignal(bars, det);
+    assert.ok(sig, "BOS barında sinyal dönmeli");
+    assert.equal(sig.dir, 1, "BOS → LONG");
+  });
+
+  test("mitigation bloğu: kod parse edilir, PARAMS'lı, HİPOTEZ uyarısı var, dir üretir", () => {
+    const code = generateSignalCode(["mitigation"], { slR: 2, tpR: 4 });
+    assert.ok(code, "kod üretilmeli");
+    assert.ok(code.includes("HİPOTEZ"));
+    new Function(code + "\nreturn mySignal;"); // sözdizimi geçerli mi
+  });
+  test("mitigation bloğu: OB sonrası mitigasyon barında sinyal döndürür", () => {
+    const code = generateSignalCode(["mitigation"], { slR: 2, tpR: 4 });
+    const mySignal = new Function(code + "\nreturn mySignal;")();
+    const bars = [];
+    for (let i = 0; i < 65; i++) bars.push(B(100, 101, 99, 100));
+    // OB oluştur: bearish + ardından ≥1.5% bullish
+    bars.push(B(100, 100.5, 98.5, 98.8));   // bearish: o=100, c=98.8, lo=98.5, hi=100.5 → OB [98.5,100]
+    bars.push(B(98.8, 101.8, 98.7, 101.5)); // bullish ≥1.5%
+    for (let i = 0; i < 4; i++) bars.push(B(101, 102, 100.5, 101.2)); // yukarda dolaş
+    // Mitigasyon: OB bölgesine [98.5,100] dokunuş
+    bars.push(B(101, 101, 99, 99.5)); // low=99 → OB bölgesine girer → mitigation
+    const sig = mySignal(bars, det);
+    assert.ok(sig, "mitigasyon barında sinyal dönmeli");
+    assert.equal(sig.dir, 1, "OB mitigasyonu → LONG");
+  });
+
+  test("sr bloğu: kod parse edilir, PARAMS'lı (srTolAtr), HİPOTEZ uyarısı var, dir üretir", () => {
+    const code = generateSignalCode(["sr"], { slR: 2, tpR: 4 });
+    assert.ok(code, "kod üretilmeli");
+    assert.ok(code.includes("HİPOTEZ"));
+    assert.ok(code.includes("srTolAtr"));
+    new Function(code + "\nreturn mySignal;"); // sözdizimi geçerli mi
+  });
+  test("sr bloğu: bilinen S/R seviyesine yakın barda sinyal döndürür", () => {
+    const code = generateSignalCode(["sr"], { slR: 2, tpR: 4 });
+    const mySignal = new Function(code + "\nreturn mySignal;")();
+    // S/R için: swingWin=5 dolayısıyla ≥11 bar gerekiyor, bant içinde birden fazla dokunuş
+    const bars = [];
+    // 105'te destek oluşturacak şekilde pivot low'lar
+    for (let i = 0; i < 6; i++) bars.push(B(107, 109, 104.9, 106)); // window 1
+    bars.push(B(106, 108, 104.8, 107)); // pivot low ~105 — 1. dokunuş
+    for (let i = 0; i < 6; i++) bars.push(B(107, 110, 106, 108)); // window 2
+    bars.push(B(108, 109, 105.0, 107.5)); // pivot low ~105 — 2. dokunuş
+    for (let i = 0; i < 6; i++) bars.push(B(108, 111, 107, 109));
+    for (let i = 0; i < 40; i++) bars.push(B(108, 111, 107, 109)); // ısınma
+    // Fiyat desteğe (~104.9–105) yakın bir noktaya iner
+    bars.push(B(107, 107.5, 105.1, 105.2));
+    const sig = mySignal(bars, det);
+    assert.ok(sig, "S/R seviyesine yakın barda sinyal dönmeli");
+  });
+  test("T1: ob/bos/mitigation/sr AVAILABLE_BLOCKS içinde var", async () => {
+    const { AVAILABLE_BLOCKS } = await import("../src/lib/codegen.js");
+    const keys = new Set(AVAILABLE_BLOCKS.map(b => b.key));
+    for (const k of ["ob", "bos", "mitigation", "sr"]) {
+      assert.ok(keys.has(k), `${k} AVAILABLE_BLOCKS'ta eksik`);
+    }
+  });
+}
+
 console.log("rozet motoru (AK-083/M3)");
 {
   const { deriveBadges, visibleBadges, BADGES } = await import("../src/lib/badges.js");
@@ -1631,12 +1735,14 @@ console.log("Strateji Çıkarıcı — İncele/oluşum paneli/dürüstlük kapı
     assert.equal(mapOccurrenceToBlockKey("golden_cross"), "emacross");
     assert.equal(mapOccurrenceToBlockKey("death_cross"), "emacross");
   });
-  test("mapOccurrenceToBlockKey: codegen'de karşılığı olmayan türler (ob/bos/mitigation/sr) null döner", () => {
-    assert.equal(mapOccurrenceToBlockKey("ob"), null);
-    assert.equal(mapOccurrenceToBlockKey("bos"), null);
-    assert.equal(mapOccurrenceToBlockKey("mitigation"), null);
-    assert.equal(mapOccurrenceToBlockKey("sr"), null);
+  test("mapOccurrenceToBlockKey: bilinmeyen tür null döner", () => {
     assert.equal(mapOccurrenceToBlockKey("bilinmeyen_tur"), null);
+  });
+  test("mapOccurrenceToBlockKey (T1): ob/bos/mitigation/sr artık codegen bloklarıyla eşlenir", () => {
+    assert.equal(mapOccurrenceToBlockKey("ob"), "ob");
+    assert.equal(mapOccurrenceToBlockKey("bos"), "bos");
+    assert.equal(mapOccurrenceToBlockKey("mitigation"), "mitigation");
+    assert.equal(mapOccurrenceToBlockKey("sr"), "sr");
   });
   test("her mapOccurrenceToBlockKey çıktısı codegen.js AVAILABLE_BLOCKS içinde gerçekten var", async () => {
     const { AVAILABLE_BLOCKS } = await import("../src/lib/codegen.js");

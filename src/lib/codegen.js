@@ -115,6 +115,53 @@ const BLOCKS = {
       "  const dir = dv.type === \"bullish_div\" ? 1 : -1;",
     ],
   },
+  ob: {
+    label: "Order Block",
+    params: { obTolAtr: 0.5 },
+    code: [
+      "  // Order Block: yakın geçmişte boğa OB oluştu mu ve fiyat o bölgeyi test ediyor mu?",
+      "  const obArr = h.findOrderBlocks(bars.slice(0, i + 1));",
+      "  if (!obArr.length) return null;",
+      "  const a_ob = h.atr(bars.slice(0, i + 1), 14)[i] || 0;",
+      "  if (!h.isNearOB(bars[i].c, obArr, a_ob * PARAMS.obTolAtr)) return null;",
+      "  const dir = 1; // Bullish OB bölgesine dönüş → LONG",
+    ],
+  },
+  bos: {
+    label: "BOS (yapı kırılımı)",
+    params: {},
+    code: [
+      "  // BOS: son barda önceki 5 barın zirvesi kırıldı mı? (bullish yapı kırılımı)",
+      "  const bosArr = h.findBOS(bars.slice(0, i + 1));",
+      "  const bos = bosArr.find(s => s.i === i);",
+      "  if (!bos) return null;",
+      "  const dir = 1; // BOS: yakın yüksek kırıldı → LONG",
+    ],
+  },
+  mitigation: {
+    label: "Mitigasyon",
+    params: {},
+    code: [
+      "  // Mitigasyon: önceki bir OB bölgesine fiyat ilk kez geri döndü mü?",
+      "  const mitArr = h.findMitigation(bars.slice(0, i + 1));",
+      "  const mit = mitArr.find(m => m.i === i);",
+      "  if (!mit) return null;",
+      "  const dir = 1; // OB mitigasyonu: OB bölgesine geri dönüş → LONG",
+    ],
+  },
+  sr: {
+    label: "Destek / Direnç",
+    params: { srTolAtr: 0.5 },
+    code: [
+      "  // Destek/Direnç: fiyat bilinen bir S/R seviyesine yakın mı? (≥2 dokunuş)",
+      "  const a_sr = h.atr(bars.slice(0, i + 1), 14)[i] || 0;",
+      "  const srLevels = h.findSupportResistance(bars.slice(0, i + 1));",
+      "  if (!srLevels.length) return null;",
+      "  const srHit = srLevels.find(L => Math.abs(bars[i].c - L.price) <= a_sr * PARAMS.srTolAtr);",
+      "  if (!srHit) return null;",
+      "  const dir = srHit.side === \"sup\" ? 1 : -1; // destek → LONG, direnç → SHORT",
+    ],
+  },
 };
 
 export const AVAILABLE_BLOCKS = Object.entries(BLOCKS).map(([key, b]) => ({ key, label: b.label }));
@@ -127,7 +174,7 @@ export function generateSignalCode(selections, risk = { slR: 2, tpR: 5 }) {
 
   // Yön üretmeyen kombinasyonlarda varsayılan yön bloğu gerekir: sweep/geometri/divergence
   // blokları kendi yönünü üretir (kırılım/uyumsuzluk yönü), vermeyenlerde long varsay (kullanıcı düzenler).
-  const DIR_BLOCKS = ["sweep", "doubletop", "doublebottom", "hs", "ihs", "divergence"];
+  const DIR_BLOCKS = ["sweep", "doubletop", "doublebottom", "hs", "ihs", "divergence", "ob", "bos", "mitigation", "sr"];
   const hasDir = picked.some(k => DIR_BLOCKS.includes(k));
 
   const params = { slR: risk.slR, tpR: risk.tpR };

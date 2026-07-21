@@ -26,6 +26,7 @@ const TYPE_TO_BLOCK = {
   hs: "hs", ihs: "ihs",
   triangle_asc: "triangle", triangle_desc: "triangle", triangle_sym: "triangle",
   bullish_div: "divergence", bearish_div: "divergence",
+  ob: "ob", bos: "bos", mitigation: "mitigation", sr: "sr",
 };
 export function mapOccurrenceToBlockKey(type) {
   return TYPE_TO_BLOCK[type] || null;

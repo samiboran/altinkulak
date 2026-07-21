@@ -64,7 +64,7 @@ Masaüstü ve telefon AYNI değil. Telefon her şeyi yapmaz.
 
 ## 7. Deploy
 - `npm run deploy`
-- sonra: `git add . && git commit -m "..." && git push origin master:main --force`
+- sonra: `git add . && git commit -m "..." && git push origin main`
 (Bu komutları her görev bitiminde değil, Sami "deploy" deyince çalıştır.)
 
 ## 8. Devir (Handoff) Protokolü — bu projenin çalışma şekli

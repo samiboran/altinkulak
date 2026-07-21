@@ -54,17 +54,30 @@ const Chart = forwardRef(function Chart({ bars, concepts = ["fvg"], showEma = tr
   // kendi useMemo'sunda üretir, referansı sabit kalır, gereksiz yeniden hesap olmaz.
   // maList != null: çağıran yeni özelliği kullanıyor demektir — boş dizi de dahil (kullanıcı hepsini kapatmış olabilir).
   const activeMaList = maList != null ? maList : (showEma ? LEGACY_MA_LIST : EMPTY_MA_LIST);
+  // AK-T2: pahalı MA hesabı tam seri üzerinde (yalnız bars+activeMaList'e bağlı),
+  // pencereye kırpma ayrı satırda (off/view.length değişirse sadece slice çalışır).
+  const maArrsAll = useMemo(
+    () => activeMaList.map((m) => ({ ...m, arr: ema(bars, m.period) })),
+    [bars, activeMaList]
+  );
   const maArrs = useMemo(
-    () => activeMaList.map((m) => ({ ...m, arr: ema(bars, m.period).slice(off, off + view.length) })),
-    [bars, activeMaList, off, view.length]
+    () => maArrsAll.map((m) => ({ ...m, arr: m.arr.slice(off, off + view.length) })),
+    [maArrsAll, off, view.length]
   );
   const inWin = i => i >= off && i <= endIdx;
-  const fvgs = useMemo(() => concepts.includes("fvg") ? findFVG(bars).filter(g => inWin(g.i)) : [], [bars, concepts, off, endIdx]);
-  const obs = useMemo(() => concepts.includes("ob") ? findOrderBlocks(bars).filter(o => inWin(o.i)) : [], [bars, concepts, off, endIdx]);
-  const bos = useMemo(() => concepts.includes("bos") ? findBOS(bars).filter(b => inWin(b.i)) : [], [bars, concepts, off, endIdx]);
-  const mits = useMemo(() => concepts.includes("mit") ? findMitigation(bars).filter(m => inWin(m.i)) : [], [bars, concepts, off, endIdx]);
+  // AK-T2: dedektör hesapları iki aşamaya bölündü — pahalı hesap (bars+concepts bağımlı)
+  // ile ucuz filtre (off+endIdx bağımlı) ayrı useMemo'da. Pan/zoom yalnız filtreyi yeniden koşar.
+  const fvgsAll = useMemo(() => concepts.includes("fvg") ? findFVG(bars) : [], [bars, concepts]);
+  const fvgs = useMemo(() => fvgsAll.filter(g => g.i >= off && g.i <= endIdx), [fvgsAll, off, endIdx]);
+  const obsAll = useMemo(() => concepts.includes("ob") ? findOrderBlocks(bars) : [], [bars, concepts]);
+  const obs = useMemo(() => obsAll.filter(o => o.i >= off && o.i <= endIdx), [obsAll, off, endIdx]);
+  const bosAll = useMemo(() => concepts.includes("bos") ? findBOS(bars) : [], [bars, concepts]);
+  const bos = useMemo(() => bosAll.filter(b => b.i >= off && b.i <= endIdx), [bosAll, off, endIdx]);
+  const mitsAll = useMemo(() => concepts.includes("mit") ? findMitigation(bars) : [], [bars, concepts]);
+  const mits = useMemo(() => mitsAll.filter(m => m.i >= off && m.i <= endIdx), [mitsAll, off, endIdx]);
   // AK-087/C6: Eşleşme Gezgini'nde "sweep" bloklu bir kural gezilirken süpürme oku çizilebilsin diye.
-  const sweeps = useMemo(() => concepts.includes("sweep") ? findSweep(bars).filter(s => inWin(s.i)) : [], [bars, concepts, off, endIdx]);
+  const sweepsAll = useMemo(() => concepts.includes("sweep") ? findSweep(bars) : [], [bars, concepts]);
+  const sweeps = useMemo(() => sweepsAll.filter(s => s.i >= off && s.i <= endIdx), [sweepsAll, off, endIdx]);
   const ofArr = useMemo(() => concepts.includes("of") ? orderFlowArr(bars) : null, [bars, concepts]);
   const fib = useMemo(() => concepts.includes("fib") ? findFib(view, view.length) : null, [view, concepts]);
   // AK-044: Heikin-Ashi tüm seriden hesaplanır (önceki HA gövdesine bağımlı), sonra pencereye kırpılır
