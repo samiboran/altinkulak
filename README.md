@@ -43,3 +43,25 @@ politikalarındadır. `service_role` anahtarı ve SMTP şifresi repoya/istemciye
 - Test + implementasyon AYNI commit'te (17 Tem dersinden kalıcı kural).
 - Yeni AK/D numarası atamadan önce `docs/AK_MASTER_REGISTRY.json` okunur.
 - `basename='/altinkulak'`, `vite.config.js base`, `ranks.js`, sandbox izolasyonu dokunulmaz.
+
+## Topluluk & Kurucu Üyelik
+
+Altınkulak topluluk temelli kurulan deneysel, yerli bir platformdur. Erken
+dönemde katılanlar sıradan kullanıcı değil, **kurucu üye** olur:
+
+- Kayıt: bekleme listesine e-postanı bırak → davetler **dalga dalga** gönderilir
+  (ilk dalgalar küçüktür; platform oturdukça büyür).
+- Kurucu üyeler ücretsiz sınırsız erişim ve "Kurucu Üye" rozeti alır.
+- Her davetli sınırlı sayıda kişi davet edebilir.
+
+Bu bir sinyal servisi değildir ve yatırım tavsiyesi verilmez — bkz. Yasal.
+
+## Katkıda Bulun
+
+Bu projeyi tek başıma, yapay zekâ desteğiyle geliştiren bir vibecoder'ım ve
+katkıya açığım: UI/UX (İngilizce de olur), grafik performansı, trader
+perspektifinden araç önerileri, strateji kod üreteci blokları.
+
+- Başlangıç: [CONTRIBUTING.md](./CONTRIBUTING.md) + `good first issue` etiketi
+- Anlamlı katkı = **Kurucu Katkıcı rozeti + ömür boyu ücretsiz erişim**
+- Rozet ve unvanlar yalnızca katkıyla kazanılır, satılmaz.
