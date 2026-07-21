@@ -10,6 +10,13 @@
 // (Deno/tarayıcı/Node üçünde de çalışan saf fonksiyon) yaşar, burada yalnız Supabase I/O'su var.
 // SERVICE ROLE KEY: RLS'i BİLEREK atlar (010 migration'da istemci için UPDATE policy'si YOK) —
 // bu anahtar yalnız bu sunucu tarafı fonksiyonda kalır, istemciye asla gönderilmez.
+//
+// AK-webhook-teşhis: önceki bir denemenin neden başarısız olduğu ("fazla satır girildi" gibi bir
+// sebep) gerçek log görülmeden teyit edilemedi — çünkü token-eşleşme/rate-limit dışındaki HİÇBİR
+// ret bir yere KAYDEDİLMİYORDU. Artık: (1) her reddin sebebi console.error ile Supabase'in kendi
+// Fonksiyon Loglarına düşer (Dashboard > Edge Functions > izleme-webhook > Logs), (2) token
+// eşleşiyorsa sebep AYRICA izleme_entries'e ("hata" durumu + last_error) yazılır, yani
+// Izleme.jsx'te KULLANICIYA da görünür — bir daha "sebep belirsiz" durumuna düşülmez.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { processWebhookTrigger } from "../../../src/lib/izlemeWebhookCore.js";
 
@@ -19,7 +26,10 @@ const supabase = createClient(
 );
 
 Deno.serve(async (req: Request) => {
-  if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+  if (req.method !== "POST") {
+    console.error(`izleme-webhook: reddedildi — method ${req.method} (yalnız POST kabul edilir)`);
+    return new Response("method not allowed — TradingView alert'i POST olarak göndermeli", { status: 405 });
+  }
 
   const url = new URL(req.url);
   const token = url.pathname.split("/").filter(Boolean).pop() ?? "";
@@ -41,11 +51,25 @@ Deno.serve(async (req: Request) => {
           webhook_status: "tetiklendi",
           last_triggered_at: triggeredAt,
           last_payload: body ? body.slice(0, 4000) : null, // log/gösterim amaçlı, sınırlı boyut
+          last_error: null, // önceki bir hata varsa, başarılı tetiklenmeyle temizlenir
         })
+        .eq("id", id);
+    },
+    async markFailed(id: string, { failedAt, reason }: { failedAt: string; reason: string }) {
+      await supabase
+        .from("izleme_entries")
+        .update({ webhook_status: "hata", last_failed_at: failedAt, last_error: reason })
         .eq("id", id);
     },
   });
 
-  if (result.status === 404) return new Response("not found", { status: 404 });
+  if (result.status === 404) {
+    console.error(`izleme-webhook: reddedildi — token eşleşmedi (${token ? token.slice(0, 6) + "…" : "boş"})`);
+    return new Response("not found", { status: 404 });
+  }
+  if (result.status === 413) {
+    console.error(`izleme-webhook: reddedildi — payload çok büyük (${rawBody.length} karakter, sınır bkz. MAX_PAYLOAD_BYTES)`);
+    return new Response("payload too large — TradingView alert mesajını kısalt", { status: 413 });
+  }
   return new Response(result.ignored ? "ignored (rate limit)" : "ok", { status: 200 });
 });

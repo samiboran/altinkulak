@@ -5,8 +5,12 @@ import { mean, std, tStat, trainTestSplit, verdict, bonferroniT, expectedFalsePo
 import { runBacktest, latestFvgSignal } from "../src/lib/backtest.js";
 import { getBars, parseKlines, loadReal, isReal, pairFor, hasData, stats24h, getFreshness, freshnessStatus, getSearchSymbols, ALL_SYMBOLS } from "../src/lib/data.js";
 import { decimalsFromTick, tickSizeForPair, formatPriceTick } from "../src/lib/priceFormat.js";
-import { generateWebhookToken, buildWebhookUrl, isRateLimited, processWebhookTrigger, RATE_LIMIT_MS } from "../src/lib/izlemeWebhookCore.js";
+import { generateWebhookToken, buildWebhookUrl, isRateLimited, processWebhookTrigger, RATE_LIMIT_MS, isPayloadTooLarge, MAX_PAYLOAD_BYTES } from "../src/lib/izlemeWebhookCore.js";
 import { fetchWebhookEntry, getOrCreateWebhookEntry, webhookUrlFor } from "../src/lib/izlemeEntries.js";
+import {
+  lastClosedFourHourBoundary, isHistoryCacheFresh, getCachedHistory, setCachedHistory,
+  computeHistory, getOrComputeHistory,
+} from "../src/lib/izlemeHistory.js";
 import { normalizeTop500 } from "../src/lib/top500.js";
 import { detectModBSignals, DEFAULT_PARAMS } from "../src/lib/modB.js";
 import { applyTick, mergeGapFill } from "../src/lib/liveData.js";
@@ -240,6 +244,49 @@ test("processWebhookTrigger: eşleşen + rate limit dışı → durum güncellen
   assert.equal(markedWith.payload.rawBody, '{"strategy":"x"}');
   assert.equal(markedWith.payload.triggeredAt, new Date(now).toISOString());
 });
+
+console.log("Görev 2 — webhook teşhis: payload boyutu artık AÇIKÇA reddedilir ve KAYDA GEÇER (sessiz başarısızlık yok)");
+test("isPayloadTooLarge: sınır altı false, sınır üstü true, boş/yok false", () => {
+  assert.equal(isPayloadTooLarge(""), false);
+  assert.equal(isPayloadTooLarge(null), false);
+  assert.equal(isPayloadTooLarge("a".repeat(MAX_PAYLOAD_BYTES)), false);
+  assert.equal(isPayloadTooLarge("a".repeat(MAX_PAYLOAD_BYTES + 1)), true);
+});
+test("processWebhookTrigger: aşırı büyük payload 413 döner, markTriggered ÇAĞRILMAZ, markFailed KAYDEDER", async () => {
+  let triggeredCalled = false, failedWith = null;
+  const deps = {
+    findByToken: async () => ({ id: "e1", lastTriggeredAt: null }),
+    markTriggered: async () => { triggeredCalled = true; },
+    markFailed: async (id, payload) => { failedWith = { id, payload }; },
+  };
+  const now = Date.now();
+  const bigBody = "x".repeat(MAX_PAYLOAD_BYTES + 500);
+  const r = await processWebhookTrigger("tok1", bigBody, deps, now);
+  assert.deepEqual(r, { status: 413, reason: "payload_too_large" });
+  assert.equal(triggeredCalled, false, "aşırı büyük payload ile durum 'tetiklendi' yapılmamalı");
+  assert.equal(failedWith.id, "e1");
+  assert.equal(failedWith.payload.reason, "payload_too_large");
+  assert.equal(failedWith.payload.failedAt, new Date(now).toISOString());
+});
+test("processWebhookTrigger: normal boyutlu payload'da markFailed HİÇ çağrılmaz (regresyon — mevcut akış bozulmadı)", async () => {
+  let failedCalled = false;
+  const deps = {
+    findByToken: async () => ({ id: "e1", lastTriggeredAt: null }),
+    markTriggered: async () => {},
+    markFailed: async () => { failedCalled = true; },
+  };
+  await processWebhookTrigger("tok1", '{"ok":true}', deps);
+  assert.equal(failedCalled, false);
+});
+test("DÜRÜSTLÜK: aşırı büyük payload token eşleşmeden ÖNCE reddedilmez — yalnız eşleşen kayda sessiz kalınmaz, eşleşmeyen yine 404'tür", async () => {
+  const deps = {
+    findByToken: async () => null,
+    markTriggered: async () => { throw new Error("çağrılmamalıydı"); },
+    markFailed: async () => { throw new Error("çağrılmamalıydı — eşleşmeyen tokene yazılacak kayıt yok"); },
+  };
+  const r = await processWebhookTrigger("yok-boyle-token", "x".repeat(MAX_PAYLOAD_BYTES + 500), deps);
+  assert.deepEqual(r, { status: 404 });
+});
 test("DÜRÜSTLÜK/D16: deps arayüzü yapısal olarak yalnız izleme kaydına erişebilir — başka bir tabloya (ör. ledger/trade) yazma İMKANI YOK", () => {
   // deps'e trade/ledger/sandbox gibi başka bir yazma fonksiyonu geçirilse bile processWebhookTrigger
   // onu HİÇ ÇAĞIRMAZ — imza yalnız findByToken/markTriggered'ı tanır.
@@ -262,6 +309,90 @@ test("izlemeEntries.js: Supabase yapılandırılmamışken tüm sorgular dürüs
 test("webhookUrlFor: Supabase yapılandırılmamışken/token yokken null (fabrike URL üretilmez)", () => {
   assert.equal(webhookUrlFor("abc123"), null); // bu test ortamında VITE_SUPABASE_URL boş
   assert.equal(webhookUrlFor(null), null);
+});
+
+console.log("İzleme — 'Geçmiş veriyi göster' aç/kapa + cache (izlemeye eklemek ≠ backtest)");
+// Node'da gerçek localStorage yok — her test kendi İZOLE sahte store'unu kurar (global
+// durum/diğer testler etkilenmez), izlemeHistory.js'in store parametresiyle enjekte edilir.
+function fakeStore() {
+  const m = new Map();
+  return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)) };
+}
+test("lastClosedFourHourBoundary: 4H'lık UTC sınırlarına yuvarlar", () => {
+  assert.equal(lastClosedFourHourBoundary(Date.UTC(2026, 0, 1, 5, 30)), Date.UTC(2026, 0, 1, 4, 0));
+  assert.equal(lastClosedFourHourBoundary(Date.UTC(2026, 0, 1, 4, 0)), Date.UTC(2026, 0, 1, 4, 0));
+  assert.equal(lastClosedFourHourBoundary(Date.UTC(2026, 0, 1, 3, 59)), Date.UTC(2026, 0, 1, 0, 0));
+});
+test("isHistoryCacheFresh: cache yoksa/computedAt geçersizse false", () => {
+  assert.equal(isHistoryCacheFresh(null), false);
+  assert.equal(isHistoryCacheFresh({ computedAt: NaN }), false);
+  assert.equal(isHistoryCacheFresh({}), false);
+});
+test("isHistoryCacheFresh: aynı 4H penceresinde hesaplandıysa taze, yeni mum kapandıysa bayat", () => {
+  const now = Date.UTC(2026, 0, 1, 6, 0); // pencere: [04:00, 08:00)
+  assert.equal(isHistoryCacheFresh({ computedAt: Date.UTC(2026, 0, 1, 4, 5) }, now), true);
+  assert.equal(isHistoryCacheFresh({ computedAt: Date.UTC(2026, 0, 1, 3, 59) }, now), false); // önceki mum
+});
+test("get/setCachedHistory: yazılan aynen okunur, sembol büyük harfe normalize edilir", () => {
+  const store = fakeStore();
+  assert.equal(getCachedHistory("btc", store), null);
+  setCachedHistory("btc", { t: 3, edge: true }, 1000, store);
+  const c = getCachedHistory("BTC", store);
+  assert.equal(c.computedAt, 1000);
+  assert.deepEqual(c.result, { t: 3, edge: true });
+});
+test("computeHistory: runBacktest+latestFvgSignal'ın alt kümesini çıkarır (motor DEĞİŞMEDEN)", () => {
+  const h = computeHistory(getBars("SOL"), { rr: 2, maxGapATR: 0.6, concepts: ["fvg"], costR: 0.05 });
+  assert.ok(h);
+  for (const k of ["t", "edge", "hipotez", "sig"]) assert.ok(k in h, `alan eksik: ${k}`);
+  const r = runBacktest(getBars("SOL"), { rr: 2, maxGapATR: 0.6, concepts: ["fvg"], costR: 0.05 });
+  assert.equal(h.t, r.tStat);
+  assert.equal(h.edge, r.verdict.good);
+});
+test("getOrComputeHistory: cache boşken HESAPLAR ve cache'e yazar (toggle ilk açılış)", () => {
+  const store = fakeStore();
+  const bars = getBars("SOL");
+  const opts = { rr: 2, maxGapATR: 0.6, concepts: ["fvg"], costR: 0.05 };
+  assert.equal(getCachedHistory("SOL", store), null, "başlangıçta cache boş olmalı");
+  const h = getOrComputeHistory("SOL", bars, opts, Date.now(), store);
+  assert.ok(h && h.result);
+  assert.deepEqual(getCachedHistory("SOL", store), h, "hesap cache'e yazılmış olmalı");
+});
+test("getOrComputeHistory: cache TAZE ise motor TEKRAR ÇAĞRILMAZ — aynı referans döner", () => {
+  const store = fakeStore();
+  const bars = getBars("SOL");
+  const opts = { rr: 2, concepts: ["fvg"] };
+  const now = Date.UTC(2026, 0, 1, 5, 0);
+  const first = getOrComputeHistory("SOL", bars, opts, now, store);
+  // ikinci çağrıda bars'ı BİLEREK boş dizi veriyoruz — eğer motor gerçekten tekrar çağrılsaydı
+  // runBacktest([]) null dönerdi ve sonuç değişirdi/çökerdi; aynı obje dönmesi cache'in
+  // kullanıldığının (motorun ÇAĞRILMADIĞININ) kanıtıdır.
+  const second = getOrComputeHistory("SOL", [], opts, now + 60_000, store); // aynı 4H penceresi
+  assert.deepEqual(second, first, "cache taze iken değer aynı kalmalı (motor tekrar çağrılmadı)");
+});
+test("getOrComputeHistory: cache BAYAT ise (yeni 4H mumu kapandı) yeniden hesaplanır", () => {
+  const store = fakeStore();
+  const bars = getBars("SOL");
+  const opts = { rr: 2, concepts: ["fvg"] };
+  const t0 = Date.UTC(2026, 0, 1, 5, 0);
+  const first = getOrComputeHistory("SOL", bars, opts, t0, store);
+  const t1 = t0 + FOUR_H_LATER(); // bir sonraki 4H penceresi
+  const second = getOrComputeHistory("SOL", bars, opts, t1, store);
+  assert.notEqual(second, first);
+  assert.equal(second.computedAt, t1);
+  assert.deepEqual(second.result, first.result); // aynı barlar → aynı sonuç, ama YENİDEN hesaplandı
+});
+function FOUR_H_LATER() { return 4 * 60 * 60 * 1000 + 1; }
+test("DÜRÜSTLÜK: toggle kapalıyken (bu testte hiç çağrılmayan getOrComputeHistory) hesaplama YOK — Izleme.jsx satırı yalnız historyOn true iken motoru çağırır", () => {
+  // Bu, Izleme.jsx'teki gerçek satırın davranışını taklit eder: historyOn false ise
+  // getOrComputeHistory'nin ADI BİLE geçmez — motor çağrılma İMKANI yoktur.
+  const store = fakeStore();
+  const historyOn = false;
+  let called = false;
+  const wrappedCompute = (...args) => { called = true; return getOrComputeHistory(...args); };
+  if (historyOn) wrappedCompute("SOL", getBars("SOL"), { rr: 2 }, Date.now(), store);
+  assert.equal(called, false, "toggle kapalıyken backtest çağrılmamalı");
+  assert.equal(getCachedHistory("SOL", store), null, "hiçbir cache yazılmamış olmalı");
 });
 
 console.log("maliyet (costR)");

@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { Eye, Plus, Trash2, ShieldCheck, Bell, BellRing, Settings, Star, Wallet, X, Link2, Copy, Check } from "lucide-react";
+import { Eye, Plus, Trash2, ShieldCheck, Bell, BellRing, Settings, Star, Wallet, X, Link2, Copy, Check, History } from "lucide-react";
 import { getBars, loadReal, isReal, hasData, stats24h, getFreshness, getSearchSymbols, loadTop500Symbols, pairFor } from "../lib/data.js";
 import { periodChangePct, WEEK_BARS, DETAIL_PERIODS } from "../lib/priceChange.js";
-import { runBacktest, latestFvgSignal } from "../lib/backtest.js";
+import { getOrComputeHistory } from "../lib/izlemeHistory.js";
 import { formatPriceTick } from "../lib/priceFormat.js";
 import { fetchWebhookEntry, getOrCreateWebhookEntry, webhookUrlFor } from "../lib/izlemeEntries.js";
 import { detectModBSignals, DEFAULT_PARAMS } from "../lib/modB.js";
@@ -19,9 +19,13 @@ const WKEY = "ak_watch_v1";
 const SKEY = "ak_my_system_v1";
 const BADGE_KEY = "ak_seen_signal_ids_v1"; // AK-052: notify.js'teki isSeen/markSeen'den ayrı — sadece "YENİ" rozeti için
 const FAV_KEY = "ak_favorites_v1"; // AK-061: Lab.jsx sembol seçiciyle paylaşılan aynı anahtar
+// AK-izleme-toggle: "Geçmiş veriyi göster" — hangi semboller için kullanıcı backtest'i
+// açık bırakmış (default KAPALI — izlemeye eklemek artık otomatik backtest tetiklemiyor).
+const HISTORY_ON_KEY = "ak_watch_history_on_v1";
 const POLL_MS = 5 * 60 * 1000; // 5 dakika
 function load() { try { return JSON.parse(localStorage.getItem(WKEY)) || ["BTC", "ETH", "SOL", "AVAX"]; } catch { return ["BTC"]; } }
 function loadFavorites() { try { return new Set(JSON.parse(localStorage.getItem(FAV_KEY)) || []); } catch { return new Set(); } }
+function loadHistoryOn() { try { return new Set(JSON.parse(localStorage.getItem(HISTORY_ON_KEY)) || []); } catch { return new Set(); } }
 function loadSystem() {
   try {
     const saved = JSON.parse(localStorage.getItem(SKEY));
@@ -89,7 +93,7 @@ function fmtPctSigned(v) {
 // bir portföy kalemine ait geçmiş/maliyet verisine dayanır, izleme listesinde karşılığı yok.
 // YTD/1Y/5Y de eklenmedi — DETAIL_PERIODS zaten AK-031 dürüstlük kararına göre veriye sığan
 // aralıklarla sınırlı (bkz. src/lib/priceChange.js).
-function WatchDetailModal({ row, fmtP, onClose, userId, requireAuth }) {
+function WatchDetailModal({ row, fmtP, onClose, userId, requireAuth, onToggleHistory }) {
   const [period, setPeriod] = useState("1G");
   const bars = getBars(row.sym);
   const weekChangePct = periodChangePct(bars, WEEK_BARS);
@@ -150,16 +154,30 @@ function WatchDetailModal({ row, fmtP, onClose, userId, requireAuth }) {
 
         <div className="ak-pf-detail-grid">
           <div><span className="k">Kaynak</span><b>{row.real ? "Gerçek veri" : "Örnek veri"}</b></div>
-          {/* D19: t<2 ise bu FVG kuralı henüz doğrulanmış "strateji" değil — HİPOTEZ etiketi asla kalkmaz */}
-          <div><span className="k">Edge (t-stat)</span><b className="mono">{row.edge ? "✓ " : row.hipotez ? "⚠ HİPOTEZ · " : ""}t={row.t}</b></div>
           <div><span className="k">Grup</span><b>{row.group}</b></div>
-          {row.sig && <div><span className="k">Giriş (FVG)</span><b className="mono">{formatPriceTick(row.sig.entry, row.pair)}</b></div>}
-          {row.sig && <div><span className="k">Hedef (TP)</span><b className="mono">{formatPriceTick(row.sig.tp, row.pair)}</b></div>}
-          {row.sig && <div><span className="k">Stop (SL)</span><b className="mono">{formatPriceTick(row.sig.sl, row.pair)}</b></div>}
-          {row.sig && timeAgo(row.sig.timestamp) && <div><span className="k">Sinyal zamanı</span><b>{timeAgo(row.sig.timestamp)}</b></div>}
+          {/* D19: t<2 ise bu FVG kuralı henüz doğrulanmış "strateji" değil — HİPOTEZ etiketi asla kalkmaz */}
+          {row.showHistory && <div><span className="k">Edge (t-stat)</span><b className="mono">{row.edge ? "✓ " : row.hipotez ? "⚠ HİPOTEZ · " : ""}t={row.t}</b></div>}
+          {row.showHistory && row.sig && <div><span className="k">Giriş (FVG)</span><b className="mono">{formatPriceTick(row.sig.entry, row.pair)}</b></div>}
+          {row.showHistory && row.sig && <div><span className="k">Hedef (TP)</span><b className="mono">{formatPriceTick(row.sig.tp, row.pair)}</b></div>}
+          {row.showHistory && row.sig && <div><span className="k">Stop (SL)</span><b className="mono">{formatPriceTick(row.sig.sl, row.pair)}</b></div>}
+          {row.showHistory && row.sig && timeAgo(row.sig.timestamp) && <div><span className="k">Sinyal zamanı</span><b>{timeAgo(row.sig.timestamp)}</b></div>}
         </div>
-        {!row.sig && <p className="ak-izle-note">Son 900 barda tamamlanmış bir FVG işlemi yok — gösterilecek giriş/TP/SL henüz oluşmadı.</p>}
-        <p className="ak-izle-note">Edge rozeti geçmiş 900 barın ölçümüdür, gelecek vaadi/yatırım tavsiyesi değildir. Giriş/TP/SL geçmiş simülasyondur, yatırım tavsiyesi değildir.</p>
+
+        {/* AK-izleme-toggle: izlemede olmak ile geçmiş veri/backtest hesaplanması artık AYRI — bu
+            anahtar açılmadan runBacktest hiç çağrılmaz (D14: hesaplanma anı her zaman görünür). */}
+        <div className="ak-history-toggle-row">
+          <button className="ak-btn ak-btn-secondary sm" onClick={() => onToggleHistory(row.sym)}>
+            <History size={14} /> {row.showHistory ? "Geçmiş veriyi gizle" : "Geçmiş veriyi göster"}
+          </button>
+          {row.showHistory && (
+            <span className="ak-izle-note" style={{ margin: 0 }}>
+              {row.historyComputedAt ? `Hesaplandı: ${timeAgo(row.historyComputedAt) || "az önce"}` : ""}
+            </span>
+          )}
+        </div>
+        {!row.showHistory && <p className="ak-izle-note">Geçmiş veri/backtest gösterilmiyor — yukarıdaki anahtarla aç (yalnız o zaman hesaplanır).</p>}
+        {row.showHistory && !row.sig && <p className="ak-izle-note">Son 900 barda tamamlanmış bir FVG işlemi yok — gösterilecek giriş/TP/SL henüz oluşmadı.</p>}
+        {row.showHistory && <p className="ak-izle-note">Edge rozeti geçmiş 900 barın ölçümüdür, gelecek vaadi/yatırım tavsiyesi değildir. Giriş/TP/SL geçmiş simülasyondur, yatırım tavsiyesi değildir.</p>}
 
         <div className="ak-webhook">
           <h4><Link2 size={13} /> Code'a bağla</h4>
@@ -180,11 +198,13 @@ function WatchDetailModal({ row, fmtP, onClose, userId, requireAuth }) {
               ) : (
                 <p className="ak-izle-note">Sunucu bağlantısı yapılandırılmamış — webhook URL'i şu an gösterilemiyor.</p>
               )}
-              {/* D14: bağlantı durumu her zaman görünür, gizlenmez */}
+              {/* D14/AK-webhook-teşhis: bağlantı durumu (başarı VEYA hata) her zaman görünür, sessiz başarısızlık yok */}
               <span className={"ak-webhook-badge " + webhook.webhook_status}>
                 {webhook.webhook_status === "tetiklendi"
                   ? `Tetiklendi${timeAgo(webhook.last_triggered_at ? new Date(webhook.last_triggered_at).getTime() : null) ? " · " + timeAgo(new Date(webhook.last_triggered_at).getTime()) : ""}`
-                  : "Bağlandı, henüz tetiklenmedi"}
+                  : webhook.webhook_status === "hata"
+                    ? `Hata: ${webhook.last_error === "payload_too_large" ? "Pine alert mesajı çok büyük — kısalt ve tekrar dene" : webhook.last_error || "bilinmeyen"}${timeAgo(webhook.last_failed_at ? new Date(webhook.last_failed_at).getTime() : null) ? " · " + timeAgo(new Date(webhook.last_failed_at).getTime()) : ""}`
+                    : "Bağlandı, henüz tetiklenmedi"}
               </span>
             </>
           )}
@@ -231,10 +251,14 @@ export default function Izleme() {
     });
   }
   const [favorites, setFavorites] = useState(loadFavorites); // AK-061: favori semboller, listenin en üstüne sabitlenir
+  // AK-izleme-toggle: "Geçmiş veriyi göster" — default KAPALI, sembol izlemeye eklenince
+  // hiçbir backtest/geçmiş veri hesabı tetiklenmez (yalnız bu Set'e girmiş semboller için hesaplanır).
+  const [historyOn, setHistoryOn] = useState(loadHistoryOn);
   const [detailSym, setDetailSym] = useState(null); // AK-089: satıra dokunma → detay ekranı (WatchDetailModal)
   const [alarmHistory, setAlarmHistory] = useState(listAlarmTrades); // AK-076: sinyal geldiğinde otomatik açılan hayali işlemler
   useEffect(() => { try { localStorage.setItem(WKEY, JSON.stringify(list)); } catch {} }, [list]);
   useEffect(() => { try { localStorage.setItem(FAV_KEY, JSON.stringify([...favorites])); } catch {} }, [favorites]);
+  useEffect(() => { try { localStorage.setItem(HISTORY_ON_KEY, JSON.stringify([...historyOn])); } catch {} }, [historyOn]);
   useEffect(() => { try { localStorage.setItem(SKEY, JSON.stringify(system)); } catch {} }, [system]);
 
   // AK-048: dakikada bir "X dk önce" metnini tazele — signals dizisi yeniden hesaplanmaz
@@ -328,23 +352,35 @@ export default function Izleme() {
   function setParam(key, val) { setSystem(s => ({ ...s, [key]: val })); }
   function resetSystem() { setSystem({ name: "Sistemim", ...DEFAULT_PARAMS }); }
   function toggleFav(sym) { setFavorites(f => { const n = new Set(f); n.has(sym) ? n.delete(sym) : n.add(sym); return n; }); }
+  function toggleHistory(sym) { setHistoryOn(h => { const n = new Set(h); n.has(sym) ? n.delete(sym) : n.add(sym); return n; }); }
 
   const rows = list.map(sym => {
     if (!hasData(sym)) return { sym, bad: true }; // ne gerçek ne tanımlı sentetik -> "veri yok" (sahte edge yakma!)
     const b = getBars(sym);
     if (!b || b.length < 60) return { sym, bad: true };
     const last = b[b.length - 1].c, prev = b[b.length - 2].c, chg = ((last - prev) / prev) * 100;
-    const r = runBacktest(b, { rr: 2, maxGapATR: 0.6, concepts: ["fvg"], costR: 0.05 });
     const meta = searchSymbols.find(x => x.sym === sym);
     const real = isReal(sym);
     // AK-057: 24s değişim yalnız gerçek veride anlamlı — sentetikte null (sıralama dışı kalır)
     const chg24h = real ? stats24h(b)?.chgPct ?? null : null;
     const fresh = real ? getFreshness(sym) : null; // AK-064: "Binance'e bağlı · X gecikme" rozeti
-    const sig = latestFvgSignal(b, r); // en son FVG işlemi: giriş/TP/SL + zaman damgası (D6: yoksa null)
+
+    // AK-izleme-toggle: SORUN — izlemeye eklemek ile backtest hesabı birbirine bağlıydı (bir
+    // sembol eklenince runBacktest hemen otomatik çalışıyordu). Artık motor YALNIZ kullanıcı bu
+    // sembol için "Geçmiş veriyi göster"ı AÇTIYSA çağrılır; cache tazeyse (son kapanmış 4H
+    // mumundan yeniyse) yeniden de hesaplanmaz (bkz. src/lib/izlemeHistory.js).
+    const showHistory = historyOn.has(sym);
+    const hist = showHistory
+      ? getOrComputeHistory(sym, b, { rr: 2, maxGapATR: 0.6, concepts: ["fvg"], costR: 0.05 })
+      : null;
+    const t = hist?.result?.t ?? null;
+    const edge = hist?.result?.edge ?? false;
+    const hipotez = hist?.result?.hipotez ?? false; // D19: t<2 → hipotez, "strateji" değil
+    const sig = hist?.result?.sig ?? null;
     return {
       sym, name: meta?.name || sym, group: meta?.group || "—", real, last, chg, chg24h, fresh,
-      t: r.tStat, edge: r.verdict.good, hipotez: r.tStat < 2, // D19: t<2 → hipotez, "strateji" değil
-      sig, pair: pairFor(sym),
+      showHistory, t, edge, hipotez, sig, historyComputedAt: hist?.computedAt ?? null,
+      pair: pairFor(sym),
     };
   });
 
@@ -508,7 +544,13 @@ export default function Izleme() {
                     <Spark sym={r.sym} />
                     <span className="last">{fmtP(r.last)}</span>
                     <span className={"chg " + (r.chg >= 0 ? "pos" : "neg")}>{r.chg >= 0 ? "+" : ""}{r.chg.toFixed(2)}%</span>
-                    <span className={"edge " + (r.edge ? "on" : "")}>{r.edge ? <><ShieldCheck size={12} /> edge t={r.t}</> : r.hipotez ? `hipotez t=${r.t}` : `t=${r.t}`}</span>
+                    {r.showHistory ? (
+                      <span className={"edge " + (r.edge ? "on" : "")}>{r.edge ? <><ShieldCheck size={12} /> edge t={r.t}</> : r.hipotez ? `hipotez t=${r.t}` : `t=${r.t}`}</span>
+                    ) : (
+                      <button className="ak-history-btn" onClick={(e) => { e.stopPropagation(); toggleHistory(r.sym); }} title="Geçmiş veri/backtest hesapla">
+                        <History size={12} /> Geçmiş veri
+                      </button>
+                    )}
                     <button className="ak-del" onClick={(e) => { e.stopPropagation(); del(r.sym); }}><Trash2 size={14} /></button>
                   </div>
                 ))}
@@ -561,7 +603,7 @@ export default function Izleme() {
       )}
       {detailSym && (() => {
         const row = rows.find((r) => r.sym === detailSym);
-        return row && !row.bad ? <WatchDetailModal row={row} fmtP={fmtP} onClose={() => setDetailSym(null)} userId={user?.id} requireAuth={requireAuth} /> : null;
+        return row && !row.bad ? <WatchDetailModal row={row} fmtP={fmtP} onClose={() => setDetailSym(null)} userId={user?.id} requireAuth={requireAuth} onToggleHistory={toggleHistory} /> : null;
       })()}
       </>)}
     </div>

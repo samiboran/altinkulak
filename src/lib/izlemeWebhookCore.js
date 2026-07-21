@@ -10,6 +10,19 @@
 
 export const RATE_LIMIT_MS = 60 * 1000; // aynı token 1 dakika içinde tekrar tetiklenirse sessizce yut
 
+// AK-webhook-teşhis: TradingView alert mesajı tipik olarak birkaç yüz karakteri geçmez (TradingView'ın
+// kendi alert mesajı sınırı da ~4000 karakterdir) — 8000 byte cömert bir tavan. Önceki başarısızlık
+// ("fazla satır girildi" gibi bir sebep, gerçek log görülemeden teyit edilemedi — bkz. commit notu)
+// hiçbir yerde İZ BIRAKMIYORDU: eşleşme/oran-sınırı dışında kalan HER ret sessizce kayboluyordu.
+// Artık boyut sınırı AÇIKÇA kontrol edilir ve (token eşleşiyorsa) kayda geçirilir — bir daha "sebep
+// belirsiz" durumuna düşülmesin diye.
+export const MAX_PAYLOAD_BYTES = 8000;
+
+export function isPayloadTooLarge(rawBody) {
+  if (!rawBody) return false;
+  return new TextEncoder().encode(String(rawBody)).length > MAX_PAYLOAD_BYTES;
+}
+
 // 12 random byte = 24 hex karakter (~96 bit) — migration'daki default ile aynı entropi düzeyi.
 // Üretimde token DB tarafından (gen_random_bytes) üretilir; bu yalnızca dev/test/önizleme içindir.
 export function generateWebhookToken() {
@@ -38,13 +51,20 @@ export function isRateLimited(lastTriggeredAt, now = Date.now()) {
 // çağıranın (deps) sorumluluğundadır.
 //   deps.findByToken(token) -> Promise<{ id, lastTriggeredAt } | null>
 //   deps.markTriggered(id, { triggeredAt, rawBody }) -> Promise<void>
-// Döner: { status: 404 }                      — token eşleşmedi
-//        { status: 200, ignored: true }       — rate limit'e takıldı, sessizce yutuldu
-//        { status: 200, ignored: false }      — durum güncellendi
+//   deps.markFailed(id, { failedAt, reason }) -> Promise<void>  — REDDİN İZİNİ bırakır (D6/D14:
+//     sessiz başarısızlık yok; sebep her zaman izleme_entries'te ve dolayısıyla UI'da görünür).
+// Döner: { status: 404 }                                — token eşleşmedi (kayda geçecek entry yok)
+//        { status: 413, reason: "payload_too_large" }   — payload MAX_PAYLOAD_BYTES'ı aştı, kayda geçti
+//        { status: 200, ignored: true }                 — rate limit'e takıldı, sessizce yutuldu
+//        { status: 200, ignored: false }                — durum güncellendi
 export async function processWebhookTrigger(token, rawBody, deps, now = Date.now()) {
   if (!token || typeof token !== "string") return { status: 404 };
   const entry = await deps.findByToken(token);
   if (!entry) return { status: 404 };
+  if (isPayloadTooLarge(rawBody)) {
+    await deps.markFailed(entry.id, { failedAt: new Date(now).toISOString(), reason: "payload_too_large" });
+    return { status: 413, reason: "payload_too_large" };
+  }
   if (isRateLimited(entry.lastTriggeredAt, now)) return { status: 200, ignored: true };
   await deps.markTriggered(entry.id, { triggeredAt: new Date(now).toISOString(), rawBody: rawBody ?? null });
   return { status: 200, ignored: false };
