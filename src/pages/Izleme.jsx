@@ -122,10 +122,11 @@ function WatchDetailModal({ row, fmtP, onClose, userId, requireAuth, onToggleHis
   async function connectWebhook() {
     if (!requireAuth("\"Code'a bağla\" için giriş yap.")) return;
     setWhBusy(true); setWhErr("");
-    const e = await getOrCreateWebhookEntry(userId, row.sym);
+    const { entry, error } = await getOrCreateWebhookEntry(userId, row.sym);
     setWhBusy(false);
-    if (!e) { setWhErr("Bağlantı oluşturulamadı — tekrar dene."); return; }
-    setWebhook(e);
+    // AK-webhook-teşhis-2: artık genel "tekrar dene" yerine gerçek sebep gösterilir (varsa)
+    if (!entry) { setWhErr(error || "Bağlantı oluşturulamadı — tekrar dene."); return; }
+    setWebhook(entry);
   }
   async function copyUrl(url) {
     try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); }

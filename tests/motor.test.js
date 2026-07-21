@@ -6,7 +6,7 @@ import { runBacktest, latestFvgSignal } from "../src/lib/backtest.js";
 import { getBars, parseKlines, loadReal, isReal, pairFor, hasData, stats24h, getFreshness, freshnessStatus, getSearchSymbols, ALL_SYMBOLS } from "../src/lib/data.js";
 import { decimalsFromTick, tickSizeForPair, formatPriceTick } from "../src/lib/priceFormat.js";
 import { generateWebhookToken, buildWebhookUrl, isRateLimited, processWebhookTrigger, RATE_LIMIT_MS, isPayloadTooLarge, MAX_PAYLOAD_BYTES } from "../src/lib/izlemeWebhookCore.js";
-import { fetchWebhookEntry, getOrCreateWebhookEntry, webhookUrlFor, listTriggeredWebhookEntries } from "../src/lib/izlemeEntries.js";
+import { fetchWebhookEntry, getOrCreateWebhookEntry, webhookUrlFor, listTriggeredWebhookEntries, describeSupabaseError } from "../src/lib/izlemeEntries.js";
 import {
   lastClosedFourHourBoundary, isHistoryCacheFresh, getCachedHistory, setCachedHistory,
   computeHistory, getOrComputeHistory,
@@ -300,11 +300,59 @@ test("DÜRÜSTLÜK/D16: deps arayüzü yapısal olarak yalnız izleme kaydına e
     assert.equal(tradeTableTouched, false, "webhook motoru trade tablosuna dokunmamalı");
   });
 });
-test("izlemeEntries.js: Supabase yapılandırılmamışken tüm sorgular dürüst boş değer döner (D6)", async () => {
+test("izlemeEntries.js: Supabase yapılandırılmamışken entry dürüst null, ama artık SESSİZ değil (error dolu)", async () => {
   assert.equal(await fetchWebhookEntry("u1", "TRX"), null);
-  assert.equal(await getOrCreateWebhookEntry("u1", "TRX"), null);
+  const r1 = await getOrCreateWebhookEntry("u1", "TRX");
+  assert.equal(r1.entry, null);
+  assert.ok(r1.error, "yapılandırılmamışken bile bir sebep gösterilmeli — 'tekrar dene' değil");
   assert.equal(await fetchWebhookEntry(null, "TRX"), null); // userId yok → sorgulanmaz
-  assert.equal(await getOrCreateWebhookEntry("u1", ""), null); // sym yok → sorgulanmaz
+});
+
+console.log("Görev — 'Code'a bağla' başarısızlığı: gerçek sebep artık ayrıştırılıyor (D6/D19 ruhu — sessiz başarısızlık yok)");
+// izlemeEntries.js'in beklediği supabase-js zincirini (from().insert().select().single(),
+// from().select().eq().eq().maybeSingle()) taklit eden minimal sahte istemci — gerçek ağ YOK.
+function fakeSupabaseClient({ insertResult, selectResult }) {
+  return {
+    from() {
+      return {
+        insert() { return { select: () => ({ single: async () => insertResult }) }; },
+        select() { return { eq: () => ({ eq: () => ({ maybeSingle: async () => selectResult }) }) }; },
+      };
+    },
+  };
+}
+test("getOrCreateWebhookEntry: başarılı insert → entry döner, error null", async () => {
+  const client = fakeSupabaseClient({ insertResult: { data: { id: "1", webhook_token: "abc123", webhook_status: "baglandi" }, error: null } });
+  const { entry, error } = await getOrCreateWebhookEntry("u1", "trx", client);
+  assert.equal(error, null);
+  assert.equal(entry.webhook_token, "abc123");
+});
+test("getOrCreateWebhookEntry: unique çakışması (23505) → tekrar tıklamada YENİ token ÜRETİLMEZ, var olan kayıt döner", async () => {
+  const existing = { id: "1", webhook_token: "existing-token-aynen-kalir", webhook_status: "tetiklendi" };
+  const client = fakeSupabaseClient({
+    insertResult: { data: null, error: { code: "23505", message: "duplicate key value violates unique constraint" } },
+    selectResult: { data: existing, error: null },
+  });
+  const { entry, error } = await getOrCreateWebhookEntry("u1", "trx", client);
+  assert.equal(error, null);
+  assert.equal(entry.webhook_token, "existing-token-aynen-kalir");
+});
+test("getOrCreateWebhookEntry: foreign key ihlali (23503) → entry null + ANLAMLI hata (muhtemel gerçek sebep: profiles satırı yok)", async () => {
+  const client = fakeSupabaseClient({ insertResult: { data: null, error: { code: "23503", message: "violates foreign key constraint" } } });
+  const { entry, error } = await getOrCreateWebhookEntry("u1", "trx", client);
+  assert.equal(entry, null);
+  assert.match(error, /kurulum eksikliği/);
+});
+test("getOrCreateWebhookEntry: RLS/yetkisiz (42501) → entry null + ANLAMLI hata, 'tekrar dene' körlemesine değil", async () => {
+  const client = fakeSupabaseClient({ insertResult: { data: null, error: { code: "42501", message: "new row violates row-level security policy" } } });
+  const { entry, error } = await getOrCreateWebhookEntry("u1", "trx", client);
+  assert.equal(entry, null);
+  assert.match(error, /Yetkisiz/);
+});
+test("describeSupabaseError: null hatasız, bilinmeyen kodda bile ELİMİZDEKİ gerçek mesaj gösterilir", () => {
+  assert.equal(describeSupabaseError(null), null);
+  assert.match(describeSupabaseError({ code: "99999", message: "beklenmedik durum" }), /beklenmedik durum/);
+  assert.equal(describeSupabaseError({ code: "99999" }), "Bağlantı oluşturulamadı — tekrar dene.");
 });
 test("AK-102: listTriggeredWebhookEntries — Supabase yapılandırılmamışken/userId yokken dürüst boş dizi (D6)", async () => {
   assert.deepEqual(await listTriggeredWebhookEntries("u1"), []);
