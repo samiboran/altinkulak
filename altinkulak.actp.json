@@ -1,0 +1,96 @@
+{
+  "@context": "https://actp.dev/schema/v0.1",
+  "@type": "ACTPPacket",
+  "actp_version": "0.1",
+  "created_at": "2026-07-21T00:00:00Z",
+  "vocabulary_hash": "actp-legend-v0.1",
+
+  "symbol_legend": {
+    "🔴": "priority=P0, mutability=LOCKED, certainty=HIGH",
+    "🟡": "priority=P1, mutability=FLEXIBLE, certainty=MEDIUM",
+    "🔵": "priority=P2, mutability=FLEXIBLE, certainty=LOW",
+    "🟢": "status=COMPLETED",
+    "🌫️": "certainty=LOW, hallucination_risk=true",
+    "🔗": "external_dependency=true"
+  },
+
+  "project": {
+    "name": "Altınkulak",
+    "goal": "Türkçe, istatistik temelli trading eğitim + simülasyon platformu — 'Gürültüyü değil, sinyali duy'",
+    "constraints": [
+      "🔴 İstatistiksel dürüstlük: uydurma veri yok, sinyal servisi yok, sıralamalar OOS t-istatistiğine dayanır",
+      "🔴 BrowserRouter basename='/altinkulak' (main.jsx) — DOKUNULMAZ",
+      "🔴 vite.config.js base: '/altinkulak/' — DOKUNULMAZ",
+      "🔴 Test + implementasyon aynı commit'te gider (strategyExtractor kazasından sonra kural)",
+      "🔴 Sicil defteri append-only; silme yok (testle garanti)"
+    ],
+    "soft_preferences": [
+      "🟡 SVG grafik (Canvas'a geçilmedi, bilinçli karar)",
+      "🟡 Tüm UI ve kod yorumları Türkçe"
+    ]
+  },
+
+  "decisions": [
+    { "id": "D9",  "symbol": "🔴", "priority": "P0", "certainty": "HIGH", "mutability": "LOCKED",
+      "content": "Tüm state event log'lardan türetilir",
+      "rationale": "Denetlenebilirlik ve geri oynatma" },
+    { "id": "D16", "symbol": "🔴", "priority": "P0", "certainty": "HIGH", "mutability": "LOCKED",
+      "content": "Oyun katmanı edge rütbesinden kalıcı olarak ayrı",
+      "rationale": "Oyunlaştırma istatistiksel itibarı kirletmesin" },
+    { "id": "D19", "symbol": "🔴", "priority": "P0", "certainty": "HIGH", "mutability": "LOCKED",
+      "content": "Strateji Çıkarıcı çıktısı OOS t≥2 olana kadar HİPOTEZ etiketlidir",
+      "rationale": "Overfitting'i ürün seviyesinde engelle" },
+    { "id": "D20", "symbol": "🟡", "priority": "P1", "certainty": "HIGH", "mutability": "FLEXIBLE",
+      "content": "Codegen Pine Script değil JS mySignal üretir; her blok yorumlu, kara kutu değil",
+      "rationale": "Kullanıcı Kod Editörüm'de kurcalayabilmeli" }
+  ],
+
+  "tasks": [
+    { "id": "T1", "status": "pending", "description": "🔴 codegen.js'e 4 eksik blok: ob, bos, mitigation, sr — TYPE_TO_BLOCK'ta null dönen türler seçilebilir olsun" },
+    { "id": "T2", "status": "pending", "description": "🔴 Chart.jsx dedektör useMemo bağımlılık düzeltmesi — pan/zoom'da tam-geçmiş yeniden hesap yapılmasın" },
+    { "id": "T3", "status": "pending", "description": "🔴 Repo hijyeni: node_modules, dist, *.zip git'ten çıkar; .gitignore güncelle" },
+    { "id": "T4", "status": "pending", "description": "🟡 maArrs EMA hesabını tam seride bir kez yap, pencereye slice ile kırp" },
+    { "id": "T5", "status": "pending", "description": "🔵 İncele bölgesinden bulunan oluşumlar için 'önerilen kombinasyon' sıralaması (frekans × yön tutarlılığı)" }
+  ],
+
+  "artifacts": {
+    "code_snippets": [],
+    "references": [
+      "CLAUDE.md (kök kurallar — her oturum önce bunu okur)",
+      "BUILD_LOG.md (handoff sırası)",
+      "docs/AK_MASTER_REGISTRY.json (görev numaralandırma)",
+      "src/lib/strategyExtractor.js (C1-C3: bölge→oluşum→blok eşlemesi)",
+      "src/lib/codegen.js (C5: BLOCKS tablosu)",
+      "src/lib/detectors.js (14 dedektör)",
+      "src/components/Chart.jsx (SVG grafik, 1077 satır)",
+      "src/pages/Lab.jsx (İncele akışı, OOS testi)"
+    ]
+  },
+
+  "entity_map": {
+    "İncele": "Lab.jsx drawMode='inspect' → handleInspectRange → StrategyExtractor paneli",
+    "mySignal": "codegen.js'in ürettiği kullanıcı stratejisi fonksiyonu",
+    "AK-PARAMS": "paramsBlock.js sözleşmesi — kod içi parametre bloğu",
+    "Sicil": "append-only işlem defteri",
+    "Sandbox": "silinebilir deneme modu, Sicil'den ayrı",
+    "Kulak Puanı": "kapalı devre topluluk ekonomisi, ticareti yok"
+  },
+
+  "priority_matrix": [
+    { "segment": "decisions", "weight": 1.0 },
+    { "segment": "tasks", "weight": 0.8 },
+    { "segment": "entity_map", "weight": 0.6 }
+  ],
+
+  "open_questions": [
+    "ob/bos/mitigation/sr blokları eklenince OOS honesty gate'i (D19) aynı akışta mı kalacak?",
+    "SVG performansı T2 sonrası yeterli mi, yoksa Canvas tartışması yeniden mi açılır?"
+  ],
+
+  "next_steps": [
+    "T3 (hijyen) → T2 (chart perf) → T1 (4 blok) sırasıyla; her biri ayrı commit + test",
+    "Bu paket her büyük karardan sonra güncellenir (delta sync)"
+  ],
+
+  "integrity_hash": "TODO-sha256"
+}
