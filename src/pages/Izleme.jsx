@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { Eye, Plus, Trash2, ShieldCheck, Bell, BellRing, Settings, Star, Wallet, X } from "lucide-react";
-import { getBars, loadReal, isReal, hasData, stats24h, getFreshness, getSearchSymbols, loadTop500Symbols } from "../lib/data.js";
+import { getBars, loadReal, isReal, hasData, stats24h, getFreshness, getSearchSymbols, loadTop500Symbols, pairFor } from "../lib/data.js";
 import { periodChangePct, WEEK_BARS, DETAIL_PERIODS } from "../lib/priceChange.js";
-import { runBacktest } from "../lib/backtest.js";
+import { runBacktest, latestFvgSignal } from "../lib/backtest.js";
+import { formatPriceTick } from "../lib/priceFormat.js";
 import { detectModBSignals, DEFAULT_PARAMS } from "../lib/modB.js";
 import { requestNotifyPermission, notify, isSeen, markSeen } from "../lib/notify.js";
 import { addAlarmTrade, checkOpenAlarmTrades, listAlarmTrades } from "../lib/alarmTrades.js";
@@ -108,7 +109,8 @@ function WatchDetailModal({ row, fmtP, onClose }) {
             <span className={row.chg >= 0 ? "pos" : "neg"}>Bugün {fmtPctSigned(row.chg)}</span>
             <span className={weekChangePct == null ? "" : weekChangePct >= 0 ? "pos" : "neg"}>Bu hafta {fmtPctSigned(weekChangePct)}</span>
           </div>
-          {row.fresh && <i className="ak-pf-age">{freshnessLabel(row.fresh)}</i>}
+          {/* D14: cache tazelik etiketi HER ZAMAN görünür — gerçek veri yoksa dürüst boş durum (D6), gizlenmez */}
+          <i className="ak-pf-age">{row.fresh ? freshnessLabel(row.fresh) : "Örnek veri — canlı önbellek yok"}</i>
         </div>
 
         <div className="ak-pf-detail-periods">
@@ -122,10 +124,16 @@ function WatchDetailModal({ row, fmtP, onClose }) {
 
         <div className="ak-pf-detail-grid">
           <div><span className="k">Kaynak</span><b>{row.real ? "Gerçek veri" : "Örnek veri"}</b></div>
-          <div><span className="k">Edge (t-stat)</span><b className="mono">{row.edge ? "✓ " : ""}t={row.t}</b></div>
+          {/* D19: t<2 ise bu FVG kuralı henüz doğrulanmış "strateji" değil — HİPOTEZ etiketi asla kalkmaz */}
+          <div><span className="k">Edge (t-stat)</span><b className="mono">{row.edge ? "✓ " : row.hipotez ? "⚠ HİPOTEZ · " : ""}t={row.t}</b></div>
           <div><span className="k">Grup</span><b>{row.group}</b></div>
+          {row.sig && <div><span className="k">Giriş (FVG)</span><b className="mono">{formatPriceTick(row.sig.entry, row.pair)}</b></div>}
+          {row.sig && <div><span className="k">Hedef (TP)</span><b className="mono">{formatPriceTick(row.sig.tp, row.pair)}</b></div>}
+          {row.sig && <div><span className="k">Stop (SL)</span><b className="mono">{formatPriceTick(row.sig.sl, row.pair)}</b></div>}
+          {row.sig && timeAgo(row.sig.timestamp) && <div><span className="k">Sinyal zamanı</span><b>{timeAgo(row.sig.timestamp)}</b></div>}
         </div>
-        <p className="ak-izle-note">Edge rozeti geçmiş 900 barın ölçümüdür, gelecek vaadi/yatırım tavsiyesi değildir.</p>
+        {!row.sig && <p className="ak-izle-note">Son 900 barda tamamlanmış bir FVG işlemi yok — gösterilecek giriş/TP/SL henüz oluşmadı.</p>}
+        <p className="ak-izle-note">Edge rozeti geçmiş 900 barın ölçümüdür, gelecek vaadi/yatırım tavsiyesi değildir. Giriş/TP/SL geçmiş simülasyondur, yatırım tavsiyesi değildir.</p>
       </div>
     </div>
   );
@@ -276,7 +284,12 @@ export default function Izleme() {
     // AK-057: 24s değişim yalnız gerçek veride anlamlı — sentetikte null (sıralama dışı kalır)
     const chg24h = real ? stats24h(b)?.chgPct ?? null : null;
     const fresh = real ? getFreshness(sym) : null; // AK-064: "Binance'e bağlı · X gecikme" rozeti
-    return { sym, name: meta?.name || sym, group: meta?.group || "—", real, last, chg, chg24h, fresh, t: r.tStat, edge: r.verdict.good };
+    const sig = latestFvgSignal(b, r); // en son FVG işlemi: giriş/TP/SL + zaman damgası (D6: yoksa null)
+    return {
+      sym, name: meta?.name || sym, group: meta?.group || "—", real, last, chg, chg24h, fresh,
+      t: r.tStat, edge: r.verdict.good, hipotez: r.tStat < 2, // D19: t<2 → hipotez, "strateji" değil
+      sig, pair: pairFor(sym),
+    };
   });
 
   // AK-057: sıralama — "24s Değişim" yalnız gerçek-veri satırlarını sıralar, sentetik/veri-yok
@@ -439,7 +452,7 @@ export default function Izleme() {
                     <Spark sym={r.sym} />
                     <span className="last">{fmtP(r.last)}</span>
                     <span className={"chg " + (r.chg >= 0 ? "pos" : "neg")}>{r.chg >= 0 ? "+" : ""}{r.chg.toFixed(2)}%</span>
-                    <span className={"edge " + (r.edge ? "on" : "")}>{r.edge ? <><ShieldCheck size={12} /> edge t={r.t}</> : `t=${r.t}`}</span>
+                    <span className={"edge " + (r.edge ? "on" : "")}>{r.edge ? <><ShieldCheck size={12} /> edge t={r.t}</> : r.hipotez ? `hipotez t=${r.t}` : `t=${r.t}`}</span>
                     <button className="ak-del" onClick={(e) => { e.stopPropagation(); del(r.sym); }}><Trash2 size={14} /></button>
                   </div>
                 ))}

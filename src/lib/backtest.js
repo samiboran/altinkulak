@@ -246,3 +246,24 @@ export function runBacktest(bars, { rr = 3, maxGapATR = 0.5, concepts = ["fvg"],
     verdict: v,
   };
 }
+
+// İzleme.jsx watchlist kartı için: motorun ürettiği trade listesinden KRONOLOJİK OLARAK EN
+// SON tamamlanmış FVG işlemini (giriş/stop/hedef + bar zaman damgası) çıkarır. trades dizisi
+// entryIdx'e göre sıralı DEĞİLDİR (gap taraması sırasına göre eklenir, retest lookahead'i
+// çakışabilir) — bu yüzden "son eleman" değil, en büyük entryIdx aranır.
+// Hiç tamamlanmış trade yoksa null: sahte sinyal uydurmak yerine dürüst boş durum (D6).
+// hipotez: D19 — t < 2 ise bu FVG kuralı henüz istatistiksel olarak doğrulanmamış bir hipotezdir.
+export function latestFvgSignal(bars, result) {
+  if (!result || !result.trades || !result.trades.length) return null;
+  let t = null;
+  for (const tr of result.trades) if (!t || tr.entryIdx > t.entryIdx) t = tr;
+  const bar = bars[t.entryIdx];
+  return {
+    dir: t.dir,
+    entry: t.entry,       // tam küsürat — yuvarlama yok, gösterim katmanı ayrıca biçimlendirir
+    tp: t.target,
+    sl: t.stop,
+    timestamp: bar?.time ?? null,
+    hipotez: result.tStat < 2,
+  };
+}

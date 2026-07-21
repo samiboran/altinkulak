@@ -2,8 +2,9 @@
 // Çalıştır: npm test  (bağımlılık yok, saf node)
 import assert from "node:assert/strict";
 import { mean, std, tStat, trainTestSplit, verdict, bonferroniT, expectedFalsePositives } from "../src/lib/stats.js";
-import { runBacktest } from "../src/lib/backtest.js";
+import { runBacktest, latestFvgSignal } from "../src/lib/backtest.js";
 import { getBars, parseKlines, loadReal, isReal, pairFor, hasData, stats24h, getFreshness, freshnessStatus, getSearchSymbols, ALL_SYMBOLS } from "../src/lib/data.js";
+import { decimalsFromTick, tickSizeForPair, formatPriceTick } from "../src/lib/priceFormat.js";
 import { normalizeTop500 } from "../src/lib/top500.js";
 import { detectModBSignals, DEFAULT_PARAMS } from "../src/lib/modB.js";
 import { applyTick, mergeGapFill } from "../src/lib/liveData.js";
@@ -92,6 +93,92 @@ test("determinizm: aynı girdi → aynı t-stat", () => {
 test("aşırı filtre → az/sıfır işlem, motor çökmez", () => {
   const r = runBacktest(getBars("BTC"), { rr: 2, concepts: ["fvg", "ob", "bos", "mit", "of", "fib"] });
   assert.ok(r === null || r.tradeCount >= 0);
+});
+
+console.log("İzleme paneli: TRX/HYPE/DOGE/BNB için FVG-only backtest (AK-FVG-panel)");
+for (const sym of ["TRX", "HYPE", "DOGE", "BNB"]) {
+  test(`${sym}: hasData true, sentetik/gerçek fark etmeksizin FVG backtest çalışır ve tam yapı döner`, () => {
+    assert.equal(hasData(sym), true, `${sym} için veri yok — profil eksik`);
+    const bars = getBars(sym);
+    assert.ok(bars.length >= 900, `${sym} bar sayısı yetersiz`);
+    const r = runBacktest(bars, { rr: 2, maxGapATR: 0.6, concepts: ["fvg"], costR: 0.05 });
+    assert.ok(r, `${sym} için backtest null döndü`);
+    for (const k of ["trades", "tradeCount", "tStat", "controlP95", "verdict"]) assert.ok(k in r, `${sym}: alan eksik ${k}`);
+  });
+  test(`${sym}: gömülü edge sentetik profilde bulunuyor (DÜRÜSTLÜK kontrolü — motor rastgeleyle SOL gibi ayırt ediyor)`, () => {
+    const r = runBacktest(getBars(sym), { rr: 2, maxGapATR: 0.6, concepts: ["fvg"], costR: 0.05 });
+    assert.equal(r.verdict.good, true, `${sym} edge vermedi, t=${r.tStat} p95=${r.controlP95}`);
+  });
+}
+
+console.log("latestFvgSignal — İzleme kartı giriş/TP/SL/zaman damgası (D6/D19)");
+test("hiç trade yoksa null döner (sahte sinyal uydurulmaz)", () => {
+  assert.equal(latestFvgSignal(getBars("SOL"), null), null);
+  assert.equal(latestFvgSignal(getBars("SOL"), { trades: [] }), null);
+});
+test("en büyük entryIdx'e sahip trade seçilir (trades dizisi entryIdx'e göre sıralı DEĞİL varsayımıyla)", () => {
+  const bars = getBars("SOL");
+  const fakeResult = { tStat: 3, trades: [
+    { entryIdx: 50, dir: 1, entry: 10, stop: 9, target: 13 },
+    { entryIdx: 12, dir: -1, entry: 20, stop: 21, target: 17 }, // dizide SONRA ama kronolojik olarak ÖNCE
+  ] };
+  const sig = latestFvgSignal(bars, fakeResult);
+  assert.equal(sig.entry, 10);
+  assert.equal(sig.dir, 1);
+});
+test("entry/tp/sl tam küsüratla döner — yuvarlama yok", () => {
+  const bars = getBars("SOL");
+  const fakeResult = { tStat: 3, trades: [{ entryIdx: 5, dir: 1, entry: 12.34567891, stop: 11.11119999, target: 15.87654321 }] };
+  const sig = latestFvgSignal(bars, fakeResult);
+  assert.equal(sig.entry, 12.34567891);
+  assert.equal(sig.sl, 11.11119999);
+  assert.equal(sig.tp, 15.87654321);
+});
+test("D19: t<2 → hipotez true; t>=2 → hipotez false", () => {
+  const bars = getBars("SOL");
+  const trades = [{ entryIdx: 5, dir: 1, entry: 1, stop: 0.9, target: 1.3 }];
+  assert.equal(latestFvgSignal(bars, { tStat: 1.5, trades }).hipotez, true);
+  assert.equal(latestFvgSignal(bars, { tStat: 2.4, trades }).hipotez, false);
+});
+test("gerçek runBacktest çıktısıyla uçtan uca: SOL için sig varsa entryIdx bars sınırları içinde", () => {
+  const bars = getBars("SOL");
+  const r = runBacktest(bars, { rr: 2, concepts: ["fvg"] });
+  const sig = latestFvgSignal(bars, r);
+  if (sig) {
+    assert.ok([1, -1].includes(sig.dir));
+    assert.ok(Number.isFinite(sig.entry) && Number.isFinite(sig.tp) && Number.isFinite(sig.sl));
+    assert.equal(typeof sig.hipotez, "boolean");
+  }
+});
+
+console.log("priceFormat.js — tick size'a göre dinamik gösterim hassasiyeti (sabit toFixed(2) değil)");
+test("decimalsFromTick: bilinen tick size'lardan doğru ondalık sayısı çıkarır", () => {
+  assert.equal(decimalsFromTick(0.01), 2);
+  assert.equal(decimalsFromTick(0.001), 3);
+  assert.equal(decimalsFromTick(0.00001), 5);
+  assert.equal(decimalsFromTick(1), 0);
+});
+test("decimalsFromTick: geçersiz girdide null döner (çökmez)", () => {
+  assert.equal(decimalsFromTick(0), null);
+  assert.equal(decimalsFromTick(-1), null);
+  assert.equal(decimalsFromTick(NaN), null);
+});
+test("tickSizeForPair: bilinen çiftler dolu, bilinmeyen null", () => {
+  assert.equal(tickSizeForPair("TRXUSDT"), 0.00001);
+  assert.equal(tickSizeForPair("BNBUSDT"), 0.01);
+  assert.equal(tickSizeForPair("YOKBOYLEBIRSEYUSDT"), null);
+});
+test("formatPriceTick: TRX/DOGE gibi düşük fiyatlı coinler toFixed(2) ile KIRPILMAZ", () => {
+  assert.equal(formatPriceTick(0.123456, "TRXUSDT"), "0.12346");
+  assert.equal(formatPriceTick(0.123456, "DOGEUSDT"), "0.12346");
+});
+test("formatPriceTick: her coin KENDİ tick size'ıyla, sabit ortak bir kural değil (BNB≠TRX hassasiyeti)", () => {
+  assert.equal(formatPriceTick(612.345, "BNBUSDT"), "612.35");
+  assert.equal(formatPriceTick(0.31234, "HYPEUSDT"), "0.312");
+});
+test("formatPriceTick: bilinmeyen çiftte büyüklük-tabanlı yedek devrede, çökmez", () => {
+  assert.equal(formatPriceTick(45.6789, "YOKBOYLEBIRSEYUSDT"), "45.68");
+  assert.equal(formatPriceTick(null, "TRXUSDT"), "—");
 });
 
 console.log("maliyet (costR)");
@@ -361,9 +448,10 @@ test("pairFor: bilinen kripto haritadan, bilinmeyen sembol SEMBOL+USDT, kripto-o
   assert.equal(pairFor("RND"), null); // kontrol grubu daima sentetik
 });
 test("hasData: tanımsız sembol veri-yok sayılır (sahte sentetik gösterilmez)", () => {
-  assert.equal(hasData("DOGE"), false); // ne gerçek ne tanımlı sentetik
+  assert.equal(hasData("LINK"), false); // ne gerçek ne tanımlı sentetik
   assert.equal(hasData("SOL"), true);
   assert.equal(hasData("AVAX"), true); // AK-042: tanımlı sentetik + gerçek-kaynaklı
+  assert.equal(hasData("DOGE"), true); // AK-FVG-panel: artık tanımlı sentetik + gerçek-kaynaklı
 });
 
 console.log("24s Y/D/Hacim (AK-051)");

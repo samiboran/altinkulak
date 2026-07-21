@@ -51,6 +51,10 @@ const PROFILES = {
   ETH:  { seed: 202, trend: 0.0008, noise: 0.012, rho: 0.24, cont: 1.9 },
   SOL:  { seed: 303, trend: 0.0011, noise: 0.013, rho: 0.30, cont: 2.4 },
   AVAX: { seed: 305, trend: 0.0010, noise: 0.014, rho: 0.28, cont: 2.2 },
+  TRX:  { seed: 306, trend: 0.0007, noise: 0.011, rho: 0.22, cont: 1.6 },
+  HYPE: { seed: 307, trend: 0.0012, noise: 0.016, rho: 0.30, cont: 2.3 },
+  DOGE: { seed: 308, trend: 0.0009, noise: 0.015, rho: 0.26, cont: 1.8 },
+  BNB:  { seed: 309, trend: 0.0007, noise: 0.010, rho: 0.20, cont: 1.5 },
   // BIST
   ASELS:{ seed: 311, trend: 0.0009, noise: 0.012, rho: 0.26, cont: 2.0 },
   THYAO:{ seed: 312, trend: 0.0007, noise: 0.013, rho: 0.22, cont: 1.4 },
@@ -71,7 +75,7 @@ const PROFILES = {
 
 // Kullanici arayuzu icin grup yapisi
 export const MARKET_GROUPS = [
-  { key: "kripto",  label: "Kripto", symbols: ["BTC", "ETH", "SOL", "AVAX"] },
+  { key: "kripto",  label: "Kripto", symbols: ["BTC", "ETH", "SOL", "AVAX", "TRX", "HYPE", "DOGE", "BNB"] },
   { key: "bist",    label: "BIST",   symbols: ["ASELS", "THYAO", "GARAN", "SISE"] },
   { key: "abd",     label: "ABD",    symbols: ["NVDA", "AAPL", "TSLA", "MSFT"] },
   { key: "avrupa",  label: "Avrupa", symbols: ["ASML", "SAP", "MC"], pending: true },
@@ -93,6 +97,7 @@ export const SYMBOLS = Object.keys(PROFILES);
 // Sembol arama (akıllı tamamlama) için isimli düz liste
 const NAMES = {
   BTC:"Bitcoin", ETH:"Ethereum", SOL:"Solana", AVAX:"Avalanche",
+  TRX:"TRON", HYPE:"Hyperliquid", DOGE:"Dogecoin", BNB:"BNB",
   ASELS:"Aselsan", THYAO:"Türk Hava Yolları", GARAN:"Garanti BBVA", SISE:"Şişecam",
   NVDA:"NVIDIA", AAPL:"Apple", TSLA:"Tesla", MSFT:"Microsoft",
   ASML:"ASML", SAP:"SAP", MC:"LVMH", RND:"Rastgele (kontrol)",
@@ -136,7 +141,10 @@ export async function loadTop500Symbols() {
 // data-api.binance.vision = salt piyasa-verisi aynası (birincil); api.binance.com yedek.
 // BIST/ABD/Avrupa sentetik kalır (lisanslı kaynak = sonraki faz). RND daima sentetik (kontrol).
 
-const REAL_MAP = { BTC: "BTCUSDT", ETH: "ETHUSDT", SOL: "SOLUSDT", AVAX: "AVAXUSDT" };
+const REAL_MAP = {
+  BTC: "BTCUSDT", ETH: "ETHUSDT", SOL: "SOLUSDT", AVAX: "AVAXUSDT",
+  TRX: "TRXUSDT", HYPE: "HYPEUSDT", DOGE: "DOGEUSDT", BNB: "BNBUSDT",
+};
 export const REAL_CAPABLE = Object.keys(REAL_MAP);
 const realCache = {};
 const realFail = new Set(); // bu oturumda Binance'te bulunamayanlar — tekrar deneme
