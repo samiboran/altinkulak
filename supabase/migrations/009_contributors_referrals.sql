@@ -140,10 +140,12 @@ begin
   if new.referred_by_code is not null then
     update public.waitlist_entries
     set invited_count = next_state.next_invited_count,
-        status = case when next_state.should_invite then 'invited' else public.waitlist_entries.status end,
-        invited_at = case when next_state.should_invite then now() else public.waitlist_entries.invited_at end
+        status = case when next_state.should_invite then 'invited' else next_state.current_status end,
+        invited_at = case when next_state.should_invite then now() else next_state.current_invited_at end
     from (
       select id,
+             status as current_status,
+             invited_at as current_invited_at,
              invited_count + 1 as next_invited_count,
              (invited_count + 1 >= required_invite_count and status = 'pending') as should_invite
       from public.waitlist_entries
@@ -174,6 +176,7 @@ as $$
 declare
   matched_waitlist_id uuid;
   matched_referred_by uuid;
+  contributor_note constant text := 'Referral ile invited olduktan sonra kaydoldu.';
 begin
   select we.id, inviter_contributor.id
   into matched_waitlist_id, matched_referred_by
@@ -185,16 +188,14 @@ begin
   left join public.contributors inviter_contributor
     on inviter_contributor.user_id = inviter_user.id
   where we.email = lower(new.email)
-    and we.status = 'invited'
-  order by we.joined_at asc
-  limit 1;
+    and we.status = 'invited';
 
   if matched_waitlist_id is null then
     return new;
   end if;
 
   insert into public.contributors (user_id, referred_by, notes)
-  values (new.id, matched_referred_by, 'Referral ile invited olduktan sonra kaydoldu.')
+  values (new.id, matched_referred_by, contributor_note)
   on conflict (user_id) do nothing;
 
   update public.waitlist_entries
