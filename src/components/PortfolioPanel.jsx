@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Wallet, Plus, X, ArrowLeftRight, Eye, EyeOff, ArrowUpRight, ArrowDownRight, History, Lock, Bitcoin, Building2, Landmark, LayoutGrid, Calculator } from "lucide-react";
-import { getBars, hasData, loadReal, ALL_SYMBOLS, getSearchSymbols, pairFor } from "../lib/data.js";
-import { addTransaction, getItems, listEvents, itemKey } from "../lib/portfolio.js";
+import { Wallet, Plus, X, ArrowLeftRight, Eye, EyeOff, ArrowUpRight, ArrowDownRight, History, Lock, Bitcoin, Building2, Landmark, LayoutGrid, Calculator, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import { getBars, hasData, isReal, loadReal, ALL_SYMBOLS, getSearchSymbols, pairFor } from "../lib/data.js";
+import { addTransaction, getItems, listEvents, itemKey, canSubmitTransaction } from "../lib/portfolio.js";
 import { getUSStockPrice, getCachedUSStockPrice, getUSStockPriceTimestamp, isUSStockPriceConfigured } from "../lib/usStockPrices.js";
+import { recordSnapshotIfNeeded, getSnapshots, dailyReturnPct, weeklyReturnPct, monthlyReturnPct, calendarMonth } from "../lib/portfolioHistory.js";
 import { APPROX_USD_TRY, fmtPct, fmtDisplay } from "../lib/portfolioFormat.js";
 import { periodChangePct, WEEK_BARS, DETAIL_PERIODS } from "../lib/priceChange.js";
 import "../styles/portfolio.css";
@@ -148,6 +149,26 @@ export default function PortfolioPanel() {
     return ev;
   }
 
+  // AK-101: portföy geçmişi — gerçek sunucu-taraflı gün-sonu cron'u yok (portföy henüz
+  // Supabase'e taşınmadı, bkz. AK-099 backlog), bu yüzden istemci tarafında "gün içinde ilk
+  // açılış" anı bugünün gün-sonu değeri sayılır. Fiyatlar (özellikle ABD/kripto canlı çekim)
+  // mount anında henüz gelmemiş olabileceği için küçük bir gecikmeyle kaydedilir — D14 ruhu:
+  // gösterilen değer "o anki son bilinen durum"dur, kusursuz gün sonu değildir.
+  const [snapshots, setSnapshots] = useState(() => getSnapshots());
+  const totalRef = useRef(total);
+  totalRef.current = total;
+  useEffect(() => {
+    const id = setTimeout(() => {
+      if (rows.length === 0) return; // henüz kalem yüklenmediyse boş 0'ı kilitleme
+      setSnapshots(recordSnapshotIfNeeded(totalRef.current));
+    }, 1500);
+    return () => clearTimeout(id);
+  }, [rows.length]);
+
+  const [calMonth, setCalMonth] = useState(() => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() }; });
+  const calCells = useMemo(() => calendarMonth(snapshots, calMonth.y, calMonth.m), [snapshots, calMonth]);
+  const monthLabel = new Date(calMonth.y, calMonth.m, 1).toLocaleDateString("tr-TR", { month: "long", year: "numeric" });
+
   return (
     <div className="ak-pf">
       <div className="ak-pf-tabs">
@@ -230,6 +251,10 @@ export default function PortfolioPanel() {
         Bu bir portföy takip aracıdır, yatırım tavsiyesi değildir.
       </p>
 
+      {rows.length > 0 && (
+        <PortfolioHistorySection snapshots={snapshots} calMonth={calMonth} setCalMonth={setCalMonth} calCells={calCells} monthLabel={monthLabel} />
+      )}
+
       {modalOpen && (
         <AddTransactionModal onClose={() => setModalOpen(false)} onSubmit={handleAdd} watchlist={loadWatchlist()} />
       )}
@@ -246,6 +271,51 @@ export default function PortfolioPanel() {
           />
         );
       })()}
+    </div>
+  );
+}
+
+// AK-101: Portföy geçmişi — günlük/haftalık/aylık toplam getiri + aylık takvim (her gün bir
+// kutucuk, o günün getirisi renk kodlu — D14 "son güncelleme" dürüstlüğüyle tutarlı: veri
+// yoksa nötr/boş kutucuk, fabrike sayı yok).
+function PortfolioHistorySection({ snapshots, calMonth, setCalMonth, calCells, monthLabel }) {
+  const d = dailyReturnPct(snapshots), w = weeklyReturnPct(snapshots), m = monthlyReturnPct(snapshots);
+  const leadPad = new Date(calMonth.y, calMonth.m, 1).getDay(); // 0=Pazar — TR takviminde Pazartesi başlangıç için 6 kaydır
+  const padCount = (leadPad + 6) % 7;
+
+  function shiftMonth(delta) {
+    setCalMonth(({ y, m }) => {
+      const d2 = new Date(y, m + delta, 1);
+      return { y: d2.getFullYear(), m: d2.getMonth() };
+    });
+  }
+
+  return (
+    <div className="ak-pf-history">
+      <div className="ak-pf-history-sum">
+        <div><span className="k">Günlük</span><b className={d == null ? "" : d >= 0 ? "pos" : "neg"}>{d == null ? "veri yok" : fmtPct(d)}</b></div>
+        <div><span className="k">Haftalık</span><b className={w == null ? "" : w >= 0 ? "pos" : "neg"}>{w == null ? "veri yok" : fmtPct(w)}</b></div>
+        <div><span className="k">Aylık</span><b className={m == null ? "" : m >= 0 ? "pos" : "neg"}>{m == null ? "veri yok" : fmtPct(m)}</b></div>
+      </div>
+      <div className="ak-pf-cal-head">
+        <button className="ak-icon" onClick={() => shiftMonth(-1)}><ChevronLeft size={16} /></button>
+        <span><Calendar size={13} /> {monthLabel}</span>
+        <button className="ak-icon" onClick={() => shiftMonth(1)}><ChevronRight size={16} /></button>
+      </div>
+      <div className="ak-pf-cal-grid">
+        {["Pt", "Sa", "Ça", "Pe", "Cu", "Ct", "Pz"].map((d2) => <span className="ak-pf-cal-dow" key={d2}>{d2}</span>)}
+        {Array.from({ length: padCount }).map((_, i) => <span key={"pad" + i} />)}
+        {calCells.map((c) => (
+          <span
+            key={c.date}
+            className={"ak-pf-cal-cell" + (c.returnPct == null ? "" : c.returnPct >= 0 ? " pos" : " neg")}
+            title={c.returnPct == null ? `${c.date}: veri yok` : `${c.date}: ${fmtPct(c.returnPct)}`}
+          >
+            {c.day}
+          </span>
+        ))}
+      </div>
+      <p className="ak-pf-history-note">Geçmiş veri bu cihazda ~1 yıl saklanır, daha eskisi otomatik budanır. Değerler günde bir kez (ilk açılışta) kaydedilir — kesintisiz gün sonu değil, o anki son bilinen durumdur.</p>
     </div>
   );
 }
@@ -279,8 +349,12 @@ function AddTransactionModal({ onClose, onSubmit, watchlist }) {
     if (!sym || !assetType) return;
     let on = true;
     if (assetType === "crypto") {
-      loadReal(sym).catch(() => null).then(() => { if (on && hasData(sym)) setLivePrice(getBars(sym)[getBars(sym).length - 1].c); });
-      if (hasData(sym)) setLivePrice(getBars(sym)[getBars(sym).length - 1].c);
+      // AK-101 Bug3: hasData() curated semboller için SENTETİK yedeği de "veri var" sayar —
+      // burada yalnız GERÇEK Binance verisi "canlı fiyat" olabilir, yoksa gerçek istek dönmeden
+      // önce kullanıcıya fabrike bir fiyat gösterilip o fiyattan pozisyon kaydedilebilir
+      // (D6/AK-031 ihlali — BTC'de yaşanan anormal K/Z yüzdesi bug'ının kök nedeni).
+      loadReal(sym).catch(() => null).then(() => { if (on && isReal(sym)) setLivePrice(getBars(sym)[getBars(sym).length - 1].c); });
+      if (isReal(sym)) setLivePrice(getBars(sym)[getBars(sym).length - 1].c);
     } else if (assetType === "us") {
       getUSStockPrice(sym).then((p) => { if (on && p != null) setLivePrice(p); });
     }
@@ -291,6 +365,10 @@ function AddTransactionModal({ onClose, onSubmit, watchlist }) {
   const qtyNum = Number(qtyStr), amountNum = Number(amountStr);
   const computedQty = mode === "qty" ? qtyNum : (effectivePrice > 0 ? amountNum / effectivePrice : null);
   const computedAmount = mode === "amount" ? amountNum : (effectivePrice > 0 && qtyNum > 0 ? qtyNum * effectivePrice : null);
+  const finalQty = mode === "qty" ? qtyNum : computedQty;
+  // AK-101 Bug1/2: buton her zaman tıklanabilir olup küçük bir hata metniyle "sessizce" reddetmek
+  // yerine — geçerli değilse baştan pasif. UI ve test AYNI saf fonksiyonu çağırır (canSubmitTransaction).
+  const canSave = canSubmitTransaction({ assetType, isBist, price: effectivePrice, qty: finalQty });
 
   const suggestions = useMemo(() => {
     const pool = getSearchSymbols();
@@ -368,6 +446,11 @@ function AddTransactionModal({ onClose, onSubmit, watchlist }) {
           <label className="ak-pf-field sm">
             <span>Fiyat/Birim {livePrice != null && !priceOverride && "(canlı)"}</span>
             <input type="number" min="0" step="any" value={priceOverride} onChange={(e) => setPriceOverride(e.target.value)} placeholder={livePrice != null ? livePrice.toFixed(4) : "manuel gir"} />
+            {/* AK-101 Bug1: submit'i beklemeden görünen kalıcı ipucu — hata metni yalnız tıklayınca
+                çıkınca fark edilmiyordu ("tepki vermiyor" hissi). */}
+            {sym.trim() && assetType && !isBist && livePrice == null && !priceOverride.trim() && (
+              <span className="ak-pf-hint">Canlı fiyat gelmedi — manuel gir.</span>
+            )}
           </label>
           <label className="ak-pf-field sm">
             <span>Para birimi</span>
@@ -399,7 +482,7 @@ function AddTransactionModal({ onClose, onSubmit, watchlist }) {
 
         {err && <p className="ak-pf-err">{err}</p>}
 
-        <button className="ak-btn ak-btn-primary" onClick={submit} disabled={isBist}>
+        <button className="ak-btn ak-btn-primary" onClick={submit} disabled={!canSave}>
           {side === "buy" ? "Al" : "Sat"} — kaydet
         </button>
       </div>

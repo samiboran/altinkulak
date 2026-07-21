@@ -39,6 +39,16 @@ export function itemKey(symbol, assetType) {
   return `${assetType}:${String(symbol).toUpperCase()}`;
 }
 
+// AK-101 Bug1/2: "İşlem ekle" modalının kaydet butonu aktif/pasif durumu — SAF fonksiyon, UI ve
+// test aynı mantığı paylaşır. Önceden buton her zaman tıklanabilirdi ve geçersiz girdide yalnız
+// küçük bir hata metni gösteriyordu ("tepki vermiyor" hissi) — artık geçersizken baştan pasif.
+export function canSubmitTransaction({ assetType, isBist, price, qty }) {
+  if (!assetType || isBist) return false;
+  if (!Number.isFinite(price) || price <= 0) return false;
+  if (!Number.isFinite(qty) || qty <= 0) return false;
+  return true;
+}
+
 function loadEvents() {
   if (typeof localStorage === "undefined") return [];
   try {
@@ -74,7 +84,9 @@ export function addTransaction({ symbol, assetType, type, qty, priceNative, curr
   if (!sym || !ASSET_TYPES.includes(assetType) || !EVENT_TYPES.includes(type)) return null;
   const q = Number(qty), price = Number(priceNative);
   if (type !== "update_cost" && (!Number.isFinite(q) || q <= 0)) return null;
-  if (!Number.isFinite(price) || price < 0) return null;
+  // AK-101 Bug3: price===0 önceden kabul ediliyordu — 0 maliyetli bir kalem sonradan gerçek
+  // fiyatla karşılaştırılınca anlamsız/sonsuz K/Z yüzdesi üretebilir, reddedilmeli.
+  if (!Number.isFinite(price) || price <= 0) return null;
   const { amountUsd: costUsd, fxRateUsed } = normalizeToUSD(price, currency, fxRate);
   const { amountUsd: feeUsd } = normalizeToUSD(feeNative, currency, fxRate);
   const event = {

@@ -925,7 +925,7 @@ test("eksik id/handle ile çağrılınca ağa hiç çıkmadan boş değer döner
 });
 
 console.log("kişisel portföy (AK-078)");
-const { normalizeToUSD, deriveItems, itemKey } = await import("../src/lib/portfolio.js");
+const { normalizeToUSD, deriveItems, itemKey, addTransaction, canSubmitTransaction } = await import("../src/lib/portfolio.js");
 const { fmtDisplay } = await import("../src/lib/portfolioFormat.js");
 const { getUSStockPrice, getUSStockPriceTimestamp, _setApiKeyForTests, _resetCacheForTests, setUpdateInterval } = await import("../src/lib/usStockPrices.js");
 
@@ -1006,6 +1006,113 @@ test("deriveItems: farklı asset_type aynı sembolü karıştırmaz (item_key ay
   ];
   const items = deriveItems(events);
   assert.equal(items[0].asset_type, "us");
+});
+
+console.log("AK-101: Portföy 'İşlem ekle' bug düzeltmeleri — kaydet butonu, sıfır fiyat, adet/dolar tek-alan girişi");
+test("canSubmitTransaction: geçerli girdide true", () => {
+  assert.equal(canSubmitTransaction({ assetType: "crypto", isBist: false, price: 100, qty: 2 }), true);
+});
+test("canSubmitTransaction: assetType yoksa, BIST kilitliyse, fiyat/adet <=0 ya da NaN ise false (Bug1/2 — sessiz reddetme yerine buton baştan pasif)", () => {
+  assert.equal(canSubmitTransaction({ assetType: null, isBist: false, price: 100, qty: 2 }), false);
+  assert.equal(canSubmitTransaction({ assetType: "bist", isBist: true, price: 100, qty: 2 }), false);
+  assert.equal(canSubmitTransaction({ assetType: "crypto", isBist: false, price: 0, qty: 2 }), false);
+  assert.equal(canSubmitTransaction({ assetType: "crypto", isBist: false, price: -5, qty: 2 }), false);
+  assert.equal(canSubmitTransaction({ assetType: "crypto", isBist: false, price: 100, qty: 0 }), false);
+  assert.equal(canSubmitTransaction({ assetType: "crypto", isBist: false, price: NaN, qty: 2 }), false);
+  assert.equal(canSubmitTransaction({ assetType: "crypto", isBist: false, price: 100, qty: null }), false);
+});
+test("addTransaction: fiyat sıfırsa reddedilir (Bug3 sertleştirme — önceden price===0 kabul ediliyordu)", () => {
+  assert.equal(addTransaction({ symbol: "BTC", assetType: "crypto", type: "add", qty: 1, priceNative: 0 }), null);
+  assert.equal(addTransaction({ symbol: "BTC", assetType: "crypto", type: "add", qty: 1, priceNative: -10 }), null);
+});
+test("adet-only kayıt: yalnız adet + birim fiyat girilir, dolar tutarı hiç geçilmez, cost_basis doğru türer", () => {
+  const ev = addTransaction({ symbol: "RENDER", assetType: "crypto", type: "add", qty: 2, priceNative: 8.08 });
+  assert.ok(ev);
+  assert.equal(ev.qty, 2);
+  assert.equal(ev.cost_usd, 8.08); // birim fiyat aynen saklanır (deriveItems qty*cost_usd ile toplar)
+  const items = deriveItems([ev]);
+  assert.equal(items[0].qty, 2);
+  assert.equal(items[0].avg_cost_usd, 8.08);
+});
+test("dolar-only kayıt: PortfolioPanel'in 'Tutar' modu gibi — kullanıcı yalnız toplam dolar girer, adet fiyattan türetilir, round-trip toplam maliyet korunur", () => {
+  const effectivePrice = 8.08, amountUsd = 16.16; // kullanıcı yalnız 16.16$ girdi, adet hiç yazmadı
+  const computedQty = amountUsd / effectivePrice; // PortfolioPanel submit()'teki AYNI formül
+  const ev = addTransaction({ symbol: "RENDER", assetType: "crypto", type: "add", qty: computedQty, priceNative: effectivePrice });
+  assert.ok(ev);
+  const items = deriveItems([ev]);
+  assert.equal(items[0].avg_cost_usd, effectivePrice);
+  assert.ok(Math.abs(items[0].qty * items[0].avg_cost_usd - amountUsd) < 1e-9); // toplam maliyet girilen dolar tutarına eşit
+});
+
+console.log("AK-101: Portföy geçmişi — günlük snapshot, dönemsel getiri, aylık takvim");
+const { withTodaySnapshot, recordSnapshotIfNeeded, localDateKey, periodReturnPct, dailyReturnPct, weeklyReturnPct, monthlyReturnPct, calendarMonth, MAX_SNAPSHOT_DAYS } = await import("../src/lib/portfolioHistory.js");
+
+test("withTodaySnapshot: aynı gün için ikinci kez çağrılınca ÜZERİNE YAZMAZ (append-only, ledger.js deseniyle tutarlı)", () => {
+  const t0 = Date.UTC(2026, 6, 19, 10, 0);
+  const s1 = withTodaySnapshot([], 1000, t0);
+  assert.equal(s1.length, 1);
+  const s2 = withTodaySnapshot(s1, 5000, t0 + 3600000); // aynı gün, farklı saat, farklı değer
+  assert.equal(s2.length, 1);
+  assert.equal(s2[0].value, 1000); // ilk kayıt korunur
+});
+test("withTodaySnapshot: farklı günde yeni kayıt eklenir, tarihe göre sıralı kalır", () => {
+  const d1 = Date.UTC(2026, 6, 19, 10, 0), d2 = Date.UTC(2026, 6, 20, 10, 0);
+  const s1 = withTodaySnapshot([], 1000, d1);
+  const s2 = withTodaySnapshot(s1, 1100, d2);
+  assert.equal(s2.length, 2);
+  assert.equal(s2[0].date, localDateKey(d1));
+  assert.equal(s2[1].date, localDateKey(d2));
+});
+test("withTodaySnapshot: ~1 yıl (MAX_SNAPSHOT_DAYS) sonra en eski kayıt budanır — storage şişmez", () => {
+  let snaps = [];
+  let t = Date.UTC(2025, 0, 1);
+  for (let i = 0; i < MAX_SNAPSHOT_DAYS + 10; i++) {
+    snaps = withTodaySnapshot(snaps, 1000 + i, t);
+    t += 86400000;
+  }
+  assert.equal(snaps.length, MAX_SNAPSHOT_DAYS);
+  assert.equal(snaps[0].value, 1010); // ilk 10 gün budandı (0..9 gitti, 10. kalan en eski)
+});
+test("recordSnapshotIfNeeded: fakeStore ile izole çalışır, ikinci çağrıda gereksiz yazma yapmaz", () => {
+  const store = fakeStore();
+  const t0 = Date.UTC(2026, 6, 19, 9, 0);
+  const r1 = recordSnapshotIfNeeded(2000, t0, store);
+  assert.equal(r1.length, 1);
+  const r2 = recordSnapshotIfNeeded(9999, t0 + 1000, store); // aynı gün — değişmemeli
+  assert.equal(r2.length, 1);
+  assert.equal(r2[0].value, 2000);
+});
+test("periodReturnPct/dailyReturnPct: yetersiz geçmişte dürüst null (D13 — fabrike yüzde yok)", () => {
+  assert.equal(dailyReturnPct([]), null);
+  assert.equal(dailyReturnPct([{ date: "2026-07-19", value: 100, ts: 1 }]), null);
+});
+test("dailyReturnPct/weeklyReturnPct/monthlyReturnPct: bilinen bir seri için doğru yüzde", () => {
+  const snaps = [
+    { date: "2026-06-15", value: 1000, ts: 1 }, // 30+ gün önce — monthly referansı
+    { date: "2026-07-12", value: 1000, ts: 2 }, // tam 7 gün önce — weekly referansı
+    { date: "2026-07-18", value: 1000, ts: 3 }, // dün — daily referansı
+    { date: "2026-07-19", value: 1100, ts: 4 }, // bugün
+  ];
+  assert.equal(dailyReturnPct(snaps), 10); // (1100-1000)/1000*100, dünden bugüne
+  assert.ok(Math.abs(weeklyReturnPct(snaps) - 10) < 1e-9);
+  assert.ok(Math.abs(monthlyReturnPct(snaps) - 10) < 1e-9);
+});
+test("calendarMonth: her gün için ancak bir ÖNCEKİ takvim günü kaydı varsa getiri hesaplanır, yoksa null (renk kodlaması için pozitif/negatif/nötr ayrımı)", () => {
+  const snaps = [
+    { date: "2026-07-01", value: 1000, ts: 1 },
+    { date: "2026-07-02", value: 1050, ts: 2 }, // +5%
+    { date: "2026-07-03", value: 1029, ts: 3 }, // -2%
+    // 4 Temmuz'da kayıt yok (uygulama açılmamış) — 5 Temmuz'un referansı bulunamaz
+    { date: "2026-07-05", value: 1000, ts: 5 },
+  ];
+  const cells = calendarMonth(snaps, 2026, 6); // monthIndex0=6 -> Temmuz
+  const byDay = Object.fromEntries(cells.map((c) => [c.day, c]));
+  assert.equal(byDay[1].returnPct, null); // ilk kayıt — önceki gün yok
+  assert.ok(Math.abs(byDay[2].returnPct - 5) < 1e-9);
+  assert.ok(Math.abs(byDay[3].returnPct - (-2)) < 1e-9);
+  assert.equal(byDay[4].returnPct, null); // hiç kayıt yok
+  assert.equal(byDay[5].returnPct, null); // kayıt var ama önceki gün (4'ü) yok — dürüstçe null
+  assert.equal(cells.length, 31); // Temmuz 31 gün
 });
 
 test("gizlilik maskesi (D13): hide=true iken tutar HER ZAMAN •••• — gerçek değer sızmaz", () => {
