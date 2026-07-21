@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
-import { Eye, Plus, Trash2, ShieldCheck, Bell, BellRing, Settings, Star, Wallet, X } from "lucide-react";
+import { Eye, Plus, Trash2, ShieldCheck, Bell, BellRing, Settings, Star, Wallet, X, Link2, Copy, Check } from "lucide-react";
 import { getBars, loadReal, isReal, hasData, stats24h, getFreshness, getSearchSymbols, loadTop500Symbols, pairFor } from "../lib/data.js";
 import { periodChangePct, WEEK_BARS, DETAIL_PERIODS } from "../lib/priceChange.js";
 import { runBacktest, latestFvgSignal } from "../lib/backtest.js";
 import { formatPriceTick } from "../lib/priceFormat.js";
+import { fetchWebhookEntry, getOrCreateWebhookEntry, webhookUrlFor } from "../lib/izlemeEntries.js";
 import { detectModBSignals, DEFAULT_PARAMS } from "../lib/modB.js";
 import { requestNotifyPermission, notify, isSeen, markSeen } from "../lib/notify.js";
 import { addAlarmTrade, checkOpenAlarmTrades, listAlarmTrades } from "../lib/alarmTrades.js";
@@ -88,12 +89,37 @@ function fmtPctSigned(v) {
 // bir portföy kalemine ait geçmiş/maliyet verisine dayanır, izleme listesinde karşılığı yok.
 // YTD/1Y/5Y de eklenmedi — DETAIL_PERIODS zaten AK-031 dürüstlük kararına göre veriye sığan
 // aralıklarla sınırlı (bkz. src/lib/priceChange.js).
-function WatchDetailModal({ row, fmtP, onClose }) {
+function WatchDetailModal({ row, fmtP, onClose, userId, requireAuth }) {
   const [period, setPeriod] = useState("1G");
   const bars = getBars(row.sym);
   const weekChangePct = periodChangePct(bars, WEEK_BARS);
   const periodDef = DETAIL_PERIODS.find((p) => p.key === period) || DETAIL_PERIODS[0];
   const periodChg = periodChangePct(bars, periodDef.bars);
+
+  // AK-FVG-panel: "Code'a bağla" — bu izleme kaydına özel Pine alert webhook'u.
+  // D16: yalnız bu kaydın kendi durumunu okur/günceller, işlem/oyun katmanına karışmaz.
+  const [webhook, setWebhook] = useState(null); // null = henüz sorulmadı/yok
+  const [whBusy, setWhBusy] = useState(false);
+  const [whErr, setWhErr] = useState("");
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    let on = true;
+    if (userId) fetchWebhookEntry(userId, row.sym).then((e) => { if (on) setWebhook(e); });
+    return () => { on = false; };
+  }, [userId, row.sym]);
+
+  async function connectWebhook() {
+    if (!requireAuth("\"Code'a bağla\" için giriş yap.")) return;
+    setWhBusy(true); setWhErr("");
+    const e = await getOrCreateWebhookEntry(userId, row.sym);
+    setWhBusy(false);
+    if (!e) { setWhErr("Bağlantı oluşturulamadı — tekrar dene."); return; }
+    setWebhook(e);
+  }
+  async function copyUrl(url) {
+    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); }
+    catch { setWhErr("Kopyalanamadı — linki elle seç."); }
+  }
 
   return (
     <div className="ak-pf-modal-ov" onClick={onClose}>
@@ -134,6 +160,36 @@ function WatchDetailModal({ row, fmtP, onClose }) {
         </div>
         {!row.sig && <p className="ak-izle-note">Son 900 barda tamamlanmış bir FVG işlemi yok — gösterilecek giriş/TP/SL henüz oluşmadı.</p>}
         <p className="ak-izle-note">Edge rozeti geçmiş 900 barın ölçümüdür, gelecek vaadi/yatırım tavsiyesi değildir. Giriş/TP/SL geçmiş simülasyondur, yatırım tavsiyesi değildir.</p>
+
+        <div className="ak-webhook">
+          <h4><Link2 size={13} /> Code'a bağla</h4>
+          <p className="ak-izle-note">Bu linki TradingView alert'inin webhook alanına yapıştır. Tetiklendiğinde bu kart "tetiklendi" rozetiyle güncellenir — otomatik işlem/pozisyon AÇILMAZ.</p>
+          {!webhook ? (
+            <button className="ak-btn ak-btn-secondary sm" onClick={connectWebhook} disabled={whBusy}>
+              <Link2 size={14} /> {whBusy ? "Bağlanıyor…" : "Code'a bağla"}
+            </button>
+          ) : (
+            <>
+              {webhookUrlFor(webhook.webhook_token) ? (
+                <div className="ak-webhook-url">
+                  <code>{webhookUrlFor(webhook.webhook_token)}</code>
+                  <button className="ak-icon" onClick={() => copyUrl(webhookUrlFor(webhook.webhook_token))} title="Kopyala">
+                    {copied ? <Check size={14} /> : <Copy size={14} />}
+                  </button>
+                </div>
+              ) : (
+                <p className="ak-izle-note">Sunucu bağlantısı yapılandırılmamış — webhook URL'i şu an gösterilemiyor.</p>
+              )}
+              {/* D14: bağlantı durumu her zaman görünür, gizlenmez */}
+              <span className={"ak-webhook-badge " + webhook.webhook_status}>
+                {webhook.webhook_status === "tetiklendi"
+                  ? `Tetiklendi${timeAgo(webhook.last_triggered_at ? new Date(webhook.last_triggered_at).getTime() : null) ? " · " + timeAgo(new Date(webhook.last_triggered_at).getTime()) : ""}`
+                  : "Bağlandı, henüz tetiklenmedi"}
+              </span>
+            </>
+          )}
+          {whErr && <p className="ak-izle-note bad">{whErr}</p>}
+        </div>
       </div>
     </div>
   );
@@ -505,7 +561,7 @@ export default function Izleme() {
       )}
       {detailSym && (() => {
         const row = rows.find((r) => r.sym === detailSym);
-        return row && !row.bad ? <WatchDetailModal row={row} fmtP={fmtP} onClose={() => setDetailSym(null)} /> : null;
+        return row && !row.bad ? <WatchDetailModal row={row} fmtP={fmtP} onClose={() => setDetailSym(null)} userId={user?.id} requireAuth={requireAuth} /> : null;
       })()}
       </>)}
     </div>

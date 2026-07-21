@@ -80,6 +80,15 @@
 .ak-alarm-status.won{color:var(--good);background:#10241F;border:1px solid #1f5249;}
 .ak-alarm-status.lost{color:var(--bad);background:#2A1714;border:1px solid #4a2a24;}
 
+/* AK-FVG-panel: "Code'a bağla" — Pine alert webhook bölümü (detay kartı içinde) */
+.ak-webhook{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);}
+.ak-webhook h4{display:flex;align-items:center;gap:6px;font-family:'Chakra Petch';font-size:13.5px;color:var(--txt);margin:0 0 6px;}
+.ak-webhook-url{display:flex;align-items:center;gap:8px;background:#0E1816;border:1px solid var(--line);border-radius:9px;padding:8px 10px;margin:8px 0;}
+.ak-webhook-url code{flex:1;font-family:'JetBrains Mono';font-size:11.5px;color:var(--teal-soft);overflow-x:auto;white-space:nowrap;}
+.ak-webhook-badge{display:inline-block;font-family:'JetBrains Mono';font-size:11px;padding:3px 9px;border-radius:7px;color:var(--muted);background:#101A18;border:1px solid var(--line);}
+.ak-webhook-badge.tetiklendi{color:var(--good);background:#10241F;border-color:#1f5249;}
+.ak-izle-note.bad{color:var(--bad);}
+
 /* ===== Mobil düzen (AK-fix): satırlar ekrana sığar, taşma yok ===== */
 @media(max-width:700px){
   .ak-izle-list{gap:8px;}

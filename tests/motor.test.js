@@ -5,6 +5,8 @@ import { mean, std, tStat, trainTestSplit, verdict, bonferroniT, expectedFalsePo
 import { runBacktest, latestFvgSignal } from "../src/lib/backtest.js";
 import { getBars, parseKlines, loadReal, isReal, pairFor, hasData, stats24h, getFreshness, freshnessStatus, getSearchSymbols, ALL_SYMBOLS } from "../src/lib/data.js";
 import { decimalsFromTick, tickSizeForPair, formatPriceTick } from "../src/lib/priceFormat.js";
+import { generateWebhookToken, buildWebhookUrl, isRateLimited, processWebhookTrigger, RATE_LIMIT_MS } from "../src/lib/izlemeWebhookCore.js";
+import { fetchWebhookEntry, getOrCreateWebhookEntry, webhookUrlFor } from "../src/lib/izlemeEntries.js";
 import { normalizeTop500 } from "../src/lib/top500.js";
 import { detectModBSignals, DEFAULT_PARAMS } from "../src/lib/modB.js";
 import { applyTick, mergeGapFill } from "../src/lib/liveData.js";
@@ -179,6 +181,87 @@ test("formatPriceTick: her coin KENDİ tick size'ıyla, sabit ortak bir kural de
 test("formatPriceTick: bilinmeyen çiftte büyüklük-tabanlı yedek devrede, çökmez", () => {
   assert.equal(formatPriceTick(45.6789, "YOKBOYLEBIRSEYUSDT"), "45.68");
   assert.equal(formatPriceTick(null, "TRXUSDT"), "—");
+});
+
+console.log("İzleme — 'Code'a bağla' Pine alert webhook (D16/D6)");
+test("generateWebhookToken: 24 hex karakter, her çağrıda farklı (çakışma riski düşük)", () => {
+  const a = generateWebhookToken(), b = generateWebhookToken();
+  assert.match(a, /^[0-9a-f]{24}$/);
+  assert.match(b, /^[0-9a-f]{24}$/);
+  assert.notEqual(a, b);
+});
+test("buildWebhookUrl: base + token birleşir, eksik girdide null (çökmez)", () => {
+  assert.equal(buildWebhookUrl("https://proj.supabase.co/functions/v1/izleme-webhook", "abc123"), "https://proj.supabase.co/functions/v1/izleme-webhook/abc123");
+  assert.equal(buildWebhookUrl("https://proj.supabase.co/functions/v1/izleme-webhook/", "abc123"), "https://proj.supabase.co/functions/v1/izleme-webhook/abc123");
+  assert.equal(buildWebhookUrl("", "abc123"), null);
+  assert.equal(buildWebhookUrl("https://x.co", null), null);
+});
+test("isRateLimited: son tetiklenme yoksa false, 1 dakika içindeyse true, sonrasında false", () => {
+  const now = Date.now();
+  assert.equal(isRateLimited(null, now), false);
+  assert.equal(isRateLimited(new Date(now - 10_000).toISOString(), now), true); // 10sn önce
+  assert.equal(isRateLimited(new Date(now - RATE_LIMIT_MS - 1000).toISOString(), now), false); // 1dk+ önce
+});
+test("processWebhookTrigger: token eşleşmezse 404, hiçbir dep çağrılmaz", async () => {
+  let called = false;
+  const deps = { findByToken: async () => { called = true; return null; }, markTriggered: async () => { throw new Error("çağrılmamalıydı"); } };
+  const r = await processWebhookTrigger("yok-boyle-token", "{}", deps);
+  assert.equal(r.status, 404);
+  assert.equal(called, true);
+});
+test("processWebhookTrigger: geçersiz token (boş/undefined) DB'ye hiç sorulmadan 404", async () => {
+  let asked = false;
+  const deps = { findByToken: async () => { asked = true; return null; }, markTriggered: async () => {} };
+  assert.equal((await processWebhookTrigger("", "{}", deps)).status, 404);
+  assert.equal((await processWebhookTrigger(undefined, "{}", deps)).status, 404);
+  assert.equal(asked, false, "boş token için DB'ye sorulmamalı");
+});
+test("processWebhookTrigger: rate limit içindeyse sessizce yutulur, markTriggered ÇAĞRILMAZ", async () => {
+  const now = Date.now();
+  let marked = false;
+  const deps = {
+    findByToken: async () => ({ id: "e1", lastTriggeredAt: new Date(now - 5000).toISOString() }),
+    markTriggered: async () => { marked = true; },
+  };
+  const r = await processWebhookTrigger("tok1", "{}", deps, now);
+  assert.deepEqual(r, { status: 200, ignored: true });
+  assert.equal(marked, false);
+});
+test("processWebhookTrigger: eşleşen + rate limit dışı → durum güncellenir", async () => {
+  const now = Date.now();
+  let markedWith = null;
+  const deps = {
+    findByToken: async () => ({ id: "e1", lastTriggeredAt: null }),
+    markTriggered: async (id, payload) => { markedWith = { id, payload }; },
+  };
+  const r = await processWebhookTrigger("tok1", '{"strategy":"x"}', deps, now);
+  assert.deepEqual(r, { status: 200, ignored: false });
+  assert.equal(markedWith.id, "e1");
+  assert.equal(markedWith.payload.rawBody, '{"strategy":"x"}');
+  assert.equal(markedWith.payload.triggeredAt, new Date(now).toISOString());
+});
+test("DÜRÜSTLÜK/D16: deps arayüzü yapısal olarak yalnız izleme kaydına erişebilir — başka bir tabloya (ör. ledger/trade) yazma İMKANI YOK", () => {
+  // deps'e trade/ledger/sandbox gibi başka bir yazma fonksiyonu geçirilse bile processWebhookTrigger
+  // onu HİÇ ÇAĞIRMAZ — imza yalnız findByToken/markTriggered'ı tanır.
+  let tradeTableTouched = false;
+  const deps = {
+    findByToken: async () => ({ id: "e1", lastTriggeredAt: null }),
+    markTriggered: async () => {},
+    insertTrade: async () => { tradeTableTouched = true; }, // sahte, motorun asla erişemeyeceği bir dep
+  };
+  return processWebhookTrigger("tok1", "{}", deps).then(() => {
+    assert.equal(tradeTableTouched, false, "webhook motoru trade tablosuna dokunmamalı");
+  });
+});
+test("izlemeEntries.js: Supabase yapılandırılmamışken tüm sorgular dürüst boş değer döner (D6)", async () => {
+  assert.equal(await fetchWebhookEntry("u1", "TRX"), null);
+  assert.equal(await getOrCreateWebhookEntry("u1", "TRX"), null);
+  assert.equal(await fetchWebhookEntry(null, "TRX"), null); // userId yok → sorgulanmaz
+  assert.equal(await getOrCreateWebhookEntry("u1", ""), null); // sym yok → sorgulanmaz
+});
+test("webhookUrlFor: Supabase yapılandırılmamışken/token yokken null (fabrike URL üretilmez)", () => {
+  assert.equal(webhookUrlFor("abc123"), null); // bu test ortamında VITE_SUPABASE_URL boş
+  assert.equal(webhookUrlFor(null), null);
 });
 
 console.log("maliyet (costR)");
