@@ -139,17 +139,18 @@ declare
 begin
   if new.referred_by_code is not null then
     update public.waitlist_entries
-    set invited_count = invited_count + 1,
-        status = case
-          when invited_count + 1 >= required_invite_count and status = 'pending' then 'invited'
-          else status
-        end,
-        invited_at = case
-          when invited_count + 1 >= required_invite_count and status = 'pending' then now()
-          else invited_at
-        end
-    where referral_code = new.referred_by_code
-      and status in ('pending', 'invited');
+    set invited_count = next_state.next_invited_count,
+        status = case when next_state.should_invite then 'invited' else public.waitlist_entries.status end,
+        invited_at = case when next_state.should_invite then now() else public.waitlist_entries.invited_at end
+    from (
+      select id,
+             invited_count + 1 as next_invited_count,
+             (invited_count + 1 >= required_invite_count and status = 'pending') as should_invite
+      from public.waitlist_entries
+      where referral_code = new.referred_by_code
+        and status in ('pending', 'invited')
+    ) as next_state
+    where public.waitlist_entries.id = next_state.id;
   end if;
 
   return new;
@@ -260,6 +261,7 @@ as
   select c.title, c.privilege_level, cp.perk_key, cp.perk_description
   from public.contributors c
   join public.contributor_perks cp on cp.title = c.title
+  -- Bu görünüm bilerek yalnız standard dışı ayrıcalıkları döner; standard kullanıcı burada boş sonuç görür.
   where c.user_id = auth.uid()
     and c.privilege_level <> 'standard';
 
